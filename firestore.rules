@@ -1,0 +1,116 @@
+rules_version = '2';
+
+// ===============================================================
+// RoundsAI Oncology Ward Rounds - Security Rules
+// ===============================================================
+// Assumed Data Models:
+//
+// Collection: users
+// Document ID: {userId} (matches request.auth.uid)
+// Fields:
+//   - email: string, required
+//   - role: string in ['doctor', 'oncologist', 'nurse'], required
+//   - createdAt: timestamp, required, immutable
+//
+// Collection: rounds
+// Document ID: {roundId}
+// Fields:
+//   - patient_id: string (size 1..30), required
+//   - transcript: string (size 1..10000), required
+//   - created_at: string or timestamp, required
+//   - clinician_id: string (size 1..100), optional
+//
+// Collection: extractions
+// Document ID: {extractionId}
+// Fields:
+//   - round_id: string, required
+//   - patient_id: string, required
+//   - symptoms: string (size 0..2000), optional
+//   - labs: string (size 0..5000), optional
+//   - source: string, optional
+//
+// Collection: review_flags
+// Document ID: {flagId}
+// Fields:
+//   - round_id: string, required
+//   - severity: string in ['low', 'medium', 'high', 'critical'], required
+//   - message: string (size 1..1000), required
+//   - rationale: string (size 0..2000), optional
+//
+// Collection: draft_notes
+// Document ID: {noteId}
+// Fields:
+//   - round_id: string, required, immutable
+//   - content: string (size 1..20000), required
+//   - status: string in ['draft', 'approved'], required
+//   - approved_at: timestamp or string, optional
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // --- Users Collection ---
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId)
+        && request.resource.data.email is string
+        && request.resource.data.email.size() <= 100
+        && request.resource.data.role in ['doctor', 'oncologist', 'nurse'];
+      allow update: if isOwner(userId)
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.role == resource.data.role;
+      allow delete: if false;
+    }
+
+    // --- Clinical Rounds ---
+    match /rounds/{roundId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated()
+        && request.resource.data.patient_id is string
+        && request.resource.data.patient_id.size() <= 30
+        && request.resource.data.transcript is string
+        && request.resource.data.transcript.size() <= 15000;
+      allow update: if isAuthenticated();
+      allow delete: if false;
+    }
+
+    // --- Extractions ---
+    match /extractions/{extractionId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated()
+        && request.resource.data.round_id is string;
+      allow update: if isAuthenticated();
+      allow delete: if false;
+    }
+
+    // --- Review Flags ---
+    match /review_flags/{flagId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated()
+        && request.resource.data.severity in ['low', 'medium', 'high', 'critical'];
+      allow update: if isAuthenticated();
+      allow delete: if false;
+    }
+
+    // --- Draft Notes ---
+    match /draft_notes/{noteId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated()
+        && request.resource.data.round_id is string
+        && request.resource.data.status in ['draft', 'approved'];
+      allow update: if isAuthenticated()
+        && request.resource.data.round_id == resource.data.round_id
+        && request.resource.data.status in ['draft', 'approved'];
+      allow delete: if false;
+    }
+  }
+}
