@@ -1,4 +1,5 @@
 from typing import TypedDict
+import os
 from langgraph.graph import END, START, StateGraph
 from backend.models.round import ClinicalExtraction, ReviewFlag
 from backend.services.local_extractor import extract_clinical_facts
@@ -10,6 +11,10 @@ class RoundState(TypedDict, total=False):
     draft_note: str
 
 def extraction_node(state: RoundState) -> RoundState:
+    provider = os.getenv("LLM_PROVIDER", "local").lower()
+    if provider == "gemini":
+        from backend.services.gemini_extractor import extract_clinical_facts_gemini
+        return {"extraction": extract_clinical_facts_gemini(state["transcript"])}
     return {"extraction": extract_clinical_facts(state["transcript"])}
 
 def verification_node(state: RoundState) -> RoundState:
@@ -21,7 +26,7 @@ def verification_node(state: RoundState) -> RoundState:
 def drafting_node(state: RoundState) -> RoundState:
     facts = state["extraction"]; patient = facts.patient_id or "Unidentified demo patient"
     demographic = " ".join(x for x in [str(facts.age) if facts.age else None, facts.sex.value if facts.sex.value != "unknown" else None] if x)
-    lines = [f"ONCOLOGY ROUND NOTE - {patient}", f"Patient: {demographic or 'Age/sex not stated'}; diagnosis: {facts.diagnosis or 'not stated'}." ]
+    lines = [f"ONCOLOGY ROUND NOTE - {patient}", f"Patient: {demographic or 'Age/sex not stated'}; diagnosis: {facts.diagnosis or 'not stated'}."]
     if facts.treatment_cycle is not None: lines.append(f"Treatment: cycle {facts.treatment_cycle} (regimen not stated).")
     if facts.symptoms: lines.append(f"Reported symptoms: {', '.join(facts.symptoms)}.")
     if facts.labs: lines.append("Recorded labs: " + ", ".join(f"{lab.name} {lab.value:g} {lab.unit or ''}".strip() for lab in facts.labs) + ".")

@@ -34,3 +34,4 @@ class ExtractRoundResponse(BaseModel):
     review_flags: list[ReviewFlag]
     draft_note: str
     disclaimer: str
+    round_id: str | None = None
