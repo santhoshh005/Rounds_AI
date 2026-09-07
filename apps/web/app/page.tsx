@@ -291,7 +291,24 @@ export default function Dashboard() {
           <p className="eyebrow">DEMO / CLINICIAN-IN-THE-LOOP</p>
           <h1>RoundsAI</h1>
         </div>
-        <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
+        <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
+          <a
+            href="/mobile"
+            style={{
+              padding: "0.35rem 0.75rem",
+              fontSize: "0.85rem",
+              background: "#e0f2fe",
+              color: "#0369a1",
+              textDecoration: "none",
+              borderRadius: "6px",
+              fontWeight: 600,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "4px",
+            }}
+          >
+            📱 Mobile Capture Station
+          </a>
           <span className="badge">Patient #{result?.extraction.patient_id ?? "104"}</span>
           <button
             className="secondary"
