@@ -466,51 +466,60 @@ export default function Dashboard() {
   return (
     <main>
       <header>
-        <div>
-          <p className="eyebrow">DEMO / CLINICIAN-IN-THE-LOOP</p>
-          <h1>RoundsAI</h1>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          <span style={{ fontSize: "28px" }}>🩺</span>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <span className="eyebrow" style={{ margin: 0 }}>ONCOLOGY WARD COPILOT</span>
+              <span style={{ background: "#e0f2fe", color: "#0369a1", fontSize: "10px", padding: "1px 6px", borderRadius: "4px", fontWeight: "700" }}>
+                CLINICIAN-IN-THE-LOOP
+              </span>
+            </div>
+            <h1>RoundsAI</h1>
+          </div>
         </div>
-        <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
+
+        {/* ── All Navigation Options ──────────────────────────────────── */}
+        <nav className="nav-group">
+          <a href="/" className="nav-link active">
+            📋 Review Station
+          </a>
+          <a
+            href={`/analytics?patientId=${selectedPatient?.id || "104"}`}
+            className="nav-link nav-link-purple"
+          >
+            📊 Patient Analytics
+          </a>
           <button
             type="button"
             onClick={() => setShowRosterModal(true)}
-            style={{
-              padding: "0.35rem 0.75rem",
-              fontSize: "0.85rem",
-              background: "#0284c7",
-              color: "#fff",
-              border: "none",
-              borderRadius: "6px",
-              fontWeight: 600,
-              cursor: "pointer",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "5px",
-            }}
+            className="nav-link"
           >
-            👥 Ward Patients ({patients.length})
+            👥 Ward Roster ({patients.length})
           </button>
-          <a
-            href="/mobile"
-            style={{
-              padding: "0.35rem 0.75rem",
-              fontSize: "0.85rem",
-              background: "#e0f2fe",
-              color: "#0369a1",
-              textDecoration: "none",
-              borderRadius: "6px",
-              fontWeight: 600,
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "4px",
-            }}
+          <button
+            type="button"
+            onClick={() => setShowAdmitModal(true)}
+            className="nav-link nav-link-green"
           >
-            📱 Mobile Capture Station
+            ➕ Quick Admit
+          </button>
+          <a href="/mobile" className="nav-link">
+            📱 Bedside Mobile
           </a>
-          <span className="badge">
-            Patient #{selectedPatient?.id ?? result?.extraction.patient_id ?? "104"}{" "}
-            {selectedPatient?.name ? `(${selectedPatient.name})` : ""}
-          </span>
+
+          {/* Active Patient Context Badge */}
+          <div
+            onClick={() => setShowRosterModal(true)}
+            className="badge"
+            style={{ cursor: "pointer", marginLeft: "4px" }}
+            title="Click to switch active inpatient"
+          >
+            <span>🛏️ {selectedPatient?.ward_bed ? selectedPatient.ward_bed.split(" - ")[1] || selectedPatient.ward_bed : "Bed 12"}</span>
+            <span>·</span>
+            <span>Pt #{selectedPatient?.id ?? "104"} {selectedPatient?.name ? `(${selectedPatient.name.split(" ")[0]})` : ""}</span>
+          </div>
+
           <button
             className="secondary"
             onClick={() => {
@@ -518,12 +527,11 @@ export default function Dashboard() {
               signOut(auth);
               window.location.href = "/login";
             }}
-            style={{ padding: "0.35rem 0.75rem", fontSize: "0.85rem" }}
+            style={{ padding: "7px 12px", fontSize: "13px" }}
           >
             Sign Out
           </button>
-
-        </div>
+        </nav>
       </header>
 
       {/* ── Input Section ────────────────────────────────────────────── */}
@@ -918,6 +926,23 @@ export default function Dashboard() {
                           >
                             {isSelected ? "✓ Active" : "Assess Round"}
                           </button>
+                          <a
+                            href={`/analytics?patientId=${p.id}`}
+                            style={{
+                              padding: "4px 8px",
+                              background: "#f3e8ff",
+                              color: "#7e22ce",
+                              border: "1px solid #d8b4fe",
+                              borderRadius: "4px",
+                              fontWeight: "700",
+                              fontSize: "12px",
+                              textDecoration: "none",
+                              display: "inline-flex",
+                              alignItems: "center",
+                            }}
+                          >
+                            📊 Analytics
+                          </a>
                           <button
                             type="button"
                             onClick={() => openEditModal(p)}

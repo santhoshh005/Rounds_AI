@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from backend.agents.round_graph import round_graph
 from backend.models.round import ExtractRoundRequest, ExtractRoundResponse
 from backend.models.patient import Patient, PatientCreate, PatientUpdate
+from backend.models.analytics import PatientAnalyticsResponse
 from backend.services.voice_transcriber import transcribe_audio_on_device
 from backend.services.persistence import (
     save_round,
@@ -28,6 +29,7 @@ from backend.services.patient_service import (
     update_patient as modify_patient,
     discharge_patient as discharge_patient_from_ward,
 )
+from backend.services.patient_analytics import get_patient_analytics
 
 app = FastAPI(
     title="RoundsAI Multimodal Clinical API",
@@ -159,4 +161,14 @@ def discharge_patient(patient_id: str) -> dict:
     if not success:
         raise HTTPException(status_code=404, detail=f"Patient {patient_id} not found.")
     return {"status": "discharged", "patient_id": patient_id}
+
+
+@app.get("/api/v1/patients/{patient_id}/analytics", response_model=PatientAnalyticsResponse)
+def get_patient_analytics_data(patient_id: str) -> PatientAnalyticsResponse:
+    """Retrieve comprehensive longitudinal analytics, CTCAE toxicities, and guideline insights for a patient."""
+    analytics = get_patient_analytics(patient_id)
+    if not analytics:
+        raise HTTPException(status_code=404, detail=f"Analytics data for patient {patient_id} not found.")
+    return analytics
+
 

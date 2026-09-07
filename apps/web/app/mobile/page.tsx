@@ -228,12 +228,20 @@ export default function MobileCapturePage() {
           </span>
           <h1 style={{ fontSize: "22px", margin: "2px 0 0", color: "#0f172a" }}>RoundsAI Companion</h1>
         </div>
-        <a
-          href="/"
-          style={{ fontSize: "12px", color: "#0284c7", textDecoration: "none", fontWeight: "600", padding: "6px 10px", background: "#e0f2fe", borderRadius: "6px" }}
-        >
-          💻 Laptop View
-        </a>
+        <div style={{ display: "flex", gap: "6px" }}>
+          <a
+            href={`/analytics?patientId=${patientId}`}
+            style={{ fontSize: "12px", color: "#7e22ce", textDecoration: "none", fontWeight: "700", padding: "6px 8px", background: "#f3e8ff", border: "1px solid #d8b4fe", borderRadius: "6px" }}
+          >
+            📊 Analytics
+          </a>
+          <a
+            href="/"
+            style={{ fontSize: "12px", color: "#0284c7", textDecoration: "none", fontWeight: "600", padding: "6px 10px", background: "#e0f2fe", borderRadius: "6px" }}
+          >
+            💻 Laptop
+          </a>
+        </div>
       </div>
 
       {/* Ward & Patient Selector */}
