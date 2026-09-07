@@ -58,6 +58,21 @@ type Result = {
   provenance?: Record<string, string>;
 };
 
+type PatientRecord = {
+  id: string;
+  name: string;
+  age: number;
+  sex: string;
+  diagnosis: string;
+  regimen: string;
+  cycle: number;
+  ward_bed: string;
+  baseline_anc?: number;
+  baseline_platelets?: number;
+  baseline_wbc?: number;
+  status: string;
+};
+
 const DEMO =
   "Patient 104 is a 58-year-old male with colorectal cancer. He is currently on cycle 3 chemotherapy. He has developed fever since yesterday. WBC is 2100 and ANC is 900. He reports increased fatigue.";
 
@@ -71,6 +86,34 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [user, setUser] = useState<User | null>(null);
 
+  // Ward Patients Roster State (CRUD)
+  const [patients, setPatients] = useState<PatientRecord[]>([]);
+  const [selectedPatient, setSelectedPatient] = useState<PatientRecord | null>(null);
+  const [showRosterModal, setShowRosterModal] = useState(false);
+  const [showAdmitModal, setShowAdmitModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingPatient, setEditingPatient] = useState<PatientRecord | null>(null);
+  const [crudLoading, setCrudLoading] = useState(false);
+
+  // Admit Form State
+  const [admitId, setAdmitId] = useState("");
+  const [admitName, setAdmitName] = useState("");
+  const [admitAge, setAdmitAge] = useState(55);
+  const [admitSex, setAdmitSex] = useState("male");
+  const [admitDiagnosis, setAdmitDiagnosis] = useState("");
+  const [admitRegimen, setAdmitRegimen] = useState("");
+  const [admitCycle, setAdmitCycle] = useState(1);
+  const [admitBed, setAdmitBed] = useState("Ward 4B - Bed 22");
+  const [admitAnc, setAdmitAnc] = useState<number | undefined>(2000);
+  const [admitPlt, setAdmitPlt] = useState<number | undefined>(200000);
+  const [admitWbc, setAdmitWbc] = useState<number | undefined>(4500);
+
+  // Edit Form State
+  const [editCycle, setEditCycle] = useState(1);
+  const [editBed, setEditBed] = useState("");
+  const [editRegimen, setEditRegimen] = useState("");
+  const [editDiagnosis, setEditDiagnosis] = useState("");
+
   // Voice States
   const [isDictating, setIsDictating] = useState(false);
   const [isRecordingLocal, setIsRecordingLocal] = useState(false);
@@ -81,7 +124,142 @@ export default function Dashboard() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  async function fetchPatients() {
+    try {
+      const res = await fetch(`${API}/api/v1/patients`);
+      if (res.ok) {
+        const data = await res.json();
+        setPatients(data);
+        if (data.length > 0 && !selectedPatient) {
+          const pt104 = data.find((p: PatientRecord) => p.id === "104") || data[0];
+          setSelectedPatient(pt104);
+        }
+      }
+    } catch (e) {
+      console.warn("Could not fetch patients from backend:", e);
+    }
+  }
+
+  function selectPatientForRound(p: PatientRecord) {
+    setSelectedPatient(p);
+    setTranscript(
+      `Patient ${p.id} (${p.name}) is a ${p.age}-year-old ${p.sex} with ${p.diagnosis}. Currently on cycle ${p.cycle} ${p.regimen} at ${p.ward_bed}. Vital signs stable, reporting increased fatigue. Recent blood counts recorded.`
+    );
+    setShowRosterModal(false);
+  }
+
+  async function handleAdmitSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setCrudLoading(true);
+    try {
+      const payload = {
+        id: admitId.trim(),
+        name: admitName.trim() || "Patient " + admitId,
+        age: Number(admitAge),
+        sex: admitSex,
+        diagnosis: admitDiagnosis.trim(),
+        regimen: admitRegimen.trim() || "Standard protocol",
+        cycle: Number(admitCycle),
+        ward_bed: admitBed.trim(),
+        baseline_anc: admitAnc ? Number(admitAnc) : undefined,
+        baseline_platelets: admitPlt ? Number(admitPlt) : undefined,
+        baseline_wbc: admitWbc ? Number(admitWbc) : undefined,
+      };
+
+      const res = await fetch(`${API}/api/v1/patients`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.detail || "Could not admit patient.");
+      }
+
+      const created = await res.json();
+      await fetchPatients();
+      selectPatientForRound(created);
+      setShowAdmitModal(false);
+      // Reset form
+      setAdmitId("");
+      setAdmitName("");
+      setAdmitDiagnosis("");
+      setAdmitRegimen("");
+    } catch (err: any) {
+      alert("Error admitting patient: " + err.message);
+    } finally {
+      setCrudLoading(false);
+    }
+  }
+
+  function openEditModal(p: PatientRecord) {
+    setEditingPatient(p);
+    setEditCycle(p.cycle);
+    setEditBed(p.ward_bed);
+    setEditRegimen(p.regimen);
+    setEditDiagnosis(p.diagnosis);
+    setShowEditModal(true);
+  }
+
+  async function handleEditSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingPatient) return;
+    setCrudLoading(true);
+
+    try {
+      const payload = {
+        cycle: Number(editCycle),
+        ward_bed: editBed.trim(),
+        regimen: editRegimen.trim(),
+        diagnosis: editDiagnosis.trim(),
+      };
+
+      const res = await fetch(`${API}/api/v1/patients/${editingPatient.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.detail || "Could not update patient.");
+      }
+
+      const updated = await res.json();
+      await fetchPatients();
+      if (selectedPatient?.id === updated.id) {
+        setSelectedPatient(updated);
+      }
+      setShowEditModal(false);
+      setEditingPatient(null);
+    } catch (err: any) {
+      alert("Error updating patient: " + err.message);
+    } finally {
+      setCrudLoading(false);
+    }
+  }
+
+  async function handleDischarge(patientIdToDischarge: string) {
+    if (!confirm(`Are you sure you want to discharge Patient #${patientIdToDischarge} from the active oncology ward?`)) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API}/api/v1/patients/${patientIdToDischarge}`, {
+        method: "DELETE",
+      });
+
+      if (!res.ok) throw new Error("Could not discharge patient.");
+      await fetchPatients();
+      alert(`Patient #${patientIdToDischarge} discharged.`);
+    } catch (err: any) {
+      alert("Discharge error: " + err.message);
+    }
+  }
+
   useEffect(() => {
+    fetchPatients();
     const demo = typeof window !== "undefined" ? sessionStorage.getItem("demo_user") : null;
     if (demo) {
       setUser({ email: demo } as unknown as User);
@@ -96,6 +274,7 @@ export default function Dashboard() {
     });
     return () => unsubscribe();
   }, []);
+
 
   // ── Mode A: Live Browser Web Speech Dictation ────────────────────────
   function toggleBrowserDictation() {
@@ -292,6 +471,25 @@ export default function Dashboard() {
           <h1>RoundsAI</h1>
         </div>
         <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
+          <button
+            type="button"
+            onClick={() => setShowRosterModal(true)}
+            style={{
+              padding: "0.35rem 0.75rem",
+              fontSize: "0.85rem",
+              background: "#0284c7",
+              color: "#fff",
+              border: "none",
+              borderRadius: "6px",
+              fontWeight: 600,
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "5px",
+            }}
+          >
+            👥 Ward Patients ({patients.length})
+          </button>
           <a
             href="/mobile"
             style={{
@@ -309,7 +507,10 @@ export default function Dashboard() {
           >
             📱 Mobile Capture Station
           </a>
-          <span className="badge">Patient #{result?.extraction.patient_id ?? "104"}</span>
+          <span className="badge">
+            Patient #{selectedPatient?.id ?? result?.extraction.patient_id ?? "104"}{" "}
+            {selectedPatient?.name ? `(${selectedPatient.name})` : ""}
+          </span>
           <button
             className="secondary"
             onClick={() => {
@@ -321,6 +522,7 @@ export default function Dashboard() {
           >
             Sign Out
           </button>
+
         </div>
       </header>
 
@@ -572,6 +774,520 @@ export default function Dashboard() {
           <p className="disclaimer">{result.disclaimer}</p>
         </section>
       )}
+
+      {/* ── Ward Roster Modal (CRUD) ─────────────────────────────────── */}
+      {showRosterModal && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(15, 23, 42, 0.6)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "20px",
+            zIndex: 1000,
+          }}
+        >
+          <div
+            style={{
+              background: "#fff",
+              borderRadius: "14px",
+              padding: "24px",
+              maxWidth: "880px",
+              width: "100%",
+              maxHeight: "85vh",
+              overflowY: "auto",
+              boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
+              <div>
+                <span style={{ fontSize: "11px", fontWeight: "700", color: "#0284c7", letterSpacing: "0.08em" }}>
+                  INPATIENT ONCOLOGY WARD
+                </span>
+                <h2 style={{ fontSize: "20px", margin: "4px 0 0", color: "#0f172a" }}>
+                  Ward 4B Patient Roster ({patients.length} Admitted)
+                </h2>
+              </div>
+              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                <button
+                  type="button"
+                  onClick={() => setShowAdmitModal(true)}
+                  style={{
+                    padding: "8px 14px",
+                    background: "#0284c7",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: "6px",
+                    fontWeight: "700",
+                    fontSize: "13px",
+                    cursor: "pointer",
+                  }}
+                >
+                  ➕ Admit New Patient
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowRosterModal(false)}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    fontSize: "22px",
+                    cursor: "pointer",
+                    color: "#64748b",
+                    padding: "0 6px",
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+              <thead>
+                <tr style={{ background: "#f8fafc", borderBottom: "2px solid #e2e8f0", textAlign: "left" }}>
+                  <th style={{ padding: "10px 8px" }}>Bed</th>
+                  <th style={{ padding: "10px 8px" }}>Patient / MRN</th>
+                  <th style={{ padding: "10px 8px" }}>Diagnosis</th>
+                  <th style={{ padding: "10px 8px" }}>Regimen</th>
+                  <th style={{ padding: "10px 8px" }}>Cycle</th>
+                  <th style={{ padding: "10px 8px" }}>Baseline ANC</th>
+                  <th style={{ padding: "10px 8px", textAlign: "right" }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {patients.map((p) => {
+                  const isSelected = selectedPatient?.id === p.id;
+                  return (
+                    <tr
+                      key={p.id}
+                      style={{
+                        borderBottom: "1px solid #e2e8f0",
+                        background: isSelected ? "#f0f9ff" : "transparent",
+                      }}
+                    >
+                      <td style={{ padding: "10px 8px", fontWeight: "700", color: "#1e293b" }}>
+                        {p.ward_bed}
+                      </td>
+                      <td style={{ padding: "10px 8px" }}>
+                        <div style={{ fontWeight: "700", color: "#0f172a" }}>#{p.id} · {p.name}</div>
+                        <div style={{ fontSize: "11px", color: "#64748b" }}>{p.age}y · {p.sex}</div>
+                      </td>
+                      <td style={{ padding: "10px 8px", color: "#334155" }}>
+                        {p.diagnosis}
+                      </td>
+                      <td style={{ padding: "10px 8px", color: "#475569" }}>
+                        {p.regimen}
+                      </td>
+                      <td style={{ padding: "10px 8px" }}>
+                        <span
+                          style={{
+                            padding: "3px 8px",
+                            background: "#e0e7ff",
+                            color: "#4338ca",
+                            borderRadius: "12px",
+                            fontWeight: "700",
+                            fontSize: "11px",
+                          }}
+                        >
+                          Cycle {p.cycle}
+                        </span>
+                      </td>
+                      <td style={{ padding: "10px 8px", color: "#64748b" }}>
+                        {p.baseline_anc ? `${p.baseline_anc} /uL` : "Not set"}
+                      </td>
+                      <td style={{ padding: "10px 8px", textAlign: "right" }}>
+                        <div style={{ display: "inline-flex", gap: "6px" }}>
+                          <button
+                            type="button"
+                            onClick={() => selectPatientForRound(p)}
+                            style={{
+                              padding: "4px 8px",
+                              background: isSelected ? "#0284c7" : "#f1f5f9",
+                              color: isSelected ? "#fff" : "#0284c7",
+                              border: "1px solid #cbd5e1",
+                              borderRadius: "4px",
+                              fontWeight: "700",
+                              fontSize: "12px",
+                              cursor: "pointer",
+                            }}
+                          >
+                            {isSelected ? "✓ Active" : "Assess Round"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openEditModal(p)}
+                            style={{
+                              padding: "4px 8px",
+                              background: "#f8fafc",
+                              color: "#475569",
+                              border: "1px solid #cbd5e1",
+                              borderRadius: "4px",
+                              fontWeight: "600",
+                              fontSize: "12px",
+                              cursor: "pointer",
+                            }}
+                          >
+                            ✏️ Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDischarge(p.id)}
+                            style={{
+                              padding: "4px 8px",
+                              background: "#fef2f2",
+                              color: "#dc2626",
+                              border: "1px solid #fecaca",
+                              borderRadius: "4px",
+                              fontWeight: "600",
+                              fontSize: "12px",
+                              cursor: "pointer",
+                            }}
+                          >
+                            Discharge
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Admit New Patient Modal ──────────────────────────────────── */}
+      {showAdmitModal && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(15, 23, 42, 0.6)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "20px",
+            zIndex: 1100,
+          }}
+        >
+          <div
+            style={{
+              background: "#fff",
+              borderRadius: "14px",
+              padding: "24px",
+              maxWidth: "500px",
+              width: "100%",
+              maxHeight: "90vh",
+              overflowY: "auto",
+              boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+              <h2 style={{ fontSize: "18px", margin: 0, color: "#0f172a" }}>
+                ➕ Inpatient Oncology Admission
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowAdmitModal(false)}
+                style={{ background: "none", border: "none", fontSize: "20px", cursor: "pointer", color: "#64748b" }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleAdmitSubmit}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "10px", marginBottom: "12px" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "#475569", marginBottom: "4px" }}>
+                    Patient ID / MRN *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. 108"
+                    value={admitId}
+                    onChange={(e) => setAdmitId(e.target.value)}
+                    style={{ width: "100%", padding: "8px", borderRadius: "6px", border: "1px solid #cbd5e1" }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "#475569", marginBottom: "4px" }}>
+                    Full Patient Name
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Maria Santos"
+                    value={admitName}
+                    onChange={(e) => setAdmitName(e.target.value)}
+                    style={{ width: "100%", padding: "8px", borderRadius: "6px", border: "1px solid #cbd5e1" }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 2fr", gap: "10px", marginBottom: "12px" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "#475569", marginBottom: "4px" }}>
+                    Age
+                  </label>
+                  <input
+                    type="number"
+                    value={admitAge}
+                    onChange={(e) => setAdmitAge(Number(e.target.value))}
+                    style={{ width: "100%", padding: "8px", borderRadius: "6px", border: "1px solid #cbd5e1" }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "#475569", marginBottom: "4px" }}>
+                    Sex
+                  </label>
+                  <select
+                    value={admitSex}
+                    onChange={(e) => setAdmitSex(e.target.value)}
+                    style={{ width: "100%", padding: "8px", borderRadius: "6px", border: "1px solid #cbd5e1" }}
+                  >
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "#475569", marginBottom: "4px" }}>
+                    Ward & Bed *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ward 4B - Bed 22"
+                    value={admitBed}
+                    onChange={(e) => setAdmitBed(e.target.value)}
+                    style={{ width: "100%", padding: "8px", borderRadius: "6px", border: "1px solid #cbd5e1" }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ marginBottom: "12px" }}>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "#475569", marginBottom: "4px" }}>
+                  Cancer Diagnosis & Stage *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Ovarian Carcinoma (High Grade Serous)"
+                  value={admitDiagnosis}
+                  onChange={(e) => setAdmitDiagnosis(e.target.value)}
+                  style={{ width: "100%", padding: "8px", borderRadius: "6px", border: "1px solid #cbd5e1" }}
+                />
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "3fr 1fr", gap: "10px", marginBottom: "12px" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "#475569", marginBottom: "4px" }}>
+                    Chemotherapy Regimen
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Paclitaxel + Carboplatin"
+                    value={admitRegimen}
+                    onChange={(e) => setAdmitRegimen(e.target.value)}
+                    style={{ width: "100%", padding: "8px", borderRadius: "6px", border: "1px solid #cbd5e1" }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "#475569", marginBottom: "4px" }}>
+                    Cycle #
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="50"
+                    value={admitCycle}
+                    onChange={(e) => setAdmitCycle(Number(e.target.value))}
+                    style={{ width: "100%", padding: "8px", borderRadius: "6px", border: "1px solid #cbd5e1" }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px", marginBottom: "16px" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "11px", fontWeight: "700", color: "#64748b", marginBottom: "3px" }}>
+                    Baseline ANC
+                  </label>
+                  <input
+                    type="number"
+                    placeholder="cells/uL"
+                    value={admitAnc || ""}
+                    onChange={(e) => setAdmitAnc(Number(e.target.value))}
+                    style={{ width: "100%", padding: "8px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "12px" }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "11px", fontWeight: "700", color: "#64748b", marginBottom: "3px" }}>
+                    Baseline Platelets
+                  </label>
+                  <input
+                    type="number"
+                    placeholder="/uL"
+                    value={admitPlt || ""}
+                    onChange={(e) => setAdmitPlt(Number(e.target.value))}
+                    style={{ width: "100%", padding: "8px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "12px" }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "11px", fontWeight: "700", color: "#64748b", marginBottom: "3px" }}>
+                    Baseline WBC
+                  </label>
+                  <input
+                    type="number"
+                    placeholder="cells/uL"
+                    value={admitWbc || ""}
+                    onChange={(e) => setAdmitWbc(Number(e.target.value))}
+                    style={{ width: "100%", padding: "8px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "12px" }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: "10px" }}>
+                <button
+                  type="button"
+                  onClick={() => setShowAdmitModal(false)}
+                  style={{ flex: 1, padding: "10px", borderRadius: "6px", background: "#f1f5f9", border: "1px solid #cbd5e1", fontWeight: "600", cursor: "pointer" }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={crudLoading}
+                  style={{ flex: 1, padding: "10px", borderRadius: "6px", background: "#0284c7", color: "#fff", border: "none", fontWeight: "700", cursor: "pointer" }}
+                >
+                  {crudLoading ? "Admitting..." : "Admit Patient"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Edit Patient Modal ───────────────────────────────────────── */}
+      {showEditModal && editingPatient && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(15, 23, 42, 0.6)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "20px",
+            zIndex: 1100,
+          }}
+        >
+          <div
+            style={{
+              background: "#fff",
+              borderRadius: "14px",
+              padding: "24px",
+              maxWidth: "460px",
+              width: "100%",
+              boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+              <h2 style={{ fontSize: "18px", margin: 0, color: "#0f172a" }}>
+                ✏️ Update Patient #{editingPatient.id} ({editingPatient.name})
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowEditModal(false)}
+                style={{ background: "none", border: "none", fontSize: "20px", cursor: "pointer", color: "#64748b" }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleEditSubmit}>
+              <div style={{ marginBottom: "12px" }}>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "#475569", marginBottom: "4px" }}>
+                  Current Chemotherapy Cycle
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="50"
+                  value={editCycle}
+                  onChange={(e) => setEditCycle(Number(e.target.value))}
+                  style={{ width: "100%", padding: "8px", borderRadius: "6px", border: "1px solid #cbd5e1" }}
+                />
+              </div>
+
+              <div style={{ marginBottom: "12px" }}>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "#475569", marginBottom: "4px" }}>
+                  Ward & Bed Location
+                </label>
+                <input
+                  type="text"
+                  value={editBed}
+                  onChange={(e) => setEditBed(e.target.value)}
+                  style={{ width: "100%", padding: "8px", borderRadius: "6px", border: "1px solid #cbd5e1" }}
+                />
+              </div>
+
+              <div style={{ marginBottom: "12px" }}>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "#475569", marginBottom: "4px" }}>
+                  Chemotherapy Regimen
+                </label>
+                <input
+                  type="text"
+                  value={editRegimen}
+                  onChange={(e) => setEditRegimen(e.target.value)}
+                  style={{ width: "100%", padding: "8px", borderRadius: "6px", border: "1px solid #cbd5e1" }}
+                />
+              </div>
+
+              <div style={{ marginBottom: "16px" }}>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "#475569", marginBottom: "4px" }}>
+                  Diagnosis Description
+                </label>
+                <input
+                  type="text"
+                  value={editDiagnosis}
+                  onChange={(e) => setEditDiagnosis(e.target.value)}
+                  style={{ width: "100%", padding: "8px", borderRadius: "6px", border: "1px solid #cbd5e1" }}
+                />
+              </div>
+
+              <div style={{ display: "flex", gap: "10px" }}>
+                <button
+                  type="button"
+                  onClick={() => setShowEditModal(false)}
+                  style={{ flex: 1, padding: "10px", borderRadius: "6px", background: "#f1f5f9", border: "1px solid #cbd5e1", fontWeight: "600", cursor: "pointer" }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={crudLoading}
+                  style={{ flex: 1, padding: "10px", borderRadius: "6px", background: "#0284c7", color: "#fff", border: "none", fontWeight: "700", cursor: "pointer" }}
+                >
+                  {crudLoading ? "Saving..." : "Save Changes"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </main>
   );
 }
+

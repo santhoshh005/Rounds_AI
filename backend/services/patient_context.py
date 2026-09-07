@@ -51,9 +51,20 @@ def build_patient_context(extraction: ClinicalExtraction) -> list[LabTrend]:
     except Exception as exc:
         logger.info("Could not fetch prior Supabase context: %s. Using baseline.", exc)
 
-    # 2. If no DB history yet, populate with clinical prior cycle baseline for demo
-    if not prior_labs and pid.upper() in ("104", "PT-104", "P104"):
-        prior_labs = {k: v[0] for k, v in _DEMO_BASELINE_104.items()}
+    # 2. If no DB history yet, populate from patient record baseline
+    if not prior_labs:
+        from backend.services.patient_service import get_patient
+        p_record = get_patient(pid)
+        if p_record:
+            if p_record.baseline_anc is not None:
+                prior_labs["ANC"] = p_record.baseline_anc
+            if p_record.baseline_platelets is not None:
+                prior_labs["PLATELETS"] = p_record.baseline_platelets
+            if p_record.baseline_wbc is not None:
+                prior_labs["WBC"] = p_record.baseline_wbc
+        elif pid.upper() in ("104", "PT-104", "P104"):
+            prior_labs = {k: v[0] for k, v in _DEMO_BASELINE_104.items()}
+
 
     # 3. Compute trends for each current lab
     for lab in extraction.labs:

@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from backend.agents.round_graph import round_graph
 from backend.models.round import ExtractRoundRequest, ExtractRoundResponse
+from backend.models.patient import Patient, PatientCreate, PatientUpdate
 from backend.services.voice_transcriber import transcribe_audio_on_device
 from backend.services.persistence import (
     save_round,
@@ -20,11 +21,18 @@ from backend.services.persistence import (
     approve_note,
     get_round_history,
 )
+from backend.services.patient_service import (
+    list_patients as get_patients_list,
+    get_patient as find_patient_by_id,
+    create_patient as admit_new_patient,
+    update_patient as modify_patient,
+    discharge_patient as discharge_patient_from_ward,
+)
 
 app = FastAPI(
     title="RoundsAI Multimodal Clinical API",
     description="Doctor Productivity & Knowledge Assistant for Oncology Ward Rounds",
-    version="0.3.1",
+    version="0.3.2",
 )
 
 # Robust, secure CORS handling without wildcard credentials conflict
@@ -38,9 +46,10 @@ app.add_middleware(
     ],
     allow_origin_regex=r"https?://.*",
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
 
 @app.get("/health")
 def health() -> dict[str, str]:
@@ -105,3 +114,49 @@ def approve_round_note(round_id: str, request: ApproveRequest) -> dict:
 def list_rounds(limit: int = Query(default=20, ge=1, le=100)) -> list[dict]:
     # Security: Bounded pagination limit to prevent Denial of Wallet / DoS
     return get_round_history(limit=limit)
+
+
+# ── Oncology Ward Patient Roster Endpoints (CRUD) ──────────────────────
+
+@app.get("/api/v1/patients", response_model=list[Patient])
+def get_patients(status: str = Query(default="admitted", regex="^(admitted|discharged|all)$")) -> list[Patient]:
+    """Retrieve oncology ward patient roster."""
+    filter_status = None if status == "all" else status
+    return get_patients_list(status=filter_status)
+
+
+@app.post("/api/v1/patients", response_model=Patient, status_code=201)
+def admit_patient(patient_in: PatientCreate) -> Patient:
+    """Admit a new patient into the oncology ward."""
+    existing = find_patient_by_id(patient_in.id)
+    if existing and existing.status == "admitted":
+        raise HTTPException(status_code=409, detail=f"Patient with ID {patient_in.id} is already admitted.")
+    return admit_new_patient(patient_in)
+
+
+@app.get("/api/v1/patients/{patient_id}", response_model=Patient)
+def get_patient_details(patient_id: str) -> Patient:
+    """Fetch patient profile and clinical baseline data."""
+    patient = find_patient_by_id(patient_id)
+    if not patient:
+        raise HTTPException(status_code=404, detail=f"Patient {patient_id} not found.")
+    return patient
+
+
+@app.put("/api/v1/patients/{patient_id}", response_model=Patient)
+def update_patient_details(patient_id: str, updates: PatientUpdate) -> Patient:
+    """Update patient details, advance chemo cycle, or reassign bed."""
+    updated = modify_patient(patient_id, updates)
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Patient {patient_id} not found.")
+    return updated
+
+
+@app.delete("/api/v1/patients/{patient_id}")
+def discharge_patient(patient_id: str) -> dict:
+    """Discharge a patient from the active oncology ward roster."""
+    success = discharge_patient_from_ward(patient_id)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Patient {patient_id} not found.")
+    return {"status": "discharged", "patient_id": patient_id}
+
