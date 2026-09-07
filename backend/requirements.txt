@@ -5,3 +5,4 @@ langgraph>=0.2,<1.0
 supabase>=2.0
 google-genai>=1.0
 python-dotenv>=1.0
+python-multipart>=0.0.9

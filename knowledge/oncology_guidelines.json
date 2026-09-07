@@ -1,0 +1,38 @@
+[
+  {
+    "id": "ASCO-IDSA-FN-2018",
+    "title": "ASCO / IDSA Outpatient Management of Fever and Neutropenia in Cancer Patients",
+    "keywords": ["fever", "neutropenia", "ANC", "absolute neutrophil count", "febrile neutropenia", "infection"],
+    "trigger_condition": "fever >= 38.0C with ANC < 1000 cells/uL or expected drop < 500 cells/uL",
+    "recommendation": "High clinical urgency. Immediate clinical evaluation, diagnostic blood cultures from all lumens, and empiric broad-spectrum antimicrobial therapy within 60 minutes of presentation. Assess MASCC or CISNE score for risk stratification.",
+    "source": "Journal of Clinical Oncology 2018; 36(14):1443-1453",
+    "severity": "high"
+  },
+  {
+    "id": "NCCN-PANC-THROMBO-2023",
+    "title": "NCCN / ASCO Guidelines on Chemotherapy-Induced Thrombocytopenia",
+    "keywords": ["platelets", "thrombocytopenia", "bleeding", "petechiae", "purpura"],
+    "trigger_condition": "Platelets < 50,000 /uL or Platelets < 25,000 /uL",
+    "recommendation": "For Platelets < 25,000 /uL, hold myelosuppressive chemotherapy and evaluate for prophylactic platelet transfusion. Monitor for mucosal bleeding and withhold anticoagulants. Dose reduction advised for subsequent cycles.",
+    "source": "NCCN Clinical Practice Guidelines in Oncology: Hematopoietic Growth Factors",
+    "severity": "high"
+  },
+  {
+    "id": "ASCO-ANEMIA-2020",
+    "title": "ASCO / ASH Clinical Practice Guideline: Management of Cancer-Related Anemia",
+    "keywords": ["hemoglobin", "anemia", "fatigue", "pallor", "Hgb"],
+    "trigger_condition": "Hemoglobin < 8.0 g/dL or symptomatic anemia < 10.0 g/dL",
+    "recommendation": "Evaluate for reversible causes (iron deficiency, B12/folate, hemolysis). Consider red blood cell transfusion for acute symptomatic anemia (Hgb < 7-8 g/dL). Discuss ESA therapy risks/benefits in non-curative settings.",
+    "source": "Blood Advances 2020; 4(11):2301-2310",
+    "severity": "medium"
+  },
+  {
+    "id": "NCCN-FATIGUE-2023",
+    "title": "NCCN Clinical Practice Guidelines in Oncology: Cancer-Related Fatigue",
+    "keywords": ["increased fatigue", "fatigue", "exhaustion", "weakness", "lethargy"],
+    "trigger_condition": "Reported worsening or increased fatigue during chemotherapy cycle",
+    "recommendation": "Screen for contributing treatable conditions: anemia, infection, thyroid dysfunction, dehydration, and pain. Recommend energy conservation techniques and moderate tailored physical activity.",
+    "source": "Journal of the National Comprehensive Cancer Network 2023",
+    "severity": "low"
+  }
+]
