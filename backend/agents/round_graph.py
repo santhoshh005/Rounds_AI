@@ -18,6 +18,9 @@ Pipeline:
 from __future__ import annotations
 
 import os
+import warnings
+warnings.filterwarnings("ignore")
+
 from typing import TypedDict
 
 from langgraph.graph import END, START, StateGraph

@@ -88,17 +88,20 @@ def save_draft_note(round_id: str, content: str) -> str | None:
     return _safe_persist("save_draft_note", _insert, round_id, content)
 
 
-def approve_note(note_id: str) -> bool:
-    """Mark a draft note as approved."""
+def approve_note(note_id: str, round_id: str | None = None) -> bool:
+    """Mark a draft note as approved, verifying round_id ownership if provided."""
 
-    def _update(nid: str) -> bool:
+    def _update(nid: str, rid: str | None) -> bool:
         sb = get_supabase()
-        sb.table("draft_notes").update(
+        query = sb.table("draft_notes").update(
             {"status": "approved", "approved_at": "now()"}
-        ).eq("id", nid).execute()
-        return True
+        ).eq("id", nid)
+        if rid:
+            query = query.eq("round_id", rid)
+        res = query.execute()
+        return bool(res.data)
 
-    return _safe_persist("approve_note", _update, note_id) or False
+    return _safe_persist("approve_note", _update, note_id, round_id) or False
 
 
 def get_round_history(limit: int = 20) -> list[dict]:

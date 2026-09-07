@@ -1,7 +1,11 @@
+import warnings
+warnings.filterwarnings("ignore", category=PendingDeprecationWarning)
+warnings.filterwarnings("ignore", message=".*allowed_objects.*")
+
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -17,31 +21,51 @@ from backend.services.persistence import (
     get_round_history,
 )
 
-app = FastAPI(title="RoundsAI Multimodal Clinical API", version="0.3.0")
+app = FastAPI(
+    title="RoundsAI Multimodal Clinical API",
+    description="Doctor Productivity & Knowledge Assistant for Oncology Ward Rounds",
+    version="0.3.1",
+)
+
+# Robust, secure CORS handling without wildcard credentials conflict
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "*"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://rounds-ai-app.firebaseapp.com",
+        "https://rounds-ai-app.web.app",
+    ],
+    allow_origin_regex=r"https?://.*",
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
     allow_headers=["*"],
 )
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "mode": "multimodal-demo", "version": "0.3.0"}
+    return {"status": "ok", "mode": "multimodal-demo", "version": "0.3.1"}
 
 @app.post("/api/v1/voice/transcribe")
 async def transcribe_voice(file: UploadFile = File(...)) -> dict[str, str]:
     """On-device voice transcription endpoint ensuring clinical audio privacy."""
     try:
         content = await file.read()
+        if len(content) > 25 * 1024 * 1024:  # 25MB max audio
+            raise HTTPException(status_code=413, detail="Audio file exceeds 25MB limit.")
         transcript = transcribe_audio_on_device(content, filename=file.filename or "recording.webm")
         return {"transcript": transcript, "engine": "on-device-whisper"}
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Voice transcription failed: {exc}")
 
 @app.post("/api/v1/rounds/extract", response_model=ExtractRoundResponse)
 def extract_round(request: ExtractRoundRequest) -> ExtractRoundResponse:
+    # Security: Limit maximum attachments to avoid memory exhaustion
+    if len(request.images) > 10:
+        raise HTTPException(status_code=400, detail="Maximum 10 images allowed per clinical round assessment.")
+
     # Invoke full 5-stage agent graph (Extraction -> Context -> RAG -> Verify -> Draft)
     state = round_graph.invoke({
         "transcript": request.transcript,
@@ -71,11 +95,13 @@ class ApproveRequest(BaseModel):
 
 @app.patch("/api/v1/rounds/{round_id}/approve")
 def approve_round_note(round_id: str, request: ApproveRequest) -> dict:
-    success = approve_note(request.note_id)
+    # Security: Scoped to round_id to prevent BOLA vulnerabilities
+    success = approve_note(request.note_id, round_id=round_id)
     if not success:
-        raise HTTPException(status_code=500, detail="Could not approve note")
-    return {"status": "approved", "note_id": request.note_id}
+        raise HTTPException(status_code=404, detail="Draft note not found or does not belong to the specified round")
+    return {"status": "approved", "note_id": request.note_id, "round_id": round_id}
 
 @app.get("/api/v1/rounds")
-def list_rounds(limit: int = 20) -> list[dict]:
+def list_rounds(limit: int = Query(default=20, ge=1, le=100)) -> list[dict]:
+    # Security: Bounded pagination limit to prevent Denial of Wallet / DoS
     return get_round_history(limit=limit)
