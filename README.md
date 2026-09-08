@@ -226,34 +226,44 @@ npm run dev
 │   └── web/
 │       ├── app/
 │       │   ├── components/
-│       │   │   ├── Icons.tsx           # Hospital-grade Lucide vector SVG icons
-│       │   │   └── Navigation.tsx      # Unified clinical navigation bar
+│       │   │   └── Icons.tsx           # Hospital-grade Lucide vector SVG icons
 │       │   ├── mobile/page.tsx         # Bedside Mobile Capture Companion
 │       │   ├── analytics/page.tsx      # Longitudinal Patient Analytics Dashboard
 │       │   ├── login/page.tsx          # Clinician Authentication
 │       │   ├── page.tsx                # Doctor Assessment Station & Sync Sentinel
+│       │   ├── layout.tsx              # Root Layout & Clinical Navigation Shell
 │       │   └── styles.css              # Hospital EMR typography & theme styling
+│       ├── lib/
+│       │   └── firebase.ts             # Firebase client configuration & auth
 │       ├── package.json
 │       └── tsconfig.json
 ├── backend/
 │   ├── api/
-│   │   └── main.py                     # FastAPI routes & endpoints
+│   │   └── main.py                     # FastAPI REST routes & application entrypoint
 │   ├── agents/
-│   │   └── langgraph_workflow.py       # LangGraph multi-agent clinical workflow
+│   │   └── round_graph.py              # LangGraph multi-agent clinical workflow
 │   ├── models/
-│   │   ├── round.py                    # Round request/response schemas
-│   │   └── patient.py                  # Patient demographic & lab schemas
+│   │   ├── analytics.py                # Longitudinal analytics models
+│   │   ├── patient.py                  # Patient demographic & lab schemas
+│   │   └── round.py                    # Round request/response schemas
 │   ├── services/
 │   │   ├── voice_transcriber.py        # Local faster-whisper base-int8 pipeline
 │   │   ├── clinical_autocorrect.py     # 120+ oncology phonetic regex normalizer
 │   │   ├── patient_analytics.py        # Longitudinal trends & CTCAE calculator
 │   │   ├── persistence.py              # Round cache & database storage
-│   │   └── multimodal_extractor.py     # Gemini Vision & local OCR extractor
+│   │   ├── gemini_extractor.py         # Gemini LLM clinical structured extractor
+│   │   ├── gemini_vision.py            # Multimodal vision lab report extractor
+│   │   ├── local_extractor.py          # Deterministic local regex extractor
+│   │   ├── patient_service.py          # Patient census management
+│   │   └── rag_service.py              # Clinical guideline retrieval & grounding
 │   └── requirements.txt
 ├── docs/
 │   ├── HACKATHON_SUBMISSION.md         # Comprehensive hackathon dossier
 │   ├── demo-script.md                  # 5-minute presentation & demo script
 │   └── architecture.md                 # System architecture overview
+├── knowledge/
+│   ├── Lab_Report_01.png               # Sample bedside CBC lab report scan
+│   └── oncology_guidelines.json        # Curated NCCN/ASCO clinical guidelines
 └── README.md                           # Project documentation
 ```
 
