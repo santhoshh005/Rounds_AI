@@ -504,16 +504,160 @@ def _generate_generic_analytics(p_record) -> PatientAnalyticsResponse:
     )
 
 
+def _enrich_analytics_with_recorded_rounds(
+    base_resp: PatientAnalyticsResponse, patient_id: str
+) -> PatientAnalyticsResponse:
+    """Dynamically incorporate live ward rounds into longitudinal trajectories and safety alerts."""
+    from backend.services.persistence import get_rounds_for_patient
+
+    recorded_rounds = get_rounds_for_patient(patient_id)
+    if not recorded_rounds:
+        return base_resp
+
+    trajectories = list(base_resp.trajectories)
+    toxicities = list(base_resp.toxicities)
+    safety_alerts = list(base_resp.safety_alerts)
+    rounds_history = list(base_resp.rounds_history)
+
+    has_fever = False
+    latest_anc = None
+    latest_date = None
+
+    for r in recorded_rounds:
+        rid = r.get("round_id") or r.get("id", "")
+        c_date = (r.get("created_at") or "2026-09-08")[:10]
+        transcript = r.get("transcript", "")
+        extractions = r.get("extractions", [])
+        ext = extractions[0] if extractions else {}
+        extracted_labs = ext.get("labs", [])
+        extracted_symptoms = [str(s).lower() for s in ext.get("symptoms", [])]
+
+        if "fever" in transcript.lower() or any("fever" in s for s in extracted_symptoms) or "38." in transcript:
+            has_fever = True
+
+        if not any(h.round_id == rid for h in rounds_history):
+            note_content = ""
+            if r.get("draft_notes"):
+                note_content = r["draft_notes"][0].get("content", "")
+            snippet = note_content[:130] if note_content else transcript[:130]
+
+            rounds_history.insert(
+                0,
+                HistoricalRound(
+                    round_id=rid,
+                    date=c_date,
+                    cycle=base_resp.patient.cycle,
+                    clinician="Dr. Attending (Bedside Ward Round)",
+                    summary=f"Ward Round Assessment — Cycle {base_resp.patient.cycle}",
+                    note_snippet=snippet,
+                    status="verified",
+                ),
+            )
+
+        # Update lab trajectories with freshly extracted labs
+        for lab in extracted_labs:
+            lname = str(lab.get("name", "")).upper()
+            lval = float(lab.get("value", 0))
+            if lval <= 0:
+                continue
+
+            for traj in trajectories:
+                tname = traj.lab_name.upper()
+                if ("ANC" in lname or "NEUTROPHIL" in lname) and ("ANC" in tname or "NEUTROPHIL" in tname):
+                    latest_anc = lval
+                    latest_date = c_date
+                    grade, status = _grade_anc(lval)
+                    traj.data_points.append(
+                        LabDataPoint(
+                            label=f"Round {len(traj.data_points)}",
+                            date=c_date,
+                            value=lval,
+                            unit=traj.unit,
+                            ctcae_grade=grade,
+                            status=status,
+                        )
+                    )
+                    traj.current_value = lval
+                    if traj.baseline_value:
+                        traj.percent_change = round(((lval - traj.baseline_value) / traj.baseline_value) * 100, 1)
+                        traj.trend = "down" if traj.percent_change < -10 else ("up" if traj.percent_change > 10 else "stable")
+
+                elif ("PLATELET" in lname or "PLT" in lname) and ("PLATELET" in tname or "PLT" in tname):
+                    grade, status = _grade_platelets(lval)
+                    traj.data_points.append(
+                        LabDataPoint(
+                            label=f"Round {len(traj.data_points)}",
+                            date=c_date,
+                            value=lval,
+                            unit=traj.unit,
+                            ctcae_grade=grade,
+                            status=status,
+                        )
+                    )
+                    traj.current_value = lval
+                    if traj.baseline_value:
+                        traj.percent_change = round(((lval - traj.baseline_value) / traj.baseline_value) * 100, 1)
+                        traj.trend = "down" if traj.percent_change < -10 else ("up" if traj.percent_change > 10 else "stable")
+
+                elif "WBC" in lname and "WBC" in tname:
+                    traj.data_points.append(
+                        LabDataPoint(
+                            label=f"Round {len(traj.data_points)}",
+                            date=c_date,
+                            value=lval,
+                            unit=traj.unit,
+                            ctcae_grade=1 if lval < 3000 else 0,
+                            status="warning" if lval < 3000 else "normal",
+                        )
+                    )
+                    traj.current_value = lval
+                    if traj.baseline_value:
+                        traj.percent_change = round(((lval - traj.baseline_value) / traj.baseline_value) * 100, 1)
+                        traj.trend = "down" if traj.percent_change < -10 else "stable"
+
+    # If Febrile Neutropenia is detected
+    if has_fever and latest_anc is not None and latest_anc < 1000:
+        fn_alert_id = "fn-active-critical"
+        if not any(a.id == fn_alert_id for a in safety_alerts):
+            safety_alerts.insert(
+                0,
+                SafetyAlertSummary(
+                    id=fn_alert_id,
+                    severity="critical",
+                    title="FEBRILE NEUTROPENIA MEDICAL ONCOLOGY EMERGENCY",
+                    message=f"Current ANC {int(latest_anc)} cells/µL with documented fever spike. High mortality risk without immediate broad-spectrum coverage.",
+                    rationale="ASCO / IDSA Guidelines: Empiric IV antipseudomonal beta-lactam (Cefepime 2g IV q8h) required within 60 minutes.",
+                    action_required="Draw 2 sets of peripheral & central blood cultures STAT. Initiate empirical Cefepime 2g IV. Order STAT chest radiograph and urine analysis.",
+                    timestamp=latest_date or "2026-09-08",
+                    status="active",
+                ),
+            )
+
+    return PatientAnalyticsResponse(
+        patient=base_resp.patient,
+        ecog_performance_status=base_resp.ecog_performance_status,
+        days_inpatient=base_resp.days_inpatient,
+        trajectories=trajectories,
+        toxicities=toxicities,
+        safety_alerts=safety_alerts,
+        guidelines=base_resp.guidelines,
+        rounds_history=rounds_history,
+        clinical_synthesis=base_resp.clinical_synthesis,
+    )
+
+
 def get_patient_analytics(patient_id: str) -> Optional[PatientAnalyticsResponse]:
-    """Retrieve full analytics profile for the specified patient."""
+    """Retrieve full analytics profile for the specified patient, enriched with live ward rounds."""
     p_record = get_patient(patient_id)
     if not p_record:
         return None
 
     pid = str(p_record.id).strip().lower()
     if pid in ("104", "pt-104", "p104"):
-        return _generate_demo_104_analytics(p_record)
+        base_resp = _generate_demo_104_analytics(p_record)
     elif pid in ("105", "pt-105", "p105"):
-        return _generate_demo_105_analytics(p_record)
+        base_resp = _generate_demo_105_analytics(p_record)
     else:
-        return _generate_generic_analytics(p_record)
+        base_resp = _generate_generic_analytics(p_record)
+
+    return _enrich_analytics_with_recorded_rounds(base_resp, p_record.id)

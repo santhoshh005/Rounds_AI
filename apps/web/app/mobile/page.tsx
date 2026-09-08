@@ -1,7 +1,20 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-
+import {
+  BarChartIcon,
+  ActivityIcon,
+  MicrophoneIcon,
+  SparklesIcon,
+  CameraIcon,
+  RefreshIcon,
+  UserPlusIcon,
+  XIcon,
+  SquareIcon,
+  UndoIcon,
+  CheckIcon,
+  AlertCircleIcon,
+} from "../components/Icons";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -33,6 +46,10 @@ export default function MobileCapturePage() {
   const [syncing, setSyncing] = useState(false);
   const [syncSuccess, setSyncSuccess] = useState(false);
   const [syncMessage, setSyncMessage] = useState("");
+  const [syncedRound, setSyncedRound] = useState<any | null>(null);
+  const [isAutocorrecting, setIsAutocorrecting] = useState(false);
+  const [autocorrectNotice, setAutocorrectNotice] = useState("");
+  const [previousTranscript, setPreviousTranscript] = useState("");
 
   // Bedside Admission Modal State
   const [showAdmitModal, setShowAdmitModal] = useState(false);
@@ -129,6 +146,47 @@ export default function MobileCapturePage() {
   }
 
 
+  // Clinical Oncology Auto-Correction & Terminology Normalization
+  async function handleAutocorrect(explicitText?: string) {
+    const targetText = explicitText !== undefined ? explicitText : transcript;
+    if (!targetText || !targetText.trim()) return;
+
+    setIsAutocorrecting(true);
+    try {
+      const res = await fetch(`${API}/api/v1/voice/autocorrect`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: targetText, use_gemini: true }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.corrected_text && data.corrected_text !== targetText) {
+          setPreviousTranscript(targetText);
+          setTranscript(data.corrected_text);
+          const count = data.changes?.length || 1;
+          setAutocorrectNotice(`Normalized ${count} oncology term${count > 1 ? "s" : ""}`);
+        } else {
+          setAutocorrectNotice("Terminology verified");
+        }
+      }
+    } catch (err) {
+      console.warn("Autocorrect call failed:", err);
+    } finally {
+      setIsAutocorrecting(false);
+      setTimeout(() => setAutocorrectNotice(""), 5000);
+    }
+  }
+
+  function handleUndoAutocorrect() {
+    if (previousTranscript) {
+      setTranscript(previousTranscript);
+      setPreviousTranscript("");
+      setAutocorrectNotice("Reverted to original dictated text");
+      setTimeout(() => setAutocorrectNotice(""), 3000);
+    }
+  }
+
   // Live Speech Dictation on Phone
   function toggleSpeech() {
     if (isRecording) {
@@ -159,7 +217,17 @@ export default function MobileCapturePage() {
       setTranscript(text);
     };
     recognition.onerror = () => setIsRecording(false);
-    recognition.onend = () => setIsRecording(false);
+    recognition.onend = () => {
+      setIsRecording(false);
+      setTimeout(() => {
+        setTranscript((curr) => {
+          if (curr && curr.trim()) {
+            handleAutocorrect(curr);
+          }
+          return curr;
+        });
+      }, 300);
+    };
 
     recognitionRef.current = recognition;
     recognition.start();
@@ -189,6 +257,7 @@ export default function MobileCapturePage() {
     try {
       const payload = {
         transcript,
+        patient_id: patientId,
         images: imageData
           ? [
               {
@@ -210,7 +279,8 @@ export default function MobileCapturePage() {
       const data = await res.json();
 
       setSyncSuccess(true);
-      setSyncMessage(`✓ Synced to Doctor Station! Round ID: ${data.round_id?.slice(0, 8) ?? "Live"}`);
+      setSyncedRound(data);
+      setSyncMessage(`Transmitted to Doctor Station! Round ID: ${data.round_id?.slice(0, 8) ?? "Live"}`);
     } catch (err) {
       setSyncMessage("Sync error. Please check connection to backend.");
     } finally {
@@ -231,15 +301,17 @@ export default function MobileCapturePage() {
         <div style={{ display: "flex", gap: "6px" }}>
           <a
             href={`/analytics?patientId=${patientId}`}
-            style={{ fontSize: "12px", color: "#7e22ce", textDecoration: "none", fontWeight: "700", padding: "6px 8px", background: "#f3e8ff", border: "1px solid #d8b4fe", borderRadius: "6px" }}
+            style={{ fontSize: "12px", color: "#7e22ce", textDecoration: "none", fontWeight: "700", padding: "6px 10px", background: "#f3e8ff", border: "1px solid #d8b4fe", borderRadius: "6px", display: "inline-flex", alignItems: "center", gap: "4px" }}
           >
-            📊 Analytics
+            <BarChartIcon size={13} color="#7e22ce" />
+            <span>Analytics</span>
           </a>
           <a
             href="/"
-            style={{ fontSize: "12px", color: "#0284c7", textDecoration: "none", fontWeight: "600", padding: "6px 10px", background: "#e0f2fe", borderRadius: "6px" }}
+            style={{ fontSize: "12px", color: "#0284c7", textDecoration: "none", fontWeight: "600", padding: "6px 10px", background: "#e0f2fe", borderRadius: "6px", display: "inline-flex", alignItems: "center", gap: "4px" }}
           >
-            💻 Laptop
+            <ActivityIcon size={13} color="#0284c7" />
+            <span>Desktop</span>
           </a>
         </div>
       </div>
@@ -271,7 +343,7 @@ export default function MobileCapturePage() {
               type="button"
               onClick={() => setShowAdmitModal(true)}
               style={{
-                padding: "6px 8px",
+                padding: "6px 10px",
                 background: "#0284c7",
                 color: "#fff",
                 border: "none",
@@ -280,9 +352,13 @@ export default function MobileCapturePage() {
                 fontWeight: "700",
                 cursor: "pointer",
                 whiteSpace: "nowrap",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "4px",
               }}
             >
-              + Admit
+              <UserPlusIcon size={13} color="#ffffff" />
+              <span>Admit</span>
             </button>
           </div>
         </div>
@@ -292,7 +368,10 @@ export default function MobileCapturePage() {
       {/* Voice Dictation Card */}
       <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: "12px", padding: "16px", marginBottom: "14px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
-          <span style={{ fontSize: "12px", fontWeight: "700", color: "#334155" }}>🎙️ CLINICIAN BEDSIDE DICTATION</span>
+          <span style={{ fontSize: "12px", fontWeight: "700", color: "#334155", display: "inline-flex", alignItems: "center", gap: "6px" }}>
+            <MicrophoneIcon size={14} color="#0284c7" />
+            <span>CLINICIAN BEDSIDE DICTATION</span>
+          </span>
           {isRecording && (
             <span style={{ fontSize: "11px", color: "#dc2626", fontWeight: "700", display: "flex", alignItems: "center", gap: "4px" }}>
               <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#dc2626", display: "inline-block" }} />
@@ -308,31 +387,117 @@ export default function MobileCapturePage() {
           style={{ width: "100%", minHeight: "110px", padding: "10px", borderRadius: "8px", border: "1px solid #cbd5e1", fontSize: "14px", lineHeight: "1.4", resize: "none" }}
         />
 
-        <div style={{ marginTop: "12px" }}>
-          <button
-            type="button"
-            onClick={toggleSpeech}
-            style={{
-              width: "100%",
-              padding: "12px",
-              borderRadius: "8px",
-              background: isRecording ? "#dc2626" : "#0284c7",
-              color: "#fff",
-              fontWeight: "700",
-              fontSize: "14px",
-              border: "none",
-              cursor: "pointer",
-            }}
-          >
-            {isRecording ? "■ STOP DICTATION" : "🎙️ START VOICE DICTATION"}
-          </button>
+        <div style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "8px" }}>
+          <div style={{ display: "flex", gap: "8px" }}>
+            <button
+              type="button"
+              onClick={toggleSpeech}
+              style={{
+                flex: 1,
+                padding: "12px",
+                borderRadius: "8px",
+                background: isRecording ? "#dc2626" : "#0284c7",
+                color: "#fff",
+                fontWeight: "700",
+                fontSize: "13px",
+                border: "none",
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "6px",
+              }}
+            >
+              {isRecording ? (
+                <>
+                  <SquareIcon size={14} color="#ffffff" />
+                  <span>STOP DICTATION</span>
+                </>
+              ) : (
+                <>
+                  <MicrophoneIcon size={15} color="#ffffff" />
+                  <span>START VOICE DICTATION</span>
+                </>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleAutocorrect()}
+              disabled={isAutocorrecting || !transcript.trim()}
+              style={{
+                padding: "12px 14px",
+                borderRadius: "8px",
+                background: "#f0fdf4",
+                border: "1px solid #86efac",
+                color: "#166534",
+                fontWeight: "700",
+                fontSize: "13px",
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+                opacity: isAutocorrecting || !transcript.trim() ? 0.6 : 1,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+              }}
+              title="Fix medical abbreviations, blood counts, and oncology drug names"
+            >
+              <SparklesIcon size={14} color="#166534" />
+              <span>{isAutocorrecting ? "Normalizing..." : "Auto-Correct"}</span>
+            </button>
+          </div>
+
+          {autocorrectNotice && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "8px 10px",
+                background: "#f0fdf4",
+                border: "1px solid #86efac",
+                borderRadius: "6px",
+                fontSize: "12px",
+                color: "#166534",
+              }}
+            >
+              <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                <CheckIcon size={13} color="#16a34a" />
+                <span>{autocorrectNotice}</span>
+              </span>
+              {previousTranscript && (
+                <button
+                  type="button"
+                  onClick={handleUndoAutocorrect}
+                  style={{
+                    background: "#ffffff",
+                    border: "1px solid #86efac",
+                    padding: "2px 8px",
+                    borderRadius: "4px",
+                    fontSize: "11px",
+                    fontWeight: "600",
+                    color: "#15803d",
+                    cursor: "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "4px",
+                  }}
+                >
+                  <UndoIcon size={12} color="#15803d" />
+                  <span>Undo</span>
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
       {/* Camera Document Capture Card */}
       <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: "12px", padding: "16px", marginBottom: "14px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
-          <span style={{ fontSize: "12px", fontWeight: "700", color: "#334155" }}>📷 SCAN BEDSIDE LAB REPORT</span>
+          <span style={{ fontSize: "12px", fontWeight: "700", color: "#334155", display: "inline-flex", alignItems: "center", gap: "6px" }}>
+            <CameraIcon size={14} color="#0284c7" />
+            <span>SCAN BEDSIDE LAB REPORT</span>
+          </span>
           {imagePreview && (
             <button
               onClick={() => { setImagePreview(null); setImageData(null); }}
@@ -363,7 +528,9 @@ export default function MobileCapturePage() {
               marginBottom: "10px",
             }}
           >
-            <div style={{ fontSize: "28px", marginBottom: "4px" }}>📷</div>
+            <div style={{ display: "flex", justifyContent: "center", marginBottom: "6px" }}>
+              <CameraIcon size={28} color="#64748b" />
+            </div>
             <div style={{ fontSize: "13px", fontWeight: "600", color: "#334155" }}>Tap to Photograph / Scan Lab Sheet</div>
             <div style={{ fontSize: "11px", color: "#64748b" }}>Supports camera capture & photo library</div>
           </div>
@@ -391,9 +558,14 @@ export default function MobileCapturePage() {
             fontSize: "13px",
             border: "1px solid #cbd5e1",
             cursor: "pointer",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "6px",
           }}
         >
-          {imagePreview ? "📷 Retake Document Photo" : "📷 Open Bedside Camera"}
+          <CameraIcon size={14} color="#334155" />
+          <span>{imagePreview ? "Retake Document Photo" : "Open Bedside Camera"}</span>
         </button>
       </div>
 
@@ -413,26 +585,90 @@ export default function MobileCapturePage() {
             fontSize: "15px",
             border: "none",
             cursor: "pointer",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "8px",
           }}
         >
-          {syncing ? "TRANSMITTING TO LAPTOP..." : "📡 SYNC ROUND TO DOCTOR DASHBOARD"}
+          <RefreshIcon size={16} color="#ffffff" />
+          <span>{syncing ? "TRANSMITTING TO LAPTOP..." : "SYNC ROUND TO DOCTOR DASHBOARD"}</span>
         </button>
 
         {syncMessage && (
           <div
             style={{
-              marginTop: "10px",
-              padding: "10px",
-              borderRadius: "6px",
-              fontSize: "12px",
-              fontWeight: "600",
-              textAlign: "center",
+              marginTop: "12px",
+              padding: "12px",
+              borderRadius: "8px",
               background: syncSuccess ? "#f0fdf4" : "#fef2f2",
-              color: syncSuccess ? "#16a34a" : "#dc2626",
               border: `1px solid ${syncSuccess ? "#bbf7d0" : "#fca5a5"}`,
+              color: syncSuccess ? "#166534" : "#dc2626",
             }}
           >
-            {syncMessage}
+            <div style={{ display: "flex", alignItems: "center", gap: "6px", fontWeight: "700", fontSize: "13px", marginBottom: "4px" }}>
+              {syncSuccess ? <CheckIcon size={16} color="#16a34a" /> : <AlertCircleIcon size={16} color="#dc2626" />}
+              <span>{syncMessage}</span>
+            </div>
+
+            {syncSuccess && syncedRound && (
+              <div style={{ marginTop: "8px", paddingTop: "8px", borderTop: "1px solid #dcfce7" }}>
+                <div style={{ fontSize: "11px", color: "#475569", marginBottom: "8px", lineHeight: "1.4" }}>
+                  <strong>Patient MRN:</strong> #{patientId}
+                  {syncedRound.extraction?.symptoms?.length > 0 && (
+                    <div><strong>Documented Symptoms:</strong> {syncedRound.extraction.symptoms.join(", ")}</div>
+                  )}
+                  {syncedRound.extraction?.labs?.length > 0 && (
+                    <div><strong>Extracted Labs:</strong> {syncedRound.extraction.labs.map((l: any) => `${l.name}: ${l.value} ${l.unit || ""}`).join(" · ")}</div>
+                  )}
+                </div>
+
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <a
+                    href={`/?patientId=${patientId}&roundId=${syncedRound.round_id}`}
+                    style={{
+                      flex: 1,
+                      padding: "8px 10px",
+                      background: "#0284c7",
+                      color: "#ffffff",
+                      borderRadius: "6px",
+                      textDecoration: "none",
+                      fontSize: "12px",
+                      fontWeight: "700",
+                      textAlign: "center",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "4px",
+                    }}
+                  >
+                    <ActivityIcon size={13} color="#ffffff" />
+                    <span>Open in Workstation</span>
+                  </a>
+                  <a
+                    href={`/analytics?patientId=${patientId}`}
+                    style={{
+                      flex: 1,
+                      padding: "8px 10px",
+                      background: "#7e22ce",
+                      color: "#ffffff",
+                      borderRadius: "6px",
+                      textDecoration: "none",
+                      fontSize: "12px",
+                      fontWeight: "700",
+                      textAlign: "center",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "4px",
+                    }}
+                  >
+                    <BarChartIcon size={13} color="#ffffff" />
+                    <span>View Analytics</span>
+                  </a>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -467,15 +703,16 @@ export default function MobileCapturePage() {
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
-              <h2 style={{ fontSize: "17px", fontWeight: "700", margin: 0, color: "#0f172a" }}>
-                ➕ Bedside Patient Admission
+              <h2 style={{ fontSize: "17px", fontWeight: "700", margin: 0, color: "#0f172a", display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                <UserPlusIcon size={18} color="#0284c7" />
+                <span>Bedside Patient Admission</span>
               </h2>
               <button
                 type="button"
                 onClick={() => setShowAdmitModal(false)}
-                style={{ background: "none", border: "none", fontSize: "20px", cursor: "pointer", color: "#64748b" }}
+                style={{ background: "none", border: "none", padding: "4px", cursor: "pointer", color: "#64748b", display: "flex", alignItems: "center" }}
               >
-                ✕
+                <XIcon size={18} color="#64748b" />
               </button>
             </div>
 
@@ -622,7 +859,17 @@ export default function MobileCapturePage() {
                 <button
                   type="button"
                   onClick={() => setShowAdmitModal(false)}
-                  style={{ flex: 1, padding: "10px", borderRadius: "6px", background: "#f1f5f9", border: "1px solid #cbd5e1", fontWeight: "600", fontSize: "13px", cursor: "pointer" }}
+                  style={{
+                    flex: 1,
+                    padding: "10px",
+                    borderRadius: "6px",
+                    background: "#f8fafc",
+                    border: "1px solid #cbd5e1",
+                    color: "#334155",
+                    fontWeight: "600",
+                    fontSize: "13px",
+                    cursor: "pointer",
+                  }}
                 >
                   Cancel
                 </button>

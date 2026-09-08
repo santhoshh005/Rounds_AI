@@ -21,6 +21,8 @@ from backend.services.persistence import (
     save_draft_note,
     approve_note,
     get_round_history,
+    get_round_by_id,
+    _LOCAL_ROUNDS_STORE,
 )
 from backend.services.patient_service import (
     list_patients as get_patients_list,
@@ -30,6 +32,7 @@ from backend.services.patient_service import (
     discharge_patient as discharge_patient_from_ward,
 )
 from backend.services.patient_analytics import get_patient_analytics
+from backend.services.clinical_autocorrect import correct_clinical_transcript
 
 app = FastAPI(
     title="RoundsAI Multimodal Clinical API",
@@ -57,19 +60,37 @@ app.add_middleware(
 def health() -> dict[str, str]:
     return {"status": "ok", "mode": "multimodal-demo", "version": "0.3.1"}
 
+class AutoCorrectRequest(BaseModel):
+    text: str
+    use_gemini: bool = True
+
+class AutoCorrectResponse(BaseModel):
+    original_text: str
+    corrected_text: str
+    changes: list[dict]
+    engine: str
+
+@app.post("/api/v1/voice/autocorrect", response_model=AutoCorrectResponse)
+def autocorrect_clinical_text(request: AutoCorrectRequest) -> AutoCorrectResponse:
+    """Intelligently correct oncology phonetic speech errors and normalize terminology."""
+    result = correct_clinical_transcript(request.text, use_gemini=request.use_gemini)
+    return AutoCorrectResponse(**result)
+
+
 @app.post("/api/v1/voice/transcribe")
 async def transcribe_voice(file: UploadFile = File(...)) -> dict[str, str]:
-    """On-device voice transcription endpoint ensuring clinical audio privacy."""
+    """Multi-tier accurate voice transcription for oncology rounds (Gemini Audio + Whisper)."""
     try:
         content = await file.read()
         if len(content) > 25 * 1024 * 1024:  # 25MB max audio
             raise HTTPException(status_code=413, detail="Audio file exceeds 25MB limit.")
         transcript = transcribe_audio_on_device(content, filename=file.filename or "recording.webm")
-        return {"transcript": transcript, "engine": "on-device-whisper"}
+        return {"transcript": transcript, "engine": "gemini-audio-whisper-pipeline"}
     except HTTPException:
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Voice transcription failed: {exc}")
+
 
 @app.post("/api/v1/rounds/extract", response_model=ExtractRoundResponse)
 def extract_round(request: ExtractRoundRequest) -> ExtractRoundResponse:
@@ -81,7 +102,12 @@ def extract_round(request: ExtractRoundRequest) -> ExtractRoundResponse:
     state = round_graph.invoke({
         "transcript": request.transcript,
         "images": request.images,
+        "patient_id": request.patient_id,
     })
+
+    # Ensure patient_id is attached if provided in request
+    if request.patient_id and not state["extraction"].patient_id:
+        state["extraction"].patient_id = request.patient_id
 
     # Persist to Supabase (non-fatal if DB is unavailable)
     round_id = save_round(request.transcript or f"Multimodal round with {len(request.images)} image(s)")
@@ -89,6 +115,14 @@ def extract_round(request: ExtractRoundRequest) -> ExtractRoundResponse:
         save_extraction(round_id, state["extraction"])
         save_review_flags(round_id, state.get("review_flags", []))
         save_draft_note(round_id, state.get("draft_note", ""))
+        # Cache full rich data for instant desktop station loading
+        if round_id in _LOCAL_ROUNDS_STORE:
+            _LOCAL_ROUNDS_STORE[round_id]["lab_trends"] = [lt.model_dump() for lt in state.get("lab_trends", [])]
+            _LOCAL_ROUNDS_STORE[round_id]["review_flags"] = [rf.model_dump() for rf in state.get("review_flags", [])]
+            _LOCAL_ROUNDS_STORE[round_id]["retrieved_evidence"] = [ev.model_dump() for ev in state.get("retrieved_evidence", [])]
+            _LOCAL_ROUNDS_STORE[round_id]["provenance"] = state.get("provenance", {})
+            _LOCAL_ROUNDS_STORE[round_id]["patient_id"] = state["extraction"].patient_id or request.patient_id
+            _LOCAL_ROUNDS_STORE[round_id]["draft_note"] = state.get("draft_note", "")
 
     return ExtractRoundResponse(
         extraction=state["extraction"],
@@ -111,6 +145,34 @@ def approve_round_note(round_id: str, request: ApproveRequest) -> dict:
     if not success:
         raise HTTPException(status_code=404, detail="Draft note not found or does not belong to the specified round")
     return {"status": "approved", "note_id": request.note_id, "round_id": round_id}
+
+@app.get("/api/v1/rounds/latest")
+def get_latest_round(patient_id: str | None = None) -> dict:
+    """Retrieve the most recent round, optionally filtered by patient_id."""
+    rounds = get_round_history(limit=50)
+    if not rounds:
+        raise HTTPException(status_code=404, detail="No rounds recorded yet.")
+    
+    if patient_id:
+        pid = str(patient_id).strip()
+        for r in rounds:
+            # Check extractions
+            for ext in r.get("extractions", []):
+                if str(ext.get("patient_id", "")).strip() == pid:
+                    return r
+            if str(r.get("patient_id", "")).strip() == pid:
+                return r
+        raise HTTPException(status_code=404, detail=f"No rounds found for patient {patient_id}.")
+    
+    return rounds[0]
+
+@app.get("/api/v1/rounds/{round_id}")
+def get_single_round(round_id: str) -> dict:
+    """Retrieve round by ID."""
+    r = get_round_by_id(round_id)
+    if not r:
+        raise HTTPException(status_code=404, detail=f"Round {round_id} not found.")
+    return r
 
 @app.get("/api/v1/rounds")
 def list_rounds(limit: int = Query(default=20, ge=1, le=100)) -> list[dict]:

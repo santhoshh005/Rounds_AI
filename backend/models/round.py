@@ -78,6 +78,7 @@ class ReviewFlag(BaseModel):
 class ExtractRoundRequest(BaseModel):
     transcript: str = Field(default="", max_length=10_000)
     images: list[ImageAttachment] = Field(default_factory=list)
+    patient_id: str | None = None
 
 class ExtractRoundResponse(BaseModel):
     extraction: ClinicalExtraction

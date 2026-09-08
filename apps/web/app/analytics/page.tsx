@@ -1,6 +1,23 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import {
+  StethoscopeIcon,
+  ActivityIcon,
+  BarChartIcon,
+  UsersIcon,
+  SmartphoneIcon,
+  BedIcon,
+  AlertCircleIcon,
+  ShieldIcon,
+  FileTextIcon,
+  TrendingDownIcon,
+  TrendingUpIcon,
+  MinusIcon,
+  RefreshIcon,
+  CheckIcon,
+  SparklesIcon,
+} from "../components/Icons";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -191,23 +208,25 @@ export default function PatientAnalyticsPage() {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
-          <span style={{ fontSize: "24px" }}>🩺</span>
+          <div style={{ width: "36px", height: "36px", borderRadius: "8px", background: "#f0f9ff", border: "1px solid #bae6fd", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <StethoscopeIcon size={20} color="#0284c7" />
+          </div>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
               <span style={{ fontSize: "11px", fontWeight: "800", color: "#0284c7", letterSpacing: "0.08em", textTransform: "uppercase" }}>
                 RoundsAI Clinical Intelligence
               </span>
-              <span style={{ background: "#e0f2fe", color: "#0369a1", fontSize: "11px", padding: "2px 8px", borderRadius: "10px", fontWeight: "700" }}>
-                ONCOLOGY COCKPIT
+              <span style={{ background: "#f1f5f9", color: "#334155", fontSize: "10px", padding: "2px 7px", borderRadius: "4px", fontWeight: "600", border: "1px solid #cbd5e1" }}>
+                LONGITUDINAL COCKPIT
               </span>
             </div>
-            <h1 style={{ fontSize: "20px", margin: "2px 0 0", color: "#0f172a", fontWeight: "800" }}>
+            <h1 style={{ fontSize: "20px", margin: "2px 0 0", color: "#0f172a", fontWeight: "700" }}>
               Patient Longitudinal Analytics & Trajectory
             </h1>
           </div>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
           <a
             href="/"
             style={{
@@ -215,7 +234,7 @@ export default function PatientAnalyticsPage() {
               background: "#ffffff",
               color: "#334155",
               border: "1px solid #cbd5e1",
-              borderRadius: "8px",
+              borderRadius: "6px",
               textDecoration: "none",
               fontSize: "13px",
               fontWeight: "600",
@@ -224,33 +243,16 @@ export default function PatientAnalyticsPage() {
               gap: "6px",
             }}
           >
-            📋 Review Station
+            <ActivityIcon size={14} />
+            <span>Review Station</span>
           </a>
           <a
             href={`/analytics?patientId=${selectedPatientId}`}
             style={{
               padding: "7px 13px",
-              background: "#7e22ce",
+              background: "#0f172a",
               color: "#ffffff",
-              borderRadius: "8px",
-              textDecoration: "none",
-              fontSize: "13px",
-              fontWeight: "700",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "6px",
-            }}
-          >
-            📊 Patient Analytics
-          </a>
-          <a
-            href="/"
-            style={{
-              padding: "7px 13px",
-              background: "#ffffff",
-              color: "#334155",
-              border: "1px solid #cbd5e1",
-              borderRadius: "8px",
+              borderRadius: "6px",
               textDecoration: "none",
               fontSize: "13px",
               fontWeight: "600",
@@ -259,7 +261,27 @@ export default function PatientAnalyticsPage() {
               gap: "6px",
             }}
           >
-            👥 Ward Roster ({patients.length})
+            <BarChartIcon size={14} />
+            <span>Patient Analytics</span>
+          </a>
+          <a
+            href="/"
+            style={{
+              padding: "7px 13px",
+              background: "#ffffff",
+              color: "#334155",
+              border: "1px solid #cbd5e1",
+              borderRadius: "6px",
+              textDecoration: "none",
+              fontSize: "13px",
+              fontWeight: "600",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "6px",
+            }}
+          >
+            <UsersIcon size={14} />
+            <span>Ward Roster ({patients.length})</span>
           </a>
           <a
             href="/mobile"
@@ -268,7 +290,7 @@ export default function PatientAnalyticsPage() {
               background: "#ffffff",
               color: "#334155",
               border: "1px solid #cbd5e1",
-              borderRadius: "8px",
+              borderRadius: "6px",
               textDecoration: "none",
               fontSize: "13px",
               fontWeight: "600",
@@ -277,17 +299,39 @@ export default function PatientAnalyticsPage() {
               gap: "6px",
             }}
           >
-            📱 Bedside Mobile
+            <SmartphoneIcon size={14} />
+            <span>Bedside Mobile</span>
           </a>
+          <button
+            type="button"
+            onClick={() => handlePatientSwitch(selectedPatientId)}
+            style={{
+              padding: "7px 13px",
+              background: "#f0fdf4",
+              color: "#166534",
+              border: "1px solid #bbf7d0",
+              borderRadius: "6px",
+              fontSize: "13px",
+              fontWeight: "600",
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "6px",
+            }}
+            title="Refresh analytics and incorporate newly recorded rounds"
+          >
+            <RefreshIcon size={14} />
+            <span>Sync Rounds</span>
+          </button>
           <button
             type="button"
             onClick={() => window.print()}
             style={{
               padding: "7px 13px",
-              background: "#f1f5f9",
+              background: "#f8fafc",
               color: "#475569",
               border: "1px solid #cbd5e1",
-              borderRadius: "8px",
+              borderRadius: "6px",
               fontSize: "13px",
               fontWeight: "600",
               cursor: "pointer",
@@ -296,7 +340,8 @@ export default function PatientAnalyticsPage() {
               gap: "6px",
             }}
           >
-            🖨️ Export / Print
+            <FileTextIcon size={14} />
+            <span>Print Report</span>
           </button>
         </div>
       </header>
@@ -376,7 +421,9 @@ export default function PatientAnalyticsPage() {
         {/* Loading / Error States */}
         {loading && (
           <div style={{ padding: "60px 20px", textAlign: "center", background: "#ffffff", borderRadius: "14px", border: "1px solid #e2e8f0" }}>
-            <div style={{ fontSize: "32px", marginBottom: "12px" }}>⏳</div>
+            <div style={{ display: "flex", justifyContent: "center", marginBottom: "14px" }}>
+              <ActivityIcon size={36} color="#0284c7" />
+            </div>
             <h3 style={{ margin: "0 0 6px", color: "#1e293b" }}>Synthesizing Longitudinal Analytics...</h3>
             <p style={{ margin: 0, color: "#64748b", fontSize: "14px" }}>
               Computing cycle-over-cycle lab trends, CTCAE v5.0 toxicities, and guideline concordance.
@@ -598,8 +645,9 @@ export default function PatientAnalyticsPage() {
             >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px", flexWrap: "wrap", gap: "10px" }}>
                 <div>
-                  <h3 style={{ fontSize: "18px", margin: "0 0 4px", color: "#0f172a", fontWeight: "800" }}>
-                    📈 Longitudinal Hematologic Trajectory & CTCAE Severity Zones
+                  <h3 style={{ fontSize: "17px", margin: "0 0 4px", color: "#0f172a", fontWeight: "700", display: "flex", alignItems: "center", gap: "8px" }}>
+                    <BarChartIcon size={18} color="#0284c7" />
+                    <span>Longitudinal Hematologic Trajectory & CTCAE Severity Zones</span>
                   </h3>
                   <p style={{ margin: 0, fontSize: "13px", color: "#64748b" }}>
                     Cycle-over-cycle Absolute Neutrophil Count (ANC) trajectory plotted against CTCAE v5.0 bone marrow suppression thresholds.
@@ -662,7 +710,7 @@ export default function PatientAnalyticsPage() {
                     {/* Dose Modification Threshold Line at 1,000 */}
                     <line x1="70" y1="150" x2="770" y2="150" stroke="#ea580c" strokeWidth="1.5" strokeDasharray="4 3" />
                     <text x="75" y="146" fontSize="10" fill="#ea580c" fontWeight="800">
-                      ⚠ CHEMOTHERAPY WITHHOLD / DOSE-REDUCTION THRESHOLD (1,000 /µL)
+                      CHEMOTHERAPY WITHHOLD / DOSE-REDUCTION THRESHOLD (1,000 /µL)
                     </text>
 
                     {/* Horizontal Gridlines & Y-Axis Labels */}
@@ -806,8 +854,9 @@ export default function PatientAnalyticsPage() {
             >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "10px" }}>
                 <div>
-                  <h3 style={{ fontSize: "18px", margin: "0 0 4px", color: "#0f172a", fontWeight: "800" }}>
-                    🧪 CTCAE v5.0 Adverse Event Toxicity Matrix
+                  <h3 style={{ fontSize: "17px", margin: "0 0 4px", color: "#0f172a", fontWeight: "700", display: "flex", alignItems: "center", gap: "8px" }}>
+                    <ActivityIcon size={18} color="#0284c7" />
+                    <span>CTCAE v5.0 Adverse Event Toxicity Matrix</span>
                   </h3>
                   <p style={{ margin: 0, fontSize: "13px", color: "#64748b" }}>
                     Standardized Common Terminology Criteria for Adverse Events grading with oncology management protocols.
@@ -908,8 +957,9 @@ export default function PatientAnalyticsPage() {
                 }}
               >
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-                  <h3 style={{ fontSize: "18px", margin: 0, color: "#0f172a", fontWeight: "800" }}>
-                    🚨 Active Clinical Safety Radar
+                  <h3 style={{ fontSize: "18px", margin: 0, color: "#0f172a", fontWeight: "800", display: "inline-flex", alignItems: "center", gap: "8px" }}>
+                    <AlertCircleIcon size={18} color="#dc2626" />
+                    <span>Active Clinical Safety Radar</span>
                   </h3>
                   <span style={{ background: "#fee2e2", color: "#991b1b", padding: "3px 8px", borderRadius: "10px", fontSize: "11px", fontWeight: "700" }}>
                     {analytics.safety_alerts.length} ALERTS
@@ -967,8 +1017,9 @@ export default function PatientAnalyticsPage() {
                 }}
               >
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-                  <h3 style={{ fontSize: "18px", margin: 0, color: "#0f172a", fontWeight: "800" }}>
-                    📚 ASCO / NCCN Guideline Concordance
+                  <h3 style={{ fontSize: "18px", margin: 0, color: "#0f172a", fontWeight: "800", display: "inline-flex", alignItems: "center", gap: "8px" }}>
+                    <ShieldIcon size={18} color="#0284c7" />
+                    <span>ASCO / NCCN Guideline Concordance</span>
                   </h3>
                   <span style={{ background: "#f0fdf4", color: "#166534", padding: "3px 8px", borderRadius: "10px", fontSize: "11px", fontWeight: "700" }}>
                     EVIDENCE-LINKED
@@ -1031,8 +1082,9 @@ export default function PatientAnalyticsPage() {
             >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
                 <div>
-                  <h3 style={{ fontSize: "18px", margin: "0 0 4px", color: "#0f172a", fontWeight: "800" }}>
-                    🕒 Longitudinal Ward Rounds & Approved Note Timeline
+                  <h3 style={{ fontSize: "18px", margin: "0 0 4px", color: "#0f172a", fontWeight: "800", display: "inline-flex", alignItems: "center", gap: "8px" }}>
+                    <FileTextIcon size={18} color="#0284c7" />
+                    <span>Longitudinal Ward Rounds & Clinical Notes Timeline</span>
                   </h3>
                   <p style={{ margin: 0, fontSize: "13px", color: "#64748b" }}>
                     Audit trail of previous rounds, attending clinician sign-offs, and SOAP note extractions.
@@ -1132,7 +1184,7 @@ export default function PatientAnalyticsPage() {
               }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px" }}>
-                <span style={{ fontSize: "22px" }}>🤖</span>
+                <SparklesIcon size={20} color="#0369a1" />
                 <h3 style={{ fontSize: "18px", margin: 0, color: "#0369a1", fontWeight: "800" }}>
                   AI Longitudinal Clinical Trajectory Synthesis
                 </h3>
@@ -1178,11 +1230,12 @@ export default function PatientAnalyticsPage() {
                     fontWeight: "700",
                     display: "inline-flex",
                     alignItems: "center",
-                    gap: "6px",
+                    gap: "8px",
                     boxShadow: "0 2px 6px rgba(2, 132, 199, 0.3)",
                   }}
                 >
-                  📝 Assess Round for #{patient.id}
+                  <FileTextIcon size={16} color="#ffffff" />
+                  <span>Assess Round for #{patient.id}</span>
                 </a>
               </div>
             </div>

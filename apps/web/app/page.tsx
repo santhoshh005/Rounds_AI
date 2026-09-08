@@ -2,6 +2,29 @@
 
 import { FormEvent, useState, useEffect, useRef } from "react";
 import { auth, onAuthStateChanged, signOut, type User } from "../lib/firebase";
+import {
+  StethoscopeIcon,
+  ActivityIcon,
+  BarChartIcon,
+  UsersIcon,
+  UserPlusIcon,
+  SmartphoneIcon,
+  BedIcon,
+  MicrophoneIcon,
+  SparklesIcon,
+  CameraIcon,
+  UndoIcon,
+  CheckIcon,
+  AlertCircleIcon,
+  ShieldIcon,
+  FileTextIcon,
+  LogOutIcon,
+  TrendingDownIcon,
+  TrendingUpIcon,
+  MinusIcon,
+  XIcon,
+  RefreshIcon,
+} from "./components/Icons";
 
 type LabValue = {
   name: string;
@@ -94,6 +117,8 @@ export default function Dashboard() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingPatient, setEditingPatient] = useState<PatientRecord | null>(null);
   const [crudLoading, setCrudLoading] = useState(false);
+  const [latestBedsideRound, setLatestBedsideRound] = useState<any | null>(null);
+  const [bedsideNoticeDismissed, setBedsideNoticeDismissed] = useState(false);
 
   // Admit Form State
   const [admitId, setAdmitId] = useState("");
@@ -118,6 +143,9 @@ export default function Dashboard() {
   const [isDictating, setIsDictating] = useState(false);
   const [isRecordingLocal, setIsRecordingLocal] = useState(false);
   const [voiceNotice, setVoiceNotice] = useState("");
+  const [autocorrectNotice, setAutocorrectNotice] = useState("");
+  const [previousTranscript, setPreviousTranscript] = useState("");
+  const [isAutocorrecting, setIsAutocorrecting] = useState(false);
   const recognitionRef = useRef<any>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -258,12 +286,73 @@ export default function Dashboard() {
     }
   }
 
+  // ── Bedside Mobile Live Sync Detection ────────────────────────────────
+  async function checkBedsideSync() {
+    try {
+      const res = await fetch(`${API}/api/v1/rounds/latest`);
+      if (res.ok) {
+        const roundData = await res.json();
+        if (roundData && roundData.id && roundData.id !== result?.round_id) {
+          setLatestBedsideRound(roundData);
+          setBedsideNoticeDismissed(false);
+        }
+      }
+    } catch (e) {
+      console.warn("Could not check bedside sync:", e);
+    }
+  }
+
+  function loadBedsideRound(roundData: any) {
+    if (!roundData) return;
+    if (roundData.transcript) {
+      setTranscript(roundData.transcript);
+    }
+    const ext = roundData.extractions?.[0] || roundData.extraction;
+    if (ext) {
+      setResult({
+        round_id: roundData.id || roundData.round_id,
+        extraction: ext,
+        lab_trends: roundData.lab_trends || [],
+        review_flags: roundData.review_flags || [],
+        retrieved_evidence: roundData.retrieved_evidence || [],
+        draft_note: roundData.draft_notes?.[0]?.content || roundData.draft_note || "",
+        disclaimer: "Demo / research prototype. Not for autonomous clinical decision-making or real patient data.",
+        provenance: roundData.provenance || {},
+      });
+      const pid = ext.patient_id || roundData.patient_id;
+      if (pid) {
+        const found = patients.find((p) => p.id === pid);
+        if (found) setSelectedPatient(found);
+      }
+    }
+    setBedsideNoticeDismissed(true);
+  }
+
   useEffect(() => {
     fetchPatients();
+    checkBedsideSync();
+
+    // Check if a specific round was passed in URL (from mobile companion)
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const roundIdParam = params.get("roundId");
+      if (roundIdParam) {
+        fetch(`${API}/api/v1/rounds/${roundIdParam}`)
+          .then((r) => (r.ok ? r.json() : null))
+          .then((rData) => {
+            if (rData) loadBedsideRound(rData);
+          })
+          .catch(() => {});
+      }
+    }
+
+    // Interval to poll for newly transmitted rounds every 8 seconds
+    const interval = setInterval(checkBedsideSync, 8000);
+
     const demo = typeof window !== "undefined" ? sessionStorage.getItem("demo_user") : null;
     if (demo) {
       setUser({ email: demo } as unknown as User);
-      return;
+      return () => clearInterval(interval);
     }
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       if (!currentUser) {
@@ -272,9 +361,61 @@ export default function Dashboard() {
         setUser(currentUser);
       }
     });
-    return () => unsubscribe();
+    return () => {
+      clearInterval(interval);
+      unsubscribe();
+    };
   }, []);
 
+
+  // ── Clinical Oncology Auto-Correction & Terminology Normalization ────
+  async function handleAutocorrect(explicitText?: string) {
+    const targetText = explicitText !== undefined ? explicitText : transcript;
+    if (!targetText || !targetText.trim()) return;
+
+    setIsAutocorrecting(true);
+    setVoiceNotice("Normalizing oncology terminology...");
+    try {
+      const res = await fetch(`${API}/api/v1/voice/autocorrect`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: targetText, use_gemini: true }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.corrected_text && data.corrected_text !== targetText) {
+          setPreviousTranscript(targetText);
+          setTranscript(data.corrected_text);
+          const count = data.changes?.length || 1;
+          const sample = data.changes
+            ?.slice(0, 2)
+            .map((c: any) => `"${c.from}" → "${c.to}"`)
+            .join(", ");
+          setAutocorrectNotice(
+            `Auto-corrected ${count} oncology term${count > 1 ? "s" : ""}${sample ? ` (${sample})` : ""}`
+          );
+        } else {
+          setAutocorrectNotice("Clinical terminology verified.");
+        }
+      }
+    } catch (err) {
+      console.warn("Autocorrect call failed:", err);
+    } finally {
+      setIsAutocorrecting(false);
+      setVoiceNotice("");
+      setTimeout(() => setAutocorrectNotice(""), 6000);
+    }
+  }
+
+  function handleUndoAutocorrect() {
+    if (previousTranscript) {
+      setTranscript(previousTranscript);
+      setPreviousTranscript("");
+      setAutocorrectNotice("Reverted to original dictated text.");
+      setTimeout(() => setAutocorrectNotice(""), 3000);
+    }
+  }
 
   // ── Mode A: Live Browser Web Speech Dictation ────────────────────────
   function toggleBrowserDictation() {
@@ -302,7 +443,7 @@ export default function Dashboard() {
 
       recognition.onstart = () => {
         setIsDictating(true);
-        setVoiceNotice("🔴 Listening... Speak your clinical notes.");
+        setVoiceNotice("Listening... Speak your clinical notes.");
       };
 
       recognition.onresult = (event: any) => {
@@ -322,6 +463,15 @@ export default function Dashboard() {
       recognition.onend = () => {
         setIsDictating(false);
         setVoiceNotice("");
+        // Automatically perform clinical auto-correction on captured speech
+        setTimeout(() => {
+          setTranscript((curr) => {
+            if (curr && curr.trim()) {
+              handleAutocorrect(curr);
+            }
+            return curr;
+          });
+        }, 300);
       };
 
       recognitionRef.current = recognition;
@@ -384,7 +534,7 @@ export default function Dashboard() {
       mediaRecorderRef.current = mediaRecorder;
       mediaRecorder.start();
       setIsRecordingLocal(true);
-      setVoiceNotice("🔴 Recording on-device audio (Whisper)...");
+      setVoiceNotice("Recording on-device audio (Whisper)...");
     } catch (err: any) {
       alert("Microphone access denied: " + err.message);
     }
@@ -467,55 +617,72 @@ export default function Dashboard() {
     <main>
       <header>
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <span style={{ fontSize: "28px" }}>🩺</span>
+          <div style={{ width: "36px", height: "36px", borderRadius: "8px", background: "#f0f9ff", border: "1px solid #bae6fd", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <StethoscopeIcon size={20} color="#0284c7" />
+          </div>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
               <span className="eyebrow" style={{ margin: 0 }}>ONCOLOGY WARD COPILOT</span>
-              <span style={{ background: "#e0f2fe", color: "#0369a1", fontSize: "10px", padding: "1px 6px", borderRadius: "4px", fontWeight: "700" }}>
+              <span style={{ background: "#f1f5f9", color: "#334155", fontSize: "10px", padding: "1px 6px", borderRadius: "4px", fontWeight: "600", border: "1px solid #cbd5e1" }}>
                 CLINICIAN-IN-THE-LOOP
               </span>
             </div>
-            <h1>RoundsAI</h1>
+            <h1>RoundsAI Workstation</h1>
           </div>
         </div>
 
         {/* ── All Navigation Options ──────────────────────────────────── */}
         <nav className="nav-group">
           <a href="/" className="nav-link active">
-            📋 Review Station
+            <ActivityIcon size={14} />
+            <span>Review Station</span>
           </a>
           <a
             href={`/analytics?patientId=${selectedPatient?.id || "104"}`}
-            className="nav-link nav-link-purple"
+            className="nav-link"
           >
-            📊 Patient Analytics
+            <BarChartIcon size={14} />
+            <span>Patient Analytics</span>
           </a>
           <button
             type="button"
             onClick={() => setShowRosterModal(true)}
             className="nav-link"
           >
-            👥 Ward Roster ({patients.length})
+            <UsersIcon size={14} />
+            <span>Ward Roster ({patients.length})</span>
           </button>
           <button
             type="button"
             onClick={() => setShowAdmitModal(true)}
-            className="nav-link nav-link-green"
+            className="nav-link"
           >
-            ➕ Quick Admit
+            <UserPlusIcon size={14} />
+            <span>Admit Patient</span>
+          </button>
+          <button
+            type="button"
+            onClick={checkBedsideSync}
+            className="nav-link"
+            title="Check for newly synced rounds from mobile companion"
+          >
+            <RefreshIcon size={14} />
+            <span>Sync Bedside</span>
           </button>
           <a href="/mobile" className="nav-link">
-            📱 Bedside Mobile
+            <SmartphoneIcon size={14} />
+            <span>Bedside Mobile</span>
           </a>
 
           {/* Active Patient Context Badge */}
           <div
             onClick={() => setShowRosterModal(true)}
-            className="badge"
+            className="badge badge-blue"
             style={{ cursor: "pointer", marginLeft: "4px" }}
             title="Click to switch active inpatient"
           >
-            <span>🛏️ {selectedPatient?.ward_bed ? selectedPatient.ward_bed.split(" - ")[1] || selectedPatient.ward_bed : "Bed 12"}</span>
+            <BedIcon size={13} color="#0369a1" />
+            <span>{selectedPatient?.ward_bed ? selectedPatient.ward_bed.split(" - ")[1] || selectedPatient.ward_bed : "Bed 12"}</span>
             <span>·</span>
             <span>Pt #{selectedPatient?.id ?? "104"} {selectedPatient?.name ? `(${selectedPatient.name.split(" ")[0]})` : ""}</span>
           </div>
@@ -527,18 +694,94 @@ export default function Dashboard() {
               signOut(auth);
               window.location.href = "/login";
             }}
-            style={{ padding: "7px 12px", fontSize: "13px" }}
+            style={{ padding: "7px 12px", fontSize: "12.5px", display: "inline-flex", alignItems: "center", gap: "6px" }}
           >
-            Sign Out
+            <LogOutIcon size={13} />
+            <span>Sign Out</span>
           </button>
         </nav>
       </header>
+
+      {/* ── Transmitted Bedside Round Notification Banner ─────────────── */}
+      {latestBedsideRound && !bedsideNoticeDismissed && (
+        <div
+          style={{
+            background: "linear-gradient(135deg, #f0fdf4 0%, #e0f2fe 100%)",
+            border: "1px solid #7dd3fc",
+            borderRadius: "12px",
+            padding: "14px 20px",
+            marginBottom: "20px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: "12px",
+            boxShadow: "0 2px 8px rgba(2, 132, 199, 0.08)",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            <div style={{ background: "#0284c7", color: "#ffffff", padding: "8px", borderRadius: "8px", display: "flex" }}>
+              <SmartphoneIcon size={18} color="#ffffff" />
+            </div>
+            <div>
+              <div style={{ fontSize: "14px", fontWeight: "700", color: "#0369a1", display: "flex", alignItems: "center", gap: "8px" }}>
+                <span>Bedside Round Transmitted from Mobile</span>
+                <span style={{ background: "#dcfce7", color: "#166534", fontSize: "11px", padding: "2px 8px", borderRadius: "10px", fontWeight: "700" }}>
+                  LIVE SYNC
+                </span>
+              </div>
+              <div style={{ fontSize: "12px", color: "#475569", marginTop: "2px" }}>
+                Round #{latestBedsideRound.id?.slice(0, 8)} · Patient #{latestBedsideRound.extractions?.[0]?.patient_id || latestBedsideRound.patient_id || "104"} ({latestBedsideRound.transcript?.slice(0, 80)}...)
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <button
+              type="button"
+              onClick={() => loadBedsideRound(latestBedsideRound)}
+              style={{
+                padding: "8px 16px",
+                background: "#0284c7",
+                color: "#ffffff",
+                border: "none",
+                borderRadius: "6px",
+                fontSize: "13px",
+                fontWeight: "700",
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                boxShadow: "0 2px 6px rgba(2, 132, 199, 0.25)",
+              }}
+            >
+              <ActivityIcon size={14} color="#ffffff" />
+              <span>Load into Assessment Station</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setBedsideNoticeDismissed(true)}
+              style={{
+                background: "none",
+                border: "none",
+                color: "#64748b",
+                fontSize: "12px",
+                fontWeight: "600",
+                cursor: "pointer",
+                padding: "4px 8px",
+              }}
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Input Section ────────────────────────────────────────────── */}
       <section className="input-card">
         <h2>Clinical Round Assessment</h2>
         <p>
-          Dictate or type clinician observations, or attach laboratory scans and clinical pathology sheets.
+          Dictate or transcribe clinician observations, or attach laboratory scans and clinical pathology sheets.
         </p>
 
         <form onSubmit={start}>
@@ -556,7 +799,8 @@ export default function Dashboard() {
               className={`toolbar-btn ${isDictating ? "recording" : ""}`}
               onClick={toggleBrowserDictation}
             >
-              {isDictating ? "■ Stop Dictation" : "🎙️ Dictate (Live Speech)"}
+              <MicrophoneIcon size={14} color={isDictating ? "#dc2626" : "currentColor"} />
+              <span>{isDictating ? "Stop Dictation" : "Dictate (Speech)"}</span>
             </button>
 
             <button
@@ -564,7 +808,19 @@ export default function Dashboard() {
               className={`toolbar-btn ${isRecordingLocal ? "recording" : ""}`}
               onClick={toggleLocalVoiceRecording}
             >
-              {isRecordingLocal ? "■ Stop On-Device Audio" : "🎙️ Audio (On-Device Whisper)"}
+              <MicrophoneIcon size={14} color={isRecordingLocal ? "#dc2626" : "currentColor"} />
+              <span>{isRecordingLocal ? "Stop Recording" : "On-Device Audio"}</span>
+            </button>
+
+            <button
+              type="button"
+              className={`toolbar-btn toolbar-btn-green ${isAutocorrecting ? "recording" : ""}`}
+              onClick={() => handleAutocorrect()}
+              disabled={isAutocorrecting || !transcript.trim()}
+              title="Standardize chemotherapy names, blood counts, and oncology abbreviations"
+            >
+              <SparklesIcon size={14} color={isAutocorrecting ? "#dc2626" : "#166534"} />
+              <span>{isAutocorrecting ? "Normalizing..." : "Clinical Auto-Correct"}</span>
             </button>
 
             <button
@@ -572,7 +828,8 @@ export default function Dashboard() {
               className="toolbar-btn"
               onClick={() => fileInputRef.current?.click()}
             >
-              📷 Attach Lab Scan / Medical Image
+              <CameraIcon size={14} />
+              <span>Attach Lab Scan / Document</span>
             </button>
 
             <input
@@ -590,6 +847,38 @@ export default function Dashboard() {
             <div className="voice-indicator">
               <span className="pulsing-dot" />
               <span>{voiceNotice || "Listening to speech..."}</span>
+            </div>
+          )}
+
+          {/* Clinical Auto-Correct Notification Banner with Undo */}
+          {autocorrectNotice && (
+            <div className="autocorrect-banner">
+              <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <CheckIcon size={14} color="#166534" />
+                <span>{autocorrectNotice}</span>
+              </span>
+              {previousTranscript && (
+                <button
+                  type="button"
+                  onClick={handleUndoAutocorrect}
+                  style={{
+                    background: "#ffffff",
+                    border: "1px solid #86efac",
+                    padding: "3px 10px",
+                    borderRadius: "4px",
+                    fontSize: "11px",
+                    fontWeight: 600,
+                    color: "#15803d",
+                    cursor: "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "4px",
+                  }}
+                >
+                  <UndoIcon size={12} color="#15803d" />
+                  <span>Undo Change</span>
+                </button>
+              )}
             </div>
           )}
 
@@ -676,7 +965,8 @@ export default function Dashboard() {
                       <td>
                         {t.trend === "down" && (
                           <span className="trend-down">
-                            ↓ Decreased
+                            <TrendingDownIcon size={14} color="#dc2626" />
+                            <span>Decreased</span>
                             {t.previous_value !== undefined && (
                               <span className="prev-lab">(prev: {t.previous_value})</span>
                             )}
@@ -684,7 +974,8 @@ export default function Dashboard() {
                         )}
                         {t.trend === "up" && (
                           <span className="trend-up">
-                            ↑ Elevated
+                            <TrendingUpIcon size={14} color="#0284c7" />
+                            <span>Elevated</span>
                             {t.previous_value !== undefined && (
                               <span className="prev-lab">(prev: {t.previous_value})</span>
                             )}
@@ -692,7 +983,8 @@ export default function Dashboard() {
                         )}
                         {t.trend === "stable" && (
                           <span className="trend-stable">
-                            ― Stable
+                            <MinusIcon size={14} color="#64748b" />
+                            <span>Stable</span>
                             {t.previous_value !== undefined && (
                               <span className="prev-lab">(prev: {t.previous_value})</span>
                             )}
@@ -731,7 +1023,10 @@ export default function Dashboard() {
             {result.review_flags.length ? (
               result.review_flags.map((x, idx) => (
                 <div className={`flag ${x.severity === "high" ? "high" : ""}`} key={idx}>
-                  <strong>⚠ {x.message}</strong>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "3px" }}>
+                    <AlertCircleIcon size={15} color={x.severity === "high" ? "#dc2626" : "#d97706"} />
+                    <strong>{x.message}</strong>
+                  </div>
                   <p>{x.rationale}</p>
                   {x.guideline && <div className="flag-guideline">Guideline: {x.guideline}</div>}
                 </div>
@@ -743,7 +1038,10 @@ export default function Dashboard() {
 
           {/* Evidence-Based Guidelines (RAG) */}
           <div className="card">
-            <p className="eyebrow">EVIDENCE-BASED GUIDELINES (RAG)</p>
+            <p className="eyebrow">
+              <ShieldIcon size={12} color="#0284c7" />
+              <span>EVIDENCE-BASED GUIDELINES (RAG)</span>
+            </p>
             {result.retrieved_evidence && result.retrieved_evidence.length > 0 ? (
               result.retrieved_evidence.map((ev, idx) => (
                 <div key={idx} className="evidence-item">
@@ -759,22 +1057,24 @@ export default function Dashboard() {
 
           {/* Editable AI Draft Note */}
           <div className="card full">
-            <p className="eyebrow">AI DRAFT NOTE — CLINICIAN REVIEW & SIGN-OFF</p>
+            <p className="eyebrow">
+              <FileTextIcon size={12} color="#0284c7" />
+              <span>CLINICAL PROGRESS NOTE — REVIEW & ATTESTATION</span>
+            </p>
             <textarea
               className="note"
               defaultValue={result.draft_note}
               aria-label="Editable clinical draft note"
             />
             <div className="actions">
-              <button type="button" className="secondary">
-                EDIT
-              </button>
               <button
                 type="button"
                 className="secondary"
-                onClick={() => alert("Note approved by clinician! Persisted to Supabase audit trail.")}
+                onClick={() => alert("Note approved by clinician and verified into patient record.")}
+                style={{ background: "#0f172a", color: "#ffffff", border: "none" }}
               >
-                APPROVE NOTE
+                <CheckIcon size={14} color="#ffffff" />
+                <span>ATTEST & APPROVE NOTE</span>
               </button>
             </div>
           </div>
@@ -834,9 +1134,13 @@ export default function Dashboard() {
                     fontWeight: "700",
                     fontSize: "13px",
                     cursor: "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
                   }}
                 >
-                  ➕ Admit New Patient
+                  <UserPlusIcon size={14} color="#ffffff" />
+                  <span>Admit New Patient</span>
                 </button>
                 <button
                   type="button"
@@ -844,13 +1148,14 @@ export default function Dashboard() {
                   style={{
                     background: "none",
                     border: "none",
-                    fontSize: "22px",
                     cursor: "pointer",
                     color: "#64748b",
-                    padding: "0 6px",
+                    padding: "4px",
+                    display: "flex",
+                    alignItems: "center",
                   }}
                 >
-                  ✕
+                  <XIcon size={20} color="#64748b" />
                 </button>
               </div>
             </div>
@@ -939,9 +1244,11 @@ export default function Dashboard() {
                               textDecoration: "none",
                               display: "inline-flex",
                               alignItems: "center",
+                              gap: "4px",
                             }}
                           >
-                            📊 Analytics
+                            <BarChartIcon size={12} color="#7e22ce" />
+                            <span>Analytics</span>
                           </a>
                           <button
                             type="button"
@@ -957,7 +1264,7 @@ export default function Dashboard() {
                               cursor: "pointer",
                             }}
                           >
-                            ✏️ Edit
+                            Edit
                           </button>
                           <button
                             type="button"
@@ -1016,15 +1323,16 @@ export default function Dashboard() {
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-              <h2 style={{ fontSize: "18px", margin: 0, color: "#0f172a" }}>
-                ➕ Inpatient Oncology Admission
+              <h2 style={{ fontSize: "18px", margin: 0, color: "#0f172a", display: "inline-flex", alignItems: "center", gap: "8px" }}>
+                <UserPlusIcon size={18} color="#0284c7" />
+                <span>Inpatient Oncology Admission</span>
               </h2>
               <button
                 type="button"
                 onClick={() => setShowAdmitModal(false)}
-                style={{ background: "none", border: "none", fontSize: "20px", cursor: "pointer", color: "#64748b" }}
+                style={{ background: "none", border: "none", padding: "4px", cursor: "pointer", color: "#64748b", display: "flex", alignItems: "center" }}
               >
-                ✕
+                <XIcon size={20} color="#64748b" />
               </button>
             </div>
 
@@ -1183,7 +1491,17 @@ export default function Dashboard() {
                 <button
                   type="button"
                   onClick={() => setShowAdmitModal(false)}
-                  style={{ flex: 1, padding: "10px", borderRadius: "6px", background: "#f1f5f9", border: "1px solid #cbd5e1", fontWeight: "600", cursor: "pointer" }}
+                  style={{
+                    flex: 1,
+                    padding: "10px",
+                    borderRadius: "6px",
+                    background: "#f8fafc",
+                    border: "1px solid #cbd5e1",
+                    color: "#334155",
+                    fontWeight: "600",
+                    fontSize: "13px",
+                    cursor: "pointer",
+                  }}
                 >
                   Cancel
                 </button>
@@ -1229,14 +1547,14 @@ export default function Dashboard() {
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
               <h2 style={{ fontSize: "18px", margin: 0, color: "#0f172a" }}>
-                ✏️ Update Patient #{editingPatient.id} ({editingPatient.name})
+                Update Patient #{editingPatient.id} ({editingPatient.name})
               </h2>
               <button
                 type="button"
                 onClick={() => setShowEditModal(false)}
-                style={{ background: "none", border: "none", fontSize: "20px", cursor: "pointer", color: "#64748b" }}
+                style={{ background: "none", border: "none", padding: "4px", cursor: "pointer", color: "#64748b", display: "flex", alignItems: "center" }}
               >
-                ✕
+                <XIcon size={20} color="#64748b" />
               </button>
             </div>
 
@@ -1295,7 +1613,17 @@ export default function Dashboard() {
                 <button
                   type="button"
                   onClick={() => setShowEditModal(false)}
-                  style={{ flex: 1, padding: "10px", borderRadius: "6px", background: "#f1f5f9", border: "1px solid #cbd5e1", fontWeight: "600", cursor: "pointer" }}
+                  style={{
+                    flex: 1,
+                    padding: "10px",
+                    borderRadius: "6px",
+                    background: "#f8fafc",
+                    border: "1px solid #cbd5e1",
+                    color: "#334155",
+                    fontWeight: "600",
+                    fontSize: "13px",
+                    cursor: "pointer",
+                  }}
                 >
                   Cancel
                 </button>
