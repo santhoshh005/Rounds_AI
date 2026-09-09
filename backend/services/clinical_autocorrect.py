@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 # Maps commonly misrecognized speech phrases to accurate oncology clinical terminology
 _ONCOLOGY_PHONETIC_REPLACEMENTS = [
     # ── Lab Tests & Blood Counts ──────────────────────────────────────────
-    (r"\b(and\s+see|a\s+and\s+c|agency|a\s+n\s+c|an\s+c)\b", "ANC"),
+    (r"\b(and\s+see|a\s+and\s+c|agency|a\s+n\s+c|an\s+c|anc)\b", "ANC"),
     (r"\b(wb\s*c|w\s+b\s+c|we\s+bc|white\s+count|white\s+blood\s+cells?)\b", "WBC"),
     (r"\b(plate\s+lets|plate\s+let|plt|p\s+l\s+t)\b", "platelets"),
     (r"\b(hemo\s*globin|hema\s*globin|hgb|h\s*g\s*b)\b", "hemoglobin"),
@@ -29,6 +29,24 @@ _ONCOLOGY_PHONETIC_REPLACEMENTS = [
     (r"\b(c\s*e\s*a|cea|carcino\s*embryonic\s+antigen)\b", "CEA"),
     (r"\b(c\s*a\s*125|ca\s*125|ca\s+one\s+twenty\s+five)\b", "CA-125"),
     (r"\b(p\s*s\s*a|psa|prostate\s+specific\s+antigen)\b", "PSA"),
+
+    # ── Spoken Clinical Numbers & Counts ──────────────────────────────
+    (r"\b(twenty\s+one\s+hundred|twenty-one\s+hundred)\b", "2,100"),
+    (r"\b(twenty\s+five\s+hundred|twenty-five\s+hundred)\b", "2,500"),
+    (r"\b(fifteen\s+hundred)\b", "1,500"),
+    (r"\b(fourteen\s+hundred)\b", "1,400"),
+    (r"\b(twelve\s+hundred)\b", "1,200"),
+    (r"\b(eleven\s+hundred)\b", "1,100"),
+    (r"\b(ten\s+hundred|one\s+thousand)\b", "1,000"),
+    (r"\b(nine\s+hundred)\b", "900"),
+    (r"\b(eight\s+hundred)\b", "800"),
+    (r"\b(seven\s+hundred)\b", "700"),
+    (r"\b(six\s+hundred)\b", "600"),
+    (r"\b(five\s+hundred)\b", "500"),
+    (r"\b(four\s+hundred)\b", "400"),
+    (r"\b(three\s+hundred)\b", "300"),
+    (r"\b(two\s+hundred)\b", "200"),
+    (r"\b(one\s+hundred)\b", "100"),
 
     # ── Chemotherapy Regimens ───────────────────────────────────────────
     (r"\b(fall\s+fox|full\s+fox|four\s+fox|fall\s+faux|folfox\s*6|m\s+folfox\s*6|mfolfox\s*6)\b", "mFOLFOX6"),

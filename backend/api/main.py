@@ -71,6 +71,7 @@ class AutoCorrectResponse(BaseModel):
     engine: str
 
 @app.post("/api/v1/voice/autocorrect", response_model=AutoCorrectResponse)
+@app.post("/api/v1/clinical/autocorrect", response_model=AutoCorrectResponse)
 def autocorrect_clinical_text(request: AutoCorrectRequest) -> AutoCorrectResponse:
     """Intelligently correct oncology phonetic speech errors and normalize terminology."""
     result = correct_clinical_transcript(request.text, use_gemini=request.use_gemini)
@@ -159,12 +160,16 @@ def get_latest_round(patient_id: str | None = None) -> dict:
             # Check extractions
             for ext in r.get("extractions", []):
                 if str(ext.get("patient_id", "")).strip() == pid:
+                    r["round_id"] = r.get("round_id") or r.get("id")
                     return r
             if str(r.get("patient_id", "")).strip() == pid:
+                r["round_id"] = r.get("round_id") or r.get("id")
                 return r
         raise HTTPException(status_code=404, detail=f"No rounds found for patient {patient_id}.")
     
-    return rounds[0]
+    top = rounds[0]
+    top["round_id"] = top.get("round_id") or top.get("id")
+    return top
 
 @app.get("/api/v1/rounds/{round_id}")
 def get_single_round(round_id: str) -> dict:
@@ -172,6 +177,7 @@ def get_single_round(round_id: str) -> dict:
     r = get_round_by_id(round_id)
     if not r:
         raise HTTPException(status_code=404, detail=f"Round {round_id} not found.")
+    r["round_id"] = r.get("round_id") or r.get("id")
     return r
 
 @app.get("/api/v1/rounds")
@@ -226,6 +232,7 @@ def discharge_patient(patient_id: str) -> dict:
 
 
 @app.get("/api/v1/patients/{patient_id}/analytics", response_model=PatientAnalyticsResponse)
+@app.get("/api/v1/analytics/{patient_id}", response_model=PatientAnalyticsResponse)
 def get_patient_analytics_data(patient_id: str) -> PatientAnalyticsResponse:
     """Retrieve comprehensive longitudinal analytics, CTCAE toxicities, and guideline insights for a patient."""
     analytics = get_patient_analytics(patient_id)
