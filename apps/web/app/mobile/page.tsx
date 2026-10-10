@@ -17,6 +17,15 @@ import {
 } from "../components/Icons";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API_KEY = process.env.NEXT_PUBLIC_API_KEY ?? "";
+
+function getAuthHeaders(extraHeaders: Record<string, string> = {}): Record<string, string> {
+  const headers: Record<string, string> = { ...extraHeaders };
+  if (API_KEY) {
+    headers["X-API-Key"] = API_KEY;
+  }
+  return headers;
+}
 
 type PatientRecord = {
   id: string;
@@ -50,6 +59,7 @@ export default function MobileCapturePage() {
   const [isAutocorrecting, setIsAutocorrecting] = useState(false);
   const [autocorrectNotice, setAutocorrectNotice] = useState("");
   const [previousTranscript, setPreviousTranscript] = useState("");
+  const [demoMode, setDemoMode] = useState(false);
 
   // Bedside Admission Modal State
   const [showAdmitModal, setShowAdmitModal] = useState(false);
@@ -65,13 +75,15 @@ export default function MobileCapturePage() {
   const [newAnc, setNewAnc] = useState<number | undefined>(2000);
   const [newPlt, setNewPlt] = useState<number | undefined>(200000);
 
-  const recognitionRef = useRef<any>(null);
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load patients from API
   async function fetchPatients() {
     try {
-      const res = await fetch(`${API}/api/v1/patients`);
+      const res = await fetch(`${API}/api/v1/patients`, {
+        headers: getAuthHeaders(),
+      });
       if (res.ok) {
         const data = await res.json();
         setPatients(data);
@@ -86,14 +98,30 @@ export default function MobileCapturePage() {
 
   useEffect(() => {
     fetchPatients();
+    fetch(`${API}/api/v1/voice/mode`, { headers: getAuthHeaders() })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d && d.demo_mode !== undefined) setDemoMode(Boolean(d.demo_mode));
+      })
+      .catch(() => {});
   }, []);
 
   function selectPatient(p: PatientRecord) {
     setPatientId(p.id);
     setCurrentBed(p.ward_bed);
-    setTranscript(
-      `Patient ${p.id} (${p.name}) is a ${p.age}-year-old ${p.sex} with ${p.diagnosis}. Currently on cycle ${p.cycle} ${p.regimen}. Vital signs stable, reporting mild fatigue. Lab review in progress.`
-    );
+    if (p.id === "104") {
+      setTranscript(
+        "Patient 104 is a 58-year-old male with colorectal cancer. Cycle 3 chemotherapy. Developed fever since yesterday, temp 38.4C. WBC 2100, ANC 900. Complaining of severe fatigue."
+      );
+    } else if (p.id === "105") {
+      setTranscript(
+        "Patient 105 is a 46-year-old female with lymphoma. Cycle 2 chemotherapy. Developed fever 38.5C, severe chills. ANC 450, WBC 1800, platelets 120000."
+      );
+    } else {
+      setTranscript(
+        `Patient ${p.id} (${p.name}) is a ${p.age}-year-old ${p.sex} with ${p.diagnosis}. Currently on cycle ${p.cycle} ${p.regimen}. Vital signs stable, reporting mild fatigue. Lab review in progress.`
+      );
+    }
   }
 
   function handlePatientChange(selectedId: string) {
@@ -124,7 +152,7 @@ export default function MobileCapturePage() {
 
       const res = await fetch(`${API}/api/v1/patients`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify(payload),
       });
 
@@ -155,7 +183,7 @@ export default function MobileCapturePage() {
     try {
       const res = await fetch(`${API}/api/v1/voice/autocorrect`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({ text: targetText, use_gemini: true }),
       });
 
@@ -195,21 +223,21 @@ export default function MobileCapturePage() {
       return;
     }
 
-    const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SpeechRecognitionClass =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
 
-    if (!SpeechRecognition) {
+    if (!SpeechRecognitionClass) {
       alert("Speech recognition not supported in this browser. Please type or use mic permissions.");
       return;
     }
 
-    const recognition = new SpeechRecognition();
+    const recognition = new SpeechRecognitionClass();
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = "en-US";
 
     recognition.onstart = () => setIsRecording(true);
-    recognition.onresult = (event: any) => {
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
       let text = "";
       for (let i = 0; i < event.results.length; i++) {
         text += event.results[i][0].transcript;
@@ -271,7 +299,7 @@ export default function MobileCapturePage() {
 
       const res = await fetch(`${API}/api/v1/rounds/extract`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify(payload),
       });
 
@@ -315,6 +343,26 @@ export default function MobileCapturePage() {
           </a>
         </div>
       </div>
+
+      {(demoMode || syncedRound?.demo_mode) && (
+        <div
+          style={{
+            background: "#fffbeb",
+            border: "1px solid #f59e0b",
+            borderRadius: "8px",
+            padding: "8px 12px",
+            marginBottom: "12px",
+            fontSize: "12px",
+            color: "#92400e",
+            fontWeight: "600",
+          }}
+        >
+          <span style={{ background: "#f59e0b", color: "#fff", padding: "1px 6px", borderRadius: "4px", fontSize: "10px", fontWeight: "800", marginRight: "6px" }}>
+            DEMO DATA
+          </span>
+          DEMO_MODE=true is active. Fallback values are synthetic demo data.
+        </div>
+      )}
 
       {/* Ward & Patient Selector */}
       <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: "12px", padding: "12px 14px", marginBottom: "14px" }}>

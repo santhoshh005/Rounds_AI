@@ -69,7 +69,7 @@ flowchart TB
 - Directly populates bedside findings, CTCAE evaluation flags, and drafts the clinical SOAP note.
 
 ### C. On-Device Speech Pipeline (`faster-whisper`)
-- Zero external API costs and 100% HIPAA/hospital network privacy.
+- Zero external API costs and designed for zero audio egress in local mode.
 - Uses `faster-whisper` base-int8 model quantized for sub-second CPU inference.
 - Employs an oncology-specific vocabulary prompt (`initial_prompt`) to prime the acoustic model on drug regimens (`mFOLFOX6`, `FOLFIRINOX`, `R-CHOP`, `ANC`, `Platelets`, `CTCAE`).
 

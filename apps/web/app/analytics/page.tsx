@@ -20,6 +20,15 @@ import {
 } from "../components/Icons";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_KEY = process.env.NEXT_PUBLIC_API_KEY || "";
+
+function getAuthHeaders(extraHeaders: Record<string, string> = {}): Record<string, string> {
+  const headers: Record<string, string> = { ...extraHeaders };
+  if (API_KEY) {
+    headers["X-API-Key"] = API_KEY;
+  }
+  return headers;
+}
 
 type Patient = {
   id: string;
@@ -49,9 +58,9 @@ type LabTrajectory = {
   lab_name: string;
   unit: string;
   reference_range: string;
-  baseline_value?: number;
-  current_value: number;
-  percent_change?: number;
+  baseline_value?: number | null;
+  current_value?: number | null;
+  percent_change?: number | null;
   trend: string;
   data_points: LabDataPoint[];
 };
@@ -96,6 +105,7 @@ type HistoricalRound = {
 
 type AnalyticsData = {
   patient: Patient;
+  demo_mode?: boolean;
   ecog_performance_status: number;
   days_inpatient: number;
   trajectories: LabTrajectory[];
@@ -105,6 +115,7 @@ type AnalyticsData = {
   rounds_history: HistoricalRound[];
   clinical_synthesis: string;
 };
+
 
 export default function PatientAnalyticsPage() {
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -128,7 +139,9 @@ export default function PatientAnalyticsPage() {
   useEffect(() => {
     async function loadPatients() {
       try {
-        const res = await fetch(`${API}/api/v1/patients`);
+        const res = await fetch(`${API}/api/v1/patients`, {
+          headers: getAuthHeaders(),
+        });
         if (res.ok) {
           const list: Patient[] = await res.json();
           setPatients(list);
@@ -153,7 +166,9 @@ export default function PatientAnalyticsPage() {
 
     async function loadAnalytics() {
       try {
-        const res = await fetch(`${API}/api/v1/patients/${selectedPatientId}/analytics`);
+        const res = await fetch(`${API}/api/v1/patients/${selectedPatientId}/analytics`, {
+          headers: getAuthHeaders(),
+        });
         if (!res.ok) {
           throw new Error(`Failed to load analytics for patient #${selectedPatientId} (HTTP ${res.status})`);
         }
@@ -439,6 +454,53 @@ export default function PatientAnalyticsPage() {
 
         {!loading && analytics && patient && (
           <>
+            {/* ── DEMO_MODE / Insufficient Data Banner ──────────────────── */}
+            {analytics.demo_mode && (
+              <div
+                style={{
+                  background: "#fef3c7",
+                  border: "2px solid #f59e0b",
+                  borderRadius: "12px",
+                  padding: "14px 18px",
+                  marginBottom: "18px",
+                  color: "#92400e",
+                  fontSize: "13px",
+                  fontWeight: "700",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                }}
+              >
+                <AlertCircleIcon size={18} color="#d97706" />
+                <span>
+                  DEMO MODE ACTIVE — Displaying synthetic multi-cycle demonstration data (demo data - not derived from live patient history).
+                </span>
+              </div>
+            )}
+
+            {!analytics.demo_mode && analytics.rounds_history.length === 0 && (
+              <div
+                style={{
+                  background: "#f8fafc",
+                  border: "1px solid #cbd5e1",
+                  borderRadius: "12px",
+                  padding: "14px 18px",
+                  marginBottom: "18px",
+                  color: "#334155",
+                  fontSize: "13px",
+                  fontWeight: "600",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                }}
+              >
+                <AlertCircleIcon size={18} color="#475569" />
+                <span>
+                  Insufficient data for longitudinal trends — No ward rounds have been recorded for Patient #{patient.id} yet. Showing admission baseline census values only.
+                </span>
+              </div>
+            )}
+
             {/* ── Comprehensive Patient Header Banner ───────────────────── */}
             <section
               style={{
@@ -484,6 +546,11 @@ export default function PatientAnalyticsPage() {
                       <span style={{ background: "#dcfce7", color: "#166534", padding: "3px 10px", borderRadius: "6px", fontSize: "13px", fontWeight: "700" }}>
                         ● {patient.status.toUpperCase()}
                       </span>
+                      {analytics.demo_mode && (
+                        <span style={{ background: "#fef3c7", color: "#92400e", border: "1px solid #f59e0b", padding: "3px 10px", borderRadius: "6px", fontSize: "12px", fontWeight: "800" }}>
+                          DEMO DATA
+                        </span>
+                      )}
                     </div>
 
                     <div style={{ display: "flex", gap: "16px", marginTop: "6px", color: "#475569", fontSize: "14px", flexWrap: "wrap" }}>
@@ -542,31 +609,41 @@ export default function PatientAnalyticsPage() {
                   Absolute Neutrophils (ANC)
                 </div>
                 <div style={{ display: "flex", alignItems: "baseline", gap: "8px", margin: "8px 0 4px" }}>
-                  <span style={{ fontSize: "28px", fontWeight: "800", color: ancTraj && ancTraj.current_value < 1000 ? "#dc2626" : "#0284c7" }}>
-                    {ancTraj ? ancTraj.current_value.toLocaleString() : "N/A"}
+                  <span style={{ fontSize: "28px", fontWeight: "800", color: ancTraj && ancTraj.current_value != null && ancTraj.current_value < 1000 ? "#dc2626" : "#0284c7" }}>
+                    {ancTraj && ancTraj.current_value != null ? ancTraj.current_value.toLocaleString() : "Insufficient data"}
                   </span>
-                  <span style={{ fontSize: "13px", color: "#64748b", fontWeight: "600" }}>cells/µL</span>
+                  {ancTraj && ancTraj.current_value != null && (
+                    <span style={{ fontSize: "13px", color: "#64748b", fontWeight: "600" }}>cells/µL</span>
+                  )}
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", fontWeight: "700" }}>
-                  {ancTraj && ancTraj.percent_change !== undefined && (
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", fontWeight: "700", flexWrap: "wrap" }}>
+                  {ancTraj && ancTraj.percent_change !== null && ancTraj.percent_change !== undefined ? (
                     <span style={{ color: ancTraj.percent_change < 0 ? "#dc2626" : "#16a34a" }}>
                       {ancTraj.percent_change < 0 ? "↓" : "↑"} {Math.abs(ancTraj.percent_change)}% vs baseline
                     </span>
+                  ) : (
+                    <span style={{ background: "#f1f5f9", color: "#475569", padding: "2px 6px", borderRadius: "4px" }}>
+                      Trend: Insufficient data
+                    </span>
                   )}
-                  <span
-                    style={{
-                      background: ancTraj && ancTraj.current_value < 1000 ? "#fee2e2" : "#f0fdf4",
-                      color: ancTraj && ancTraj.current_value < 1000 ? "#991b1b" : "#166534",
-                      padding: "2px 6px",
-                      borderRadius: "4px",
-                    }}
-                  >
-                    {ancTraj && ancTraj.current_value < 500
-                      ? "CTCAE Gr 4"
-                      : ancTraj && ancTraj.current_value < 1000
-                      ? "CTCAE Gr 3 (Nadir)"
-                      : "Normal Reserve"}
-                  </span>
+                  {ancTraj && ancTraj.current_value != null && (
+                    <span
+                      style={{
+                        background: ancTraj.current_value < 1000 ? "#fee2e2" : "#f0fdf4",
+                        color: ancTraj.current_value < 1000 ? "#991b1b" : "#166534",
+                        padding: "2px 6px",
+                        borderRadius: "4px",
+                      }}
+                    >
+                      {ancTraj.current_value < 500
+                        ? "CTCAE Gr 4"
+                        : ancTraj.current_value < 1000
+                        ? "CTCAE Gr 3 (Nadir)"
+                        : ancTraj.trend === "insufficient data"
+                        ? "Baseline Only"
+                        : "Normal Reserve"}
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -577,19 +654,27 @@ export default function PatientAnalyticsPage() {
                 </div>
                 <div style={{ display: "flex", alignItems: "baseline", gap: "8px", margin: "8px 0 4px" }}>
                   <span style={{ fontSize: "28px", fontWeight: "800", color: "#0f172a" }}>
-                    {pltTraj ? pltTraj.current_value.toLocaleString() : "N/A"}
+                    {pltTraj && pltTraj.current_value != null ? pltTraj.current_value.toLocaleString() : "Insufficient data"}
                   </span>
-                  <span style={{ fontSize: "13px", color: "#64748b", fontWeight: "600" }}>/µL</span>
+                  {pltTraj && pltTraj.current_value != null && (
+                    <span style={{ fontSize: "13px", color: "#64748b", fontWeight: "600" }}>/µL</span>
+                  )}
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", fontWeight: "700" }}>
-                  {pltTraj && pltTraj.percent_change !== undefined && (
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", fontWeight: "700", flexWrap: "wrap" }}>
+                  {pltTraj && pltTraj.percent_change !== null && pltTraj.percent_change !== undefined ? (
                     <span style={{ color: pltTraj.percent_change < -15 ? "#dc2626" : "#64748b" }}>
                       {pltTraj.percent_change < 0 ? "↓" : "↑"} {Math.abs(pltTraj.percent_change)}% vs baseline
                     </span>
+                  ) : (
+                    <span style={{ background: "#f1f5f9", color: "#475569", padding: "2px 6px", borderRadius: "4px" }}>
+                      Trend: Insufficient data
+                    </span>
                   )}
-                  <span style={{ background: "#f0fdf4", color: "#166534", padding: "2px 6px", borderRadius: "4px" }}>
-                    Adequate for Chemo
-                  </span>
+                  {pltTraj && pltTraj.current_value != null && (
+                    <span style={{ background: "#f0fdf4", color: "#166534", padding: "2px 6px", borderRadius: "4px" }}>
+                      {pltTraj.trend === "insufficient data" ? "Baseline Only" : "Adequate for Chemo"}
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -605,12 +690,20 @@ export default function PatientAnalyticsPage() {
                   <span style={{ fontSize: "13px", color: "#64748b", fontWeight: "600" }}>CTCAE Symptoms</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", fontWeight: "700" }}>
-                  <span style={{ background: "#fff7ed", color: "#c2410c", padding: "2px 6px", borderRadius: "4px" }}>
-                    Highest: Grade {Math.max(...analytics.toxicities.map((t) => t.grade), 0)}
-                  </span>
-                  <span style={{ color: "#64748b" }}>
-                    {analytics.toxicities.filter((t) => t.grade >= 2).length} require clinical action
-                  </span>
+                  {analytics.toxicities.length > 0 ? (
+                    <>
+                      <span style={{ background: "#fff7ed", color: "#c2410c", padding: "2px 6px", borderRadius: "4px" }}>
+                        Highest: Grade {Math.max(...analytics.toxicities.map((t) => t.grade), 0)}
+                      </span>
+                      <span style={{ color: "#64748b" }}>
+                        {analytics.toxicities.filter((t) => t.grade >= 2).length} require clinical action
+                      </span>
+                    </>
+                  ) : (
+                    <span style={{ background: "#f1f5f9", color: "#475569", padding: "2px 6px", borderRadius: "4px" }}>
+                      Insufficient data (no graded rounds)
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -620,17 +713,34 @@ export default function PatientAnalyticsPage() {
                   Clinical Risk Level
                 </div>
                 <div style={{ display: "flex", alignItems: "baseline", gap: "8px", margin: "8px 0 4px" }}>
-                  <span style={{ fontSize: "24px", fontWeight: "800", color: analytics.safety_alerts.some((a) => a.severity === "critical") ? "#dc2626" : "#0284c7" }}>
-                    {analytics.safety_alerts.some((a) => a.severity === "critical") ? "HIGH RISK" : "MODERATE"}
+                  <span
+                    style={{
+                      fontSize: "24px",
+                      fontWeight: "800",
+                      color: analytics.safety_alerts.some((a) => a.severity === "critical")
+                        ? "#dc2626"
+                        : analytics.rounds_history.length === 0 && !analytics.demo_mode
+                        ? "#64748b"
+                        : "#0284c7",
+                    }}
+                  >
+                    {analytics.safety_alerts.some((a) => a.severity === "critical")
+                      ? "HIGH RISK"
+                      : analytics.safety_alerts.length > 0
+                      ? "MODERATE"
+                      : analytics.rounds_history.length === 0 && !analytics.demo_mode
+                      ? "INSUFFICIENT DATA"
+                      : "NONE"}
                   </span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", fontWeight: "700" }}>
-                  <span style={{ background: "#fee2e2", color: "#991b1b", padding: "2px 6px", borderRadius: "4px" }}>
+                  <span style={{ background: analytics.safety_alerts.length > 0 ? "#fee2e2" : "#f1f5f9", color: analytics.safety_alerts.length > 0 ? "#991b1b" : "#475569", padding: "2px 6px", borderRadius: "4px" }}>
                     {analytics.safety_alerts.length} Active Safety Sentinels
                   </span>
                 </div>
               </div>
             </section>
+
 
             {/* ── Interactive Longitudinal Biomarker Charts (Inline SVG) ─── */}
             <section
@@ -837,6 +947,28 @@ export default function PatientAnalyticsPage() {
                       </div>
                     </div>
                   )}
+                  {ancTraj.data_points.length < 2 && (
+                    <div
+                      style={{
+                        marginTop: "10px",
+                        padding: "10px 14px",
+                        background: "#f8fafc",
+                        border: "1px dashed #cbd5e1",
+                        borderRadius: "8px",
+                        color: "#475569",
+                        fontSize: "12px",
+                        fontWeight: "600",
+                      }}
+                    >
+                      Insufficient data for longitudinal trend line (fewer than 2 timepoints recorded; showing single baseline reading).
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {(!ancTraj || ancTraj.data_points.length === 0) && (
+                <div style={{ padding: "24px", background: "#f8fafc", border: "1px dashed #cbd5e1", borderRadius: "10px", color: "#64748b", fontSize: "13px", textAlign: "center" }}>
+                  Insufficient data — no ANC readings recorded for this patient.
                 </div>
               )}
             </section>
@@ -867,81 +999,87 @@ export default function PatientAnalyticsPage() {
                 </span>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: "14px" }}>
-                {analytics.toxicities.map((tox, idx) => {
-                  let gradeBg = "#f0fdf4";
-                  let gradeText = "#166534";
-                  let border = "#bbf7d0";
+              {analytics.toxicities.length === 0 ? (
+                <div style={{ padding: "20px", background: "#f8fafc", border: "1px dashed #cbd5e1", borderRadius: "10px", color: "#64748b", fontSize: "13px", fontWeight: "600" }}>
+                  Insufficient data — no graded CTCAE toxicities recorded from ward rounds yet.
+                </div>
+              ) : (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: "14px" }}>
+                  {analytics.toxicities.map((tox, idx) => {
+                    let gradeBg = "#f0fdf4";
+                    let gradeText = "#166534";
+                    let border = "#bbf7d0";
 
-                  if (tox.grade === 1) {
-                    gradeBg = "#f0f9ff";
-                    gradeText = "#0369a1";
-                    border = "#bae6fd";
-                  } else if (tox.grade === 2) {
-                    gradeBg = "#fefce8";
-                    gradeText = "#854d0e";
-                    border = "#fef08a";
-                  } else if (tox.grade >= 3) {
-                    gradeBg = "#fef2f2";
-                    gradeText = "#991b1b";
-                    border = "#fecaca";
-                  }
+                    if (tox.grade === 1) {
+                      gradeBg = "#f0f9ff";
+                      gradeText = "#0369a1";
+                      border = "#bae6fd";
+                    } else if (tox.grade === 2) {
+                      gradeBg = "#fefce8";
+                      gradeText = "#854d0e";
+                      border = "#fef08a";
+                    } else if (tox.grade >= 3) {
+                      gradeBg = "#fef2f2";
+                      gradeText = "#991b1b";
+                      border = "#fecaca";
+                    }
 
-                  return (
-                    <div
-                      key={idx}
-                      style={{
-                        background: "#fafbfc",
-                        border: `1px solid ${border}`,
-                        borderLeft: `5px solid ${tox.grade >= 3 ? "#dc2626" : tox.grade === 2 ? "#ca8a04" : "#0284c7"}`,
-                        borderRadius: "10px",
-                        padding: "16px",
-                      }}
-                    >
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
-                        <div>
-                          <span style={{ fontSize: "11px", fontWeight: "700", color: "#64748b", textTransform: "uppercase" }}>
-                            {tox.category}
-                          </span>
-                          <h4 style={{ fontSize: "15px", margin: "2px 0 0", color: "#0f172a", fontWeight: "700" }}>
-                            {tox.symptom}
-                          </h4>
+                    return (
+                      <div
+                        key={idx}
+                        style={{
+                          background: "#fafbfc",
+                          border: `1px solid ${border}`,
+                          borderLeft: `5px solid ${tox.grade >= 3 ? "#dc2626" : tox.grade === 2 ? "#ca8a04" : "#0284c7"}`,
+                          borderRadius: "10px",
+                          padding: "16px",
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
+                          <div>
+                            <span style={{ fontSize: "11px", fontWeight: "700", color: "#64748b", textTransform: "uppercase" }}>
+                              {tox.category}
+                            </span>
+                            <h4 style={{ fontSize: "15px", margin: "2px 0 0", color: "#0f172a", fontWeight: "700" }}>
+                              {tox.symptom}
+                            </h4>
+                          </div>
+                          <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                            <span
+                              style={{
+                                background: gradeBg,
+                                color: gradeText,
+                                padding: "3px 8px",
+                                borderRadius: "6px",
+                                fontSize: "12px",
+                                fontWeight: "800",
+                              }}
+                            >
+                              Grade {tox.grade}
+                            </span>
+                            <span style={{ fontSize: "11px", color: tox.trend === "worsening" ? "#dc2626" : "#16a34a", fontWeight: "700" }}>
+                              {tox.trend === "worsening" ? "↗ Worsening" : tox.trend === "improving" ? "↘ Improving" : "→ Stable"}
+                            </span>
+                          </div>
                         </div>
-                        <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-                          <span
-                            style={{
-                              background: gradeBg,
-                              color: gradeText,
-                              padding: "3px 8px",
-                              borderRadius: "6px",
-                              fontSize: "12px",
-                              fontWeight: "800",
-                            }}
-                          >
-                            Grade {tox.grade}
-                          </span>
-                          <span style={{ fontSize: "11px", color: tox.trend === "worsening" ? "#dc2626" : "#16a34a", fontWeight: "700" }}>
-                            {tox.trend === "worsening" ? "↗ Worsening" : tox.trend === "improving" ? "↘ Improving" : "→ Stable"}
-                          </span>
+
+                        <p style={{ fontSize: "13px", color: "#334155", margin: "0 0 10px", lineHeight: "1.4" }}>
+                          {tox.description}
+                        </p>
+
+                        <div style={{ background: "#ffffff", padding: "10px 12px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+                          <div style={{ fontSize: "11px", fontWeight: "700", color: "#0369a1", marginBottom: "2px", textTransform: "uppercase" }}>
+                            Protocol Recommendation:
+                          </div>
+                          <div style={{ fontSize: "12px", color: "#1e293b", lineHeight: "1.4" }}>
+                            {tox.management_recommendation}
+                          </div>
                         </div>
                       </div>
-
-                      <p style={{ fontSize: "13px", color: "#334155", margin: "0 0 10px", lineHeight: "1.4" }}>
-                        {tox.description}
-                      </p>
-
-                      <div style={{ background: "#ffffff", padding: "10px 12px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
-                        <div style={{ fontSize: "11px", fontWeight: "700", color: "#0369a1", marginBottom: "2px", textTransform: "uppercase" }}>
-                          Protocol Recommendation:
-                        </div>
-                        <div style={{ fontSize: "12px", color: "#1e293b", lineHeight: "1.4" }}>
-                          {tox.management_recommendation}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
             </section>
 
             {/* ── Two Columns: Safety Alerts & Guideline Concordance ──────── */}
@@ -966,44 +1104,52 @@ export default function PatientAnalyticsPage() {
                   </span>
                 </div>
 
-                <div style={{ display: "grid", gap: "12px" }}>
-                  {analytics.safety_alerts.map((alert) => {
-                    const isCrit = alert.severity === "critical";
-                    return (
-                      <div
-                        key={alert.id}
-                        style={{
-                          background: isCrit ? "#fef2f2" : "#fff7ed",
-                          border: `1px solid ${isCrit ? "#fca5a5" : "#fed7aa"}`,
-                          borderLeft: `5px solid ${isCrit ? "#dc2626" : "#ea580c"}`,
-                          borderRadius: "10px",
-                          padding: "14px 16px",
-                        }}
-                      >
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
-                          <span style={{ fontSize: "14px", fontWeight: "800", color: isCrit ? "#991b1b" : "#9a3412" }}>
-                            {isCrit ? "CRITICAL: " : "WARNING: "} {alert.title}
-                          </span>
-                          <span style={{ fontSize: "11px", fontWeight: "700", color: "#64748b" }}>
-                            {alert.status.toUpperCase()}
-                          </span>
-                        </div>
+                {analytics.safety_alerts.length === 0 ? (
+                  <div style={{ padding: "20px", background: "#f8fafc", border: "1px dashed #cbd5e1", borderRadius: "10px", color: "#64748b", fontSize: "13px", fontWeight: "600" }}>
+                    {analytics.rounds_history.length === 0
+                      ? "Insufficient data — no ward rounds recorded to evaluate safety sentinels."
+                      : "No active safety alerts triggered by recorded rounds."}
+                  </div>
+                ) : (
+                  <div style={{ display: "grid", gap: "12px" }}>
+                    {analytics.safety_alerts.map((alert) => {
+                      const isCrit = alert.severity === "critical";
+                      return (
+                        <div
+                          key={alert.id}
+                          style={{
+                            background: isCrit ? "#fef2f2" : "#fff7ed",
+                            border: `1px solid ${isCrit ? "#fca5a5" : "#fed7aa"}`,
+                            borderLeft: `5px solid ${isCrit ? "#dc2626" : "#ea580c"}`,
+                            borderRadius: "10px",
+                            padding: "14px 16px",
+                          }}
+                        >
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                            <span style={{ fontSize: "14px", fontWeight: "800", color: isCrit ? "#991b1b" : "#9a3412" }}>
+                              {isCrit ? "CRITICAL: " : "WARNING: "} {alert.title}
+                            </span>
+                            <span style={{ fontSize: "11px", fontWeight: "700", color: "#64748b" }}>
+                              {alert.status.toUpperCase()}
+                            </span>
+                          </div>
 
-                        <div style={{ fontSize: "13px", fontWeight: "600", color: "#1e293b", marginBottom: "6px" }}>
-                          {alert.message}
-                        </div>
+                          <div style={{ fontSize: "13px", fontWeight: "600", color: "#1e293b", marginBottom: "6px" }}>
+                            {alert.message}
+                          </div>
 
-                        <div style={{ fontSize: "12px", color: "#475569", marginBottom: "8px", lineHeight: "1.4" }}>
-                          <strong>Rationale:</strong> {alert.rationale}
-                        </div>
+                          <div style={{ fontSize: "12px", color: "#475569", marginBottom: "8px", lineHeight: "1.4" }}>
+                            <strong>Rationale:</strong> {alert.rationale}
+                          </div>
 
-                        <div style={{ background: "#ffffff", padding: "8px 10px", borderRadius: "6px", fontSize: "12px", color: "#0f172a", border: "1px solid #e2e8f0" }}>
-                          <strong>Immediate Action:</strong> {alert.action_required}
+                          <div style={{ background: "#ffffff", padding: "8px 10px", borderRadius: "6px", fontSize: "12px", color: "#0f172a", border: "1px solid #e2e8f0" }}>
+                            <strong>Immediate Action:</strong> {alert.action_required}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                )}
               </section>
 
               {/* Right Column: ASCO / NCCN Guideline Concordance */}
@@ -1095,83 +1241,90 @@ export default function PatientAnalyticsPage() {
                 </span>
               </div>
 
-              <div style={{ display: "grid", gap: "12px" }}>
-                {analytics.rounds_history.map((round) => {
-                  const isExpanded = expandedNoteId === round.round_id;
-                  return (
-                    <div
-                      key={round.round_id}
-                      style={{
-                        background: "#fafbfc",
-                        border: "1px solid #e2e8f0",
-                        borderRadius: "10px",
-                        padding: "16px",
-                      }}
-                    >
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "10px" }}>
-                        <div>
-                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                            <span style={{ fontSize: "13px", fontWeight: "800", color: "#0284c7" }}>
-                              {round.date}
-                            </span>
-                            <span style={{ background: "#e0e7ff", color: "#3730a3", fontSize: "11px", padding: "2px 8px", borderRadius: "10px", fontWeight: "700" }}>
-                              Cycle {round.cycle}
-                            </span>
-                            <span style={{ background: "#dcfce7", color: "#166534", fontSize: "11px", padding: "2px 8px", borderRadius: "10px", fontWeight: "700" }}>
-                              ✓ {round.status.toUpperCase()}
-                            </span>
+              {analytics.rounds_history.length === 0 ? (
+                <div style={{ padding: "20px", background: "#f8fafc", border: "1px dashed #cbd5e1", borderRadius: "10px", color: "#64748b", fontSize: "13px", fontWeight: "600" }}>
+                  Insufficient data — no historical ward rounds recorded yet for this patient.
+                </div>
+              ) : (
+                <div style={{ display: "grid", gap: "12px" }}>
+                  {analytics.rounds_history.map((round) => {
+                    const isExpanded = expandedNoteId === round.round_id;
+                    return (
+                      <div
+                        key={round.round_id}
+                        style={{
+                          background: "#fafbfc",
+                          border: "1px solid #e2e8f0",
+                          borderRadius: "10px",
+                          padding: "16px",
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "10px" }}>
+                          <div>
+                            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                              <span style={{ fontSize: "13px", fontWeight: "800", color: "#0284c7" }}>
+                                {round.date}
+                              </span>
+                              <span style={{ background: "#e0e7ff", color: "#3730a3", fontSize: "11px", padding: "2px 8px", borderRadius: "10px", fontWeight: "700" }}>
+                                Cycle {round.cycle}
+                              </span>
+                              <span style={{ background: "#dcfce7", color: "#166534", fontSize: "11px", padding: "2px 8px", borderRadius: "10px", fontWeight: "700" }}>
+                                ✓ {round.status.toUpperCase()}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: "13px", color: "#475569", marginTop: "4px" }}>
+                              <strong>Attending:</strong> {round.clinician}
+                            </div>
                           </div>
-                          <div style={{ fontSize: "13px", color: "#475569", marginTop: "4px" }}>
-                            <strong>Attending:</strong> {round.clinician}
-                          </div>
-                        </div>
 
-                        <button
-                          type="button"
-                          onClick={() => setExpandedNoteId(isExpanded ? null : round.round_id)}
-                          style={{
-                            padding: "5px 12px",
-                            background: "#f1f5f9",
-                            color: "#0284c7",
-                            border: "1px solid #cbd5e1",
-                            borderRadius: "6px",
-                            fontSize: "12px",
-                            fontWeight: "700",
-                            cursor: "pointer",
-                          }}
-                        >
-                          {isExpanded ? "▲ Hide Clinical Note" : "▼ View Clinical Note"}
-                        </button>
-                      </div>
-
-                      <p style={{ fontSize: "13px", color: "#334155", margin: "10px 0 0", lineHeight: "1.4" }}>
-                        {round.summary}
-                      </p>
-
-                      {isExpanded && (
-                        <div style={{ marginTop: "12px", padding: "14px", background: "#ffffff", border: "1px solid #cbd5e1", borderRadius: "8px" }}>
-                          <div style={{ fontSize: "11px", fontWeight: "700", color: "#64748b", marginBottom: "6px", textTransform: "uppercase" }}>
-                            Documented Note Snippet (SOAP Format):
-                          </div>
-                          <pre
+                          <button
+                            type="button"
+                            onClick={() => setExpandedNoteId(isExpanded ? null : round.round_id)}
                             style={{
-                              margin: 0,
+                              padding: "5px 12px",
+                              background: "#f1f5f9",
+                              color: "#0284c7",
+                              border: "1px solid #cbd5e1",
+                              borderRadius: "6px",
                               fontSize: "12px",
-                              lineHeight: "1.5",
-                              whiteSpace: "pre-wrap",
-                              color: "#1e293b",
-                              fontFamily: "monospace",
+                              fontWeight: "700",
+                              cursor: "pointer",
                             }}
                           >
-                            {round.note_snippet}
-                          </pre>
+                            {isExpanded ? "▲ Hide Clinical Note" : "▼ View Clinical Note"}
+                          </button>
                         </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+
+                        <p style={{ fontSize: "13px", color: "#334155", margin: "10px 0 0", lineHeight: "1.4" }}>
+                          {round.summary}
+                        </p>
+
+                        {isExpanded && (
+                          <div style={{ marginTop: "12px", padding: "14px", background: "#ffffff", border: "1px solid #cbd5e1", borderRadius: "8px" }}>
+                            <div style={{ fontSize: "11px", fontWeight: "700", color: "#64748b", marginBottom: "6px", textTransform: "uppercase" }}>
+                              Documented Note Snippet (SOAP Format):
+                            </div>
+                            <pre
+                              style={{
+                                margin: 0,
+                                fontSize: "12px",
+                                lineHeight: "1.5",
+                                whiteSpace: "pre-wrap",
+                                color: "#1e293b",
+                                fontFamily: "monospace",
+                              }}
+                            >
+                              {round.note_snippet}
+                            </pre>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </section>
+
 
             {/* ── AI Clinical Trajectory Synthesis ──────────────────────── */}
             <section

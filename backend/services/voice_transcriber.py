@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """High-Accuracy Oncology Speech-to-Text & Audio Transcription Service.
 
-Multi-engine architecture:
-1. Gemini 2.5 Flash Native Multimodal Audio (₹0 free tier, medical vocabulary specialist)
-2. Local faster-whisper (CTranslate2 int8 CPU/GPU inference with VAD filtering & clinical prompt)
-3. Oncology Clinical Auto-Correction Pipeline (post-processes phonetic speech errors into exact terms)
+Multi-engine architecture supporting strict privacy modes:
+- "local": 100% on-device faster-whisper (CTranslate2 int8 on CPU), ZERO audio egress (Default)
+- "cloud": Gemini Multimodal Audio (requires GEMINI_API_KEY)
+- "hybrid": Gemini Multimodal Audio with automatic local faster-whisper fallback
 """
 from __future__ import annotations
 
@@ -21,6 +21,14 @@ logger = logging.getLogger(__name__)
 _FASTER_WHISPER_MODEL = None
 
 
+def get_transcription_mode() -> str:
+    """Return active STT privacy mode: 'local' (default), 'cloud', or 'hybrid'."""
+    mode = os.getenv("TRANSCRIPTION_MODE", "local").strip().lower()
+    if mode not in ("local", "cloud", "hybrid"):
+        return "local"
+    return mode
+
+
 def _get_mime_type(filename: str) -> str:
     ext = os.path.splitext(filename)[1].lower()
     mapping = {
@@ -35,10 +43,12 @@ def _get_mime_type(filename: str) -> str:
 
 
 def _transcribe_with_gemini(audio_bytes: bytes, mime_type: str) -> Optional[str]:
-    """Transcribe clinician dictation using Gemini 2.5 Flash Multimodal Audio (Free Tier)."""
+    """Transcribe clinician dictation using Gemini Multimodal Audio."""
     api_key = os.getenv("GEMINI_API_KEY", "")
     if not api_key:
         return None
+
+    model_name = os.getenv("GEMINI_MODEL_DRAFT", "gemini-3.5-flash")
 
     try:
         from google import genai
@@ -57,7 +67,7 @@ def _transcribe_with_gemini(audio_bytes: bytes, mime_type: str) -> Optional[str]
         )
 
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model=model_name,
             contents=[audio_part, prompt],
             config=types.GenerateContentConfig(
                 temperature=0.0,
@@ -66,10 +76,14 @@ def _transcribe_with_gemini(audio_bytes: bytes, mime_type: str) -> Optional[str]
         )
 
         if response.text and response.text.strip():
-            logger.info("Transcribed audio using Gemini 2.5 Flash.")
+            logger.info("Transcribed audio using Gemini Multimodal Audio (%s).", model_name)
             return response.text.strip()
     except Exception as exc:
-        logger.warning("Gemini audio transcription failed, falling back: %s", exc)
+        err_msg = str(exc)
+        if "404" in err_msg or "not found" in err_msg.lower():
+            logger.error("Gemini model '%s' not found (404). Update GEMINI_MODEL_DRAFT in .env: %s", model_name, exc)
+        else:
+            logger.warning("Gemini audio transcription failed, falling back to local Whisper: %s", exc)
 
     return None
 
@@ -129,35 +143,69 @@ def _transcribe_with_faster_whisper(audio_bytes: bytes, filename: str) -> Option
     return None
 
 
-def transcribe_audio_on_device(audio_bytes: bytes, filename: str = "recording.webm") -> str:
-    """Multi-tier accurate voice transcription for oncology rounds.
+def transcribe_audio_with_details(audio_bytes: bytes, filename: str = "recording.webm") -> dict[str, str]:
+    """Transcribe audio respecting TRANSCRIPTION_MODE (local | cloud | hybrid).
 
-    Pipeline:
-    1. Gemini 2.5 Flash native multimodal audio (highest medical accuracy, ₹0 free tier)
-    2. Local faster-whisper (100% on-device private processing)
-    3. Clinical oncology auto-correction & acronym normalizer
+    Returns:
+        dict with keys: transcript, engine, mode
     """
+    mode = get_transcription_mode()
     if not audio_bytes:
-        return ""
+        return {"transcript": "", "engine": "empty-audio", "mode": mode}
 
     mime_type = _get_mime_type(filename)
     raw_transcript: Optional[str] = None
+    engine_name = "faster-whisper-on-device"
 
-    # 1. Try Gemini 2.5 Flash Multimodal Audio (highest clinical accuracy)
-    raw_transcript = _transcribe_with_gemini(audio_bytes, mime_type)
-
-    # 2. Try local faster-whisper if Gemini is unavailable
-    if not raw_transcript:
+    if mode == "local":
+        # Strict on-device mode: designed for zero audio egress in local mode (zero audio bytes sent to any cloud API)
         raw_transcript = _transcribe_with_faster_whisper(audio_bytes, filename)
+        engine_name = "faster-whisper-on-device (zero egress)"
+    elif mode == "cloud":
+        raw_transcript = _transcribe_with_gemini(audio_bytes, mime_type)
+        engine_name = f"gemini-audio ({os.getenv('GEMINI_MODEL_DRAFT', 'gemini-3.5-flash')})"
+    else:  # hybrid
+        raw_transcript = _transcribe_with_gemini(audio_bytes, mime_type)
+        if raw_transcript:
+            engine_name = f"gemini-audio ({os.getenv('GEMINI_MODEL_DRAFT', 'gemini-3.5-flash')})"
+        else:
+            raw_transcript = _transcribe_with_faster_whisper(audio_bytes, filename)
+            engine_name = "faster-whisper-on-device (hybrid fallback)"
 
-    # 3. Default demo fallback if audio is silent or unparseable
     if not raw_transcript:
-        raw_transcript = (
-            "Patient 104 is a 58-year-old male with colorectal cancer. "
-            "He is currently on cycle 3 chemotherapy. He has developed fever since yesterday. "
-            "WBC is 2100 and ANC is 900. He reports increased fatigue."
-        )
+        demo_mode = os.getenv("DEMO_MODE", "false").strip().lower() in ("true", "1", "yes")
+        if demo_mode:
+            raw_transcript = (
+                "[DEMO DATA - NOT TRANSCRIBED FROM AUDIO] "
+                "Patient 104 is a 58-year-old male with colorectal cancer. "
+                "He is currently on cycle 3 chemotherapy. He has developed fever since yesterday. "
+                "WBC is 2100 and ANC is 900. He reports increased fatigue."
+            )
+            engine_name = f"{engine_name} (demo data - not transcribed from audio)"
+        else:
+            return {
+                "transcript": "",
+                "engine": f"{engine_name} (untranscribed)",
+                "mode": mode,
+                "egress": "0 bytes (on-device only)" if mode == "local" else "cloud-egress",
+                "message": "Audio not transcribed (speech model unavailable or audio silent). Enter dictation manually.",
+            }
 
-    # 4. Run clinical auto-correction to fix phonetic speech errors & normalize units
-    correction_result = correct_clinical_transcript(raw_transcript, use_gemini=True)
-    return correction_result.get("corrected_text", raw_transcript)
+    # In strict local mode, disable Gemini for autocorrect as well to maintain zero text egress
+    allow_gemini_autocorrect = (mode != "local")
+    correction_result = correct_clinical_transcript(raw_transcript, use_gemini=allow_gemini_autocorrect)
+    final_text = correction_result.get("corrected_text", raw_transcript)
+
+    return {
+        "transcript": final_text,
+        "engine": engine_name,
+        "mode": mode,
+        "egress": "0 bytes (on-device only)" if mode == "local" else "cloud-egress",
+    }
+
+
+
+def transcribe_audio_on_device(audio_bytes: bytes, filename: str = "recording.webm") -> str:
+    """Convenience wrapper returning plain string transcript."""
+    res = transcribe_audio_with_details(audio_bytes, filename)
+    return res["transcript"]

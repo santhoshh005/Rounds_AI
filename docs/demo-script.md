@@ -18,7 +18,7 @@
 >
 > But today’s tools are broken:
 > 1. General speech-to-text engines constantly butcher oncology regimens—hearing *'fall fox'* instead of **mFOLFOX6**, or *'our chop'* instead of **R-CHOP**.
-> 2. Sending patient audio to commercial cloud APIs triggers serious HIPAA and privacy concerns.
+> 2. Sending patient audio to commercial cloud APIs triggers serious privacy and data security concerns.
 > 3. Doctors are forced to spend **2 to 3 hours every evening** typing notes into clunky EHRs instead of caring for patients.
 >
 > **This is RoundsAI: the privacy-first, multimodal AI copilot built specifically for inpatient oncology rounds.**"
@@ -72,12 +72,19 @@
 #### Step 3: AI Safety Sentinel & CTCAE Grading
 *(Action: Click 'ANALYZE ROUND')*
 
-> *"When I click **'ANALYZE ROUND'**, the system evaluates the patient against clinical guidelines:*
+> *"When I click **'ANALYZE ROUND'**, the system evaluates the patient against IDSA/ASCO and CTCAE guidelines:*
 >
-> *(Point to the Critical Alert banner on screen)*  
-> 1. **Emergency Safety Sentinel:** It flags **Febrile Neutropenia**—detecting an ANC of 900 coupled with fever $\ge 38.3^\circ\text{C}$. It immediately prompts for urgent blood cultures and empiric antipseudomonal IV antibiotics within 60 minutes.
-> 2. **Automated CTCAE v5.0 Grading:** It identifies **Grade 3 Neutropenia** based on the patient's baseline labs.
-> 3. **Complete Structured SOAP Note:** It drafts a guideline-concordant oncology note with full provenance linking every recommendation directly to NCCN guidelines. The doctor reviews, approves, and signs with one click."
+> *(Point to the Alert banner on screen)*  
+> 1. **Secondary Safety Alert (Patient 104, ANC 900, Fever 38.4°C):**
+>    The system detects fever with ANC 900 but flags:
+>    `Criterion met, for clinician review: fever with ANC <1000; expected decline to <500 not documented.`
+>    It alerts the oncologist that while the patient is neutropenic and febrile, an expected decline to < 500 has not been explicitly dictated.
+> 2. **Primary Emergency Sentinel (Patient 105, ANC 450, Fever 38.5°C):**
+>    In our second case (Sarah Jenkins, ANC 450, Temp 38.5°C), the ANC directly breaches the critical < 500 threshold:
+>    `Criterion met, for clinician review: fever observed with temperature of 38.5°C (>= 38.3°C threshold) and Absolute Neutrophil Count (ANC) of 450 cells/µL (< 500 cells/µL threshold). Note: Thresholds require clinical review and correlation.`
+>    This triggers immediate prompts for blood cultures and empiric antipseudomonal IV antibiotics within 60 minutes per IDSA/ASCO 2018 guidelines.
+> 3. **Automated CTCAE v5.0 Grading:** Identifies **Grade 3 Neutropenia** for Patient 104 (ANC 900) and **Grade 4 Critical Neutropenia** for Patient 105 (ANC 450), noting the institutional default LLN.
+> 4. **Complete Structured SOAP Note:** Drafts a guideline-concordant oncology note with full provenance linking every finding directly to clinical guidelines. The doctor reviews, approves, and signs with one click."
 
 ---
 

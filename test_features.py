@@ -42,27 +42,56 @@ def run_tests():
 
     # 4. Multimodal Round Extraction, CTCAE Grading & Safety Sentinels
     print("\n[4/6] Round Extraction & Sentinels (POST /api/v1/rounds/extract):")
-    round_payload = {
+    
+    # 4A. Case 1: Patient #104 (ANC 900, Fever 38.4°C, No Expected Decline Documented -> Secondary Medium Alert)
+    print("  [Case 4A] Testing Patient #104 (ANC 900, Fever 38.4°C, unconfirmed decline):")
+    payload_104 = {
         "patient_id": "104",
         "transcript": "Patient 104 is a 58-year-old male with colorectal cancer. Cycle 3 chemotherapy. Developed fever since yesterday, temp 38.4C. WBC 2100, ANC 900. Complaining of severe fatigue.",
         "images": []
     }
-    body = json.dumps(round_payload).encode()
-    req = urllib.request.Request("http://localhost:8000/api/v1/rounds/extract", data=body, headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req) as res:
-        extracted = json.loads(res.read().decode())
-        round_id = extracted.get("round_id")
-        extractions = extracted.get("extractions", {})
-        flags = extracted.get("review_flags", [])
-        draft_note = extracted.get("draft_note", "")
-        print(f"  Generated Round ID: {round_id}")
-        print(f"  Extracted Labs: {extractions.get('labs')}")
-        print(f"  Review Flags Triggered: {len(flags)}")
-        for f in flags:
-            print(f"    - [{f.get('severity').upper()}] {f.get('message')}")
+    body_104 = json.dumps(payload_104).encode()
+    req_104 = urllib.request.Request("http://localhost:8000/api/v1/rounds/extract", data=body_104, headers={"Content-Type": "application/json", "X-Test-Mode": "true"})
+    with urllib.request.urlopen(req_104) as res:
+        extracted_104 = json.loads(res.read().decode())
+        round_id = extracted_104.get("round_id")
+        raw_ext_104 = extracted_104.get("extraction") or extracted_104.get("extractions", {})
+        extractions = raw_ext_104[0] if isinstance(raw_ext_104, list) and raw_ext_104 else (raw_ext_104 if isinstance(raw_ext_104, dict) else {})
+        flags_104 = extracted_104.get("review_flags", [])
+        draft_note = extracted_104.get("draft_note", "")
+        print(f"    Round ID: {round_id}")
+        print(f"    Review Flags ({len(flags_104)}):")
+        for f in flags_104:
+            print(f"      - [{f.get('severity').upper()}] {f.get('message')}")
         assert round_id is not None
-        assert any("fever" in f.get("message").lower() and ("anc" in f.get("message").lower() or "neutropen" in f.get("message").lower()) for f in flags)
+        assert any(
+            f.get("message") == "Criterion met, for clinician review: fever with ANC <1000; expected decline to <500 not documented."
+            and f.get("severity") == "medium"
+            for f in flags_104
+        ), "Secondary Febrile Neutropenia alert must fire for ANC 900 without documented decline"
         assert len(draft_note) > 50
+
+    # 4B. Case 2: Patient #105 (ANC 450, Fever 38.5°C -> Primary High Emergency Sentinel)
+    print("  [Case 4B] Testing Patient #105 (ANC 450, Fever 38.5°C -> Primary High Emergency Sentinel):")
+    payload_105 = {
+        "patient_id": "105",
+        "transcript": "Patient 105 is a 46-year-old female with lymphoma. Cycle 2 chemotherapy. Developed fever 38.5C, severe chills. ANC 450, WBC 1800, platelets 120000.",
+        "images": []
+    }
+    body_105 = json.dumps(payload_105).encode()
+    req_105 = urllib.request.Request("http://localhost:8000/api/v1/rounds/extract", data=body_105, headers={"Content-Type": "application/json", "X-Test-Mode": "true"})
+    with urllib.request.urlopen(req_105) as res:
+        extracted_105 = json.loads(res.read().decode())
+        flags_105 = extracted_105.get("review_flags", [])
+        print(f"    Review Flags ({len(flags_105)}):")
+        for f in flags_105:
+            print(f"      - [{f.get('severity').upper()}] {f.get('message')}")
+        assert any(
+            f.get("severity") == "high"
+            and "450" in f.get("message")
+            and "500" in f.get("message")
+            for f in flags_105
+        ), "Primary High Emergency Sentinel must fire for ANC 450 (< 500)"
 
     # 5. Live Sync API: Round Retrieval
     print("\n[5/6] Bedside Sync API (GET /api/v1/rounds/latest & /rounds/{id}):")

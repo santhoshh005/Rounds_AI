@@ -32,6 +32,8 @@ type LabValue = {
   unit?: string;
   source?: string;
   confidence?: string;
+  status?: string;
+  flag_reason?: string;
 };
 
 type LabTrend = {
@@ -39,8 +41,9 @@ type LabTrend = {
   value: number;
   unit?: string;
   previous_value?: number;
-  trend: "down" | "up" | "stable" | "new";
+  trend: "down" | "up" | "stable" | "new" | "insufficient data";
   source?: string;
+  nadir_value?: number;
 };
 
 type ReviewFlag = {
@@ -48,13 +51,15 @@ type ReviewFlag = {
   message: string;
   rationale: string;
   guideline?: string;
+  rule_id?: string;
+  source?: string;
 };
 
 type ClinicalEvidence = {
   source: string;
   title: string;
-  recommendation: string;
-  relevance: string;
+  year: number;
+  description: string;
 };
 
 type ImageAttachment = {
@@ -63,12 +68,33 @@ type ImageAttachment = {
   name: string;
 };
 
+type ConfirmItem = {
+  id: string;
+  item_type: string;
+  label: string;
+  value: any;
+  unit?: string;
+  reason: string;
+  source: string;
+  confirmed?: boolean;
+  dismissed?: boolean;
+};
+
+type AutoCorrectChange = {
+  original: string;
+  corrected: string;
+  rule_id: string;
+  from?: string;
+  to?: string;
+};
+
 type Result = {
   extraction: {
     patient_id?: string;
     diagnosis?: string;
     treatment_cycle?: number;
     symptoms: string[];
+    negated_symptoms?: string[];
     labs: LabValue[];
     source?: string;
   };
@@ -79,6 +105,14 @@ type Result = {
   disclaimer: string;
   round_id?: string;
   provenance?: Record<string, string>;
+  saved_to_db?: boolean;
+  confirm_before_signing?: ConfirmItem[];
+  ctcae_version?: string;
+  transcription_mode?: string;
+  demo_mode?: boolean;
+  stage_engines?: Record<string, string>;
+  fallback_used?: boolean;
+  fallback_message?: string | null;
 };
 
 type PatientRecord = {
@@ -100,6 +134,15 @@ const DEMO =
   "Patient 104 is a 58-year-old male with colorectal cancer. He is currently on cycle 3 chemotherapy. He has developed fever since yesterday. WBC is 2100 and ANC is 900. He reports increased fatigue.";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API_KEY = process.env.NEXT_PUBLIC_API_KEY ?? "";
+
+function getAuthHeaders(extraHeaders: Record<string, string> = {}): Record<string, string> {
+  const headers: Record<string, string> = { ...extraHeaders };
+  if (API_KEY) {
+    headers["X-API-Key"] = API_KEY;
+  }
+  return headers;
+}
 
 export default function Dashboard() {
   const [transcript, setTranscript] = useState(DEMO);
@@ -139,22 +182,34 @@ export default function Dashboard() {
   const [editRegimen, setEditRegimen] = useState("");
   const [editDiagnosis, setEditDiagnosis] = useState("");
 
-  // Voice States
+  // Voice & Security States
   const [isDictating, setIsDictating] = useState(false);
   const [isRecordingLocal, setIsRecordingLocal] = useState(false);
   const [voiceNotice, setVoiceNotice] = useState("");
   const [autocorrectNotice, setAutocorrectNotice] = useState("");
   const [previousTranscript, setPreviousTranscript] = useState("");
   const [isAutocorrecting, setIsAutocorrecting] = useState(false);
-  const recognitionRef = useRef<any>(null);
+  const [autocorrectChanges, setAutocorrectChanges] = useState<AutoCorrectChange[]>([]);
+  const [transcriptionMode, setTranscriptionMode] = useState("local");
+  const [demoMode, setDemoMode] = useState(false);
+  const [testMode, setTestMode] = useState(false);
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+
+  // Clinical Safety & Attestation States
+  const [confirmItems, setConfirmItems] = useState<ConfirmItem[]>([]);
+  const [isApproved, setIsApproved] = useState(false);
+  const [isApproving, setIsApproving] = useState(false);
+  const [approvalInfo, setApprovalInfo] = useState<{ by?: string; at?: string } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function fetchPatients() {
     try {
-      const res = await fetch(`${API}/api/v1/patients`);
+      const res = await fetch(`${API}/api/v1/patients`, {
+        headers: getAuthHeaders(),
+      });
       if (res.ok) {
         const data = await res.json();
         setPatients(data);
@@ -170,9 +225,19 @@ export default function Dashboard() {
 
   function selectPatientForRound(p: PatientRecord) {
     setSelectedPatient(p);
-    setTranscript(
-      `Patient ${p.id} (${p.name}) is a ${p.age}-year-old ${p.sex} with ${p.diagnosis}. Currently on cycle ${p.cycle} ${p.regimen} at ${p.ward_bed}. Vital signs stable, reporting increased fatigue. Recent blood counts recorded.`
-    );
+    if (p.id === "104") {
+      setTranscript(
+        "Patient 104 is a 58-year-old male with colorectal cancer. He is currently on cycle 3 chemotherapy. He has developed fever since yesterday, temp 38.4C. WBC is 2100 and ANC is 900. Complaining of severe fatigue."
+      );
+    } else if (p.id === "105") {
+      setTranscript(
+        "Patient 105 is a 46-year-old female with lymphoma. Cycle 2 chemotherapy. Developed fever 38.5C, severe chills. ANC 450, WBC 1800, platelets 120000."
+      );
+    } else {
+      setTranscript(
+        `Patient ${p.id} (${p.name}) is a ${p.age}-year-old ${p.sex} with ${p.diagnosis}. Currently on cycle ${p.cycle} ${p.regimen} at ${p.ward_bed}. Vital signs stable, reporting increased fatigue. Recent blood counts recorded.`
+      );
+    }
     setShowRosterModal(false);
   }
 
@@ -196,7 +261,7 @@ export default function Dashboard() {
 
       const res = await fetch(`${API}/api/v1/patients`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify(payload),
       });
 
@@ -245,7 +310,7 @@ export default function Dashboard() {
 
       const res = await fetch(`${API}/api/v1/patients/${editingPatient.id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify(payload),
       });
 
@@ -276,6 +341,7 @@ export default function Dashboard() {
     try {
       const res = await fetch(`${API}/api/v1/patients/${patientIdToDischarge}`, {
         method: "DELETE",
+        headers: getAuthHeaders(),
       });
 
       if (!res.ok) throw new Error("Could not discharge patient.");
@@ -286,10 +352,13 @@ export default function Dashboard() {
     }
   }
 
-  // ── Bedside Mobile Live Sync Detection ────────────────────────────────
-  async function checkBedsideSync() {
+  // ── Bedside Mobile Live Sync Detection via SSE & Scoped Polling ─────
+  async function checkBedsideSyncScoped(scopedPatientId?: string) {
     try {
-      const res = await fetch(`${API}/api/v1/rounds/latest`);
+      const url = scopedPatientId
+        ? `${API}/api/v1/rounds/latest?patient_id=${scopedPatientId}`
+        : `${API}/api/v1/rounds/latest`;
+      const res = await fetch(url, { headers: getAuthHeaders() });
       if (res.ok) {
         const roundData = await res.json();
         if (roundData && roundData.id && roundData.id !== result?.round_id) {
@@ -298,7 +367,46 @@ export default function Dashboard() {
         }
       }
     } catch (e) {
-      console.warn("Could not check bedside sync:", e);
+      console.warn("Could not check scoped bedside sync:", e);
+    }
+  }
+
+  function checkBedsideSync() {
+    checkBedsideSyncScoped(selectedPatient?.id);
+  }
+
+  function handleConfirmItem(itemId: string) {
+    setConfirmItems((prev) =>
+      prev.map((it) => (it.id === itemId ? { ...it, confirmed: true, dismissed: false } : it))
+    );
+  }
+
+  function handleDismissItem(itemId: string) {
+    setConfirmItems((prev) =>
+      prev.map((it) => (it.id === itemId ? { ...it, dismissed: true, confirmed: false } : it))
+    );
+  }
+
+  async function handleApproveNote() {
+    if (!result?.round_id) return;
+    setIsApproving(true);
+    try {
+      const approver = user?.displayName || user?.email || "Attending Clinician";
+      const res = await fetch(`${API}/api/v1/rounds/${result.round_id}/approve`, {
+        method: "POST",
+        headers: getAuthHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ approved_by: approver }),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.detail || "Approval request failed.");
+      }
+      setIsApproved(true);
+      setApprovalInfo({ by: approver, at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) });
+    } catch (err: any) {
+      alert("Could not approve note: " + err.message);
+    } finally {
+      setIsApproving(false);
     }
   }
 
@@ -309,16 +417,30 @@ export default function Dashboard() {
     }
     const ext = roundData.extractions?.[0] || roundData.extraction;
     if (ext) {
+      const flags = roundData.review_flags || [];
+      const confirms = roundData.confirm_before_signing || [];
       setResult({
         round_id: roundData.id || roundData.round_id,
         extraction: ext,
         lab_trends: roundData.lab_trends || [],
-        review_flags: roundData.review_flags || [],
+        review_flags: flags,
         retrieved_evidence: roundData.retrieved_evidence || [],
         draft_note: roundData.draft_notes?.[0]?.content || roundData.draft_note || "",
         disclaimer: "Demo / research prototype. Not for autonomous clinical decision-making or real patient data.",
         provenance: roundData.provenance || {},
+        saved_to_db: roundData.saved_to_db ?? true,
+        confirm_before_signing: confirms,
+        ctcae_version: roundData.ctcae_version || "CTCAE v5.0 (November 27, 2017)",
+        transcription_mode: roundData.transcription_mode || "local",
+        demo_mode: Boolean(roundData.demo_mode),
+        stage_engines: roundData.stage_engines || {},
+        fallback_used: Boolean(roundData.fallback_used),
+        fallback_message: roundData.fallback_message || null,
       });
+      setConfirmItems(confirms);
+      setIsApproved(false);
+      setApprovalInfo(null);
+
       const pid = ext.patient_id || roundData.patient_id;
       if (pid) {
         const found = patients.find((p) => p.id === pid);
@@ -328,16 +450,39 @@ export default function Dashboard() {
     setBedsideNoticeDismissed(true);
   }
 
+  async function fetchTranscriptionMode() {
+    try {
+      const res = await fetch(`${API}/api/v1/voice/mode`, {
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        const d = await res.json();
+        if (d.mode) setTranscriptionMode(d.mode);
+        if (d.demo_mode !== undefined) setDemoMode(Boolean(d.demo_mode));
+      }
+      // Also check /health for TEST_MODE status
+      const healthRes = await fetch(`${API}/health`);
+      if (healthRes.ok) {
+        const h = await healthRes.json();
+        setTestMode(h.test_mode === "true" || h.test_mode === true);
+      }
+    } catch (e) {
+      console.warn("Could not fetch transcription mode:", e);
+    }
+  }
+
   useEffect(() => {
     fetchPatients();
-    checkBedsideSync();
+    fetchTranscriptionMode();
 
     // Check if a specific round was passed in URL (from mobile companion)
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const roundIdParam = params.get("roundId");
       if (roundIdParam) {
-        fetch(`${API}/api/v1/rounds/${roundIdParam}`)
+        fetch(`${API}/api/v1/rounds/${roundIdParam}`, {
+          headers: getAuthHeaders(),
+        })
           .then((r) => (r.ok ? r.json() : null))
           .then((rData) => {
             if (rData) loadBedsideRound(rData);
@@ -346,13 +491,50 @@ export default function Dashboard() {
       }
     }
 
-    // Interval to poll for newly transmitted rounds every 8 seconds
-    const interval = setInterval(checkBedsideSync, 8000);
+    // ── Server-Sent Events (SSE) Stream Setup with Fallback ───────────
+    let eventSource: EventSource | null = null;
+    let fallbackInterval: NodeJS.Timeout | null = null;
+
+    try {
+      const sseUrl = `${API}/api/v1/rounds/stream${selectedPatient ? `?patient_id=${selectedPatient.id}` : ""}`;
+      eventSource = new EventSource(sseUrl);
+
+      eventSource.addEventListener("round_update", (e) => {
+        try {
+          const roundData = JSON.parse(e.data);
+          if (roundData && roundData.id && roundData.id !== result?.round_id) {
+            setLatestBedsideRound(roundData);
+            setBedsideNoticeDismissed(false);
+          }
+        } catch (err) {
+          console.warn("SSE parse error:", err);
+        }
+      });
+
+      eventSource.onerror = () => {
+        if (eventSource) {
+          eventSource.close();
+          eventSource = null;
+        }
+        if (!fallbackInterval) {
+          fallbackInterval = setInterval(() => {
+            checkBedsideSyncScoped(selectedPatient?.id);
+          }, 15000);
+        }
+      };
+    } catch (e) {
+      fallbackInterval = setInterval(() => {
+        checkBedsideSyncScoped(selectedPatient?.id);
+      }, 15000);
+    }
 
     const demo = typeof window !== "undefined" ? sessionStorage.getItem("demo_user") : null;
     if (demo) {
       setUser({ email: demo } as unknown as User);
-      return () => clearInterval(interval);
+      return () => {
+        if (eventSource) eventSource.close();
+        if (fallbackInterval) clearInterval(fallbackInterval);
+      };
     }
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       if (!currentUser) {
@@ -361,11 +543,13 @@ export default function Dashboard() {
         setUser(currentUser);
       }
     });
+
     return () => {
-      clearInterval(interval);
+      if (eventSource) eventSource.close();
+      if (fallbackInterval) clearInterval(fallbackInterval);
       unsubscribe();
     };
-  }, []);
+  }, [selectedPatient?.id]);
 
 
   // ── Clinical Oncology Auto-Correction & Terminology Normalization ────
@@ -378,8 +562,8 @@ export default function Dashboard() {
     try {
       const res = await fetch(`${API}/api/v1/voice/autocorrect`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: targetText, use_gemini: true }),
+        headers: getAuthHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ text: targetText, use_gemini: transcriptionMode !== "local" }),
       });
 
       if (res.ok) {
@@ -387,16 +571,19 @@ export default function Dashboard() {
         if (data.corrected_text && data.corrected_text !== targetText) {
           setPreviousTranscript(targetText);
           setTranscript(data.corrected_text);
-          const count = data.changes?.length || 1;
-          const sample = data.changes
-            ?.slice(0, 2)
-            .map((c: any) => `"${c.from}" → "${c.to}"`)
+          const rawChanges = data.changes || [];
+          setAutocorrectChanges(rawChanges);
+          const count = rawChanges.length || 1;
+          const sample = rawChanges
+            .slice(0, 2)
+            .map((c: any) => `"${c.original || c.from}" → "${c.corrected || c.to}"`)
             .join(", ");
           setAutocorrectNotice(
             `Auto-corrected ${count} oncology term${count > 1 ? "s" : ""}${sample ? ` (${sample})` : ""}`
           );
         } else {
           setAutocorrectNotice("Clinical terminology verified.");
+          setAutocorrectChanges([]);
         }
       }
     } catch (err) {
@@ -408,10 +595,20 @@ export default function Dashboard() {
     }
   }
 
+  function handleUndoSingleChange(change: AutoCorrectChange, changeIdx: number) {
+    const toRevert = change.corrected || change.to || "";
+    const orig = change.original || change.from || "";
+    if (toRevert && orig) {
+      setTranscript((curr) => curr.replace(toRevert, orig));
+      setAutocorrectChanges((prev) => prev.filter((_, idx) => idx !== changeIdx));
+    }
+  }
+
   function handleUndoAutocorrect() {
     if (previousTranscript) {
       setTranscript(previousTranscript);
       setPreviousTranscript("");
+      setAutocorrectChanges([]);
       setAutocorrectNotice("Reverted to original dictated text.");
       setTimeout(() => setAutocorrectNotice(""), 3000);
     }
@@ -427,16 +624,16 @@ export default function Dashboard() {
       return;
     }
 
-    const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SpeechRecognitionClass =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
 
-    if (!SpeechRecognition) {
+    if (!SpeechRecognitionClass) {
       alert("Web Speech API is not supported in this browser. You can use 'On-Device Audio Recording' or manual typing.");
       return;
     }
 
     try {
-      const recognition = new SpeechRecognition();
+      const recognition = new SpeechRecognitionClass();
       recognition.continuous = true;
       recognition.interimResults = true;
       recognition.lang = "en-US";
@@ -446,7 +643,7 @@ export default function Dashboard() {
         setVoiceNotice("Listening... Speak your clinical notes.");
       };
 
-      recognition.onresult = (event: any) => {
+      recognition.onresult = (event: SpeechRecognitionEvent) => {
         let currentText = "";
         for (let i = 0; i < event.results.length; i++) {
           currentText += event.results[i][0].transcript;
@@ -454,7 +651,7 @@ export default function Dashboard() {
         setTranscript(currentText);
       };
 
-      recognition.onerror = (event: any) => {
+      recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
         console.warn("Speech recognition error:", event.error);
         setIsDictating(false);
         setVoiceNotice("");
@@ -463,7 +660,6 @@ export default function Dashboard() {
       recognition.onend = () => {
         setIsDictating(false);
         setVoiceNotice("");
-        // Automatically perform clinical auto-correction on captured speech
         setTimeout(() => {
           setTranscript((curr) => {
             if (curr && curr.trim()) {
@@ -514,6 +710,7 @@ export default function Dashboard() {
 
           const res = await fetch(`${API}/api/v1/voice/transcribe`, {
             method: "POST",
+            headers: getAuthHeaders(),
             body: formData,
           });
 
@@ -597,19 +794,24 @@ export default function Dashboard() {
 
       const r = await fetch(`${API}/api/v1/rounds/extract`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify(payload),
       });
 
       if (!r.ok) throw new Error("The API could not process this clinical round.");
       const data = await r.json();
       setResult(data);
+      setConfirmItems(data.confirm_before_signing || []);
+      setIsApproved(false);
+      setApprovalInfo(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unexpected error during extraction.");
     } finally {
       setLoading(false);
     }
   }
+
+  const pendingConfirmCount = confirmItems.filter((i) => !i.confirmed && !i.dismissed).length;
 
   if (!user) return <p style={{ padding: "2rem", textAlign: "center" }}>Authenticating...</p>;
 
@@ -626,6 +828,11 @@ export default function Dashboard() {
               <span style={{ background: "#f1f5f9", color: "#334155", fontSize: "10px", padding: "1px 6px", borderRadius: "4px", fontWeight: "600", border: "1px solid #cbd5e1" }}>
                 CLINICIAN-IN-THE-LOOP
               </span>
+              {(demoMode || result?.demo_mode) && (
+                <span style={{ background: "#fef3c7", color: "#b45309", fontSize: "10px", padding: "1px 8px", borderRadius: "4px", fontWeight: "800", border: "1px solid #f59e0b" }}>
+                  DEMO DATA
+                </span>
+              )}
             </div>
             <h1>RoundsAI Workstation</h1>
           </div>
@@ -701,6 +908,53 @@ export default function Dashboard() {
           </button>
         </nav>
       </header>
+
+      {(demoMode || result?.demo_mode) && (
+        <div
+          style={{
+            background: "#fffbeb",
+            border: "1px solid #f59e0b",
+            borderRadius: "10px",
+            padding: "10px 16px",
+            marginBottom: "16px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "12px",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", color: "#92400e", fontSize: "13px", fontWeight: "600" }}>
+            <span style={{ background: "#f59e0b", color: "#ffffff", padding: "2px 8px", borderRadius: "4px", fontSize: "11px", fontWeight: "800" }}>
+              DEMO MODE ACTIVE
+            </span>
+            <span>
+              Demo data enabled (DEMO_MODE=true). Fallback vision values and longitudinal trajectories include synthetic demo data — not read from real patient records or images.
+            </span>
+          </div>
+        </div>
+      )}
+
+      {testMode && (
+        <div
+          style={{
+            background: "#fff1f2",
+            border: "1px solid #fca5a5",
+            borderRadius: "10px",
+            padding: "10px 16px",
+            marginBottom: "16px",
+            display: "flex",
+            alignItems: "center",
+            gap: "12px",
+          }}
+        >
+          <span style={{ background: "#ef4444", color: "#ffffff", padding: "2px 8px", borderRadius: "4px", fontSize: "11px", fontWeight: "800", whiteSpace: "nowrap" }}>
+            PERSISTENCE DISABLED
+          </span>
+          <span style={{ color: "#991b1b", fontSize: "13px", fontWeight: "600" }}>
+            Server is running with TEST_MODE=true — no rounds are being saved to the database. Do not use for real patient data.
+          </span>
+        </div>
+      )}
 
       {/* ── Transmitted Bedside Round Notification Banner ─────────────── */}
       {latestBedsideRound && !bedsideNoticeDismissed && (
@@ -785,6 +1039,53 @@ export default function Dashboard() {
         </p>
 
         <form onSubmit={start}>
+          {/* Quick Demo Scenarios Selector */}
+          <div style={{ display: "flex", gap: "8px", marginBottom: "10px", flexWrap: "wrap", alignItems: "center" }}>
+            <span style={{ fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              Demo Cases:
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                const pt = patients.find((p) => p.id === "104") || selectedPatient;
+                if (pt) setSelectedPatient(pt);
+                setTranscript("Patient 104 is a 58-year-old male with colorectal cancer. Cycle 3 chemotherapy. Developed fever since yesterday, temp 38.4C. WBC 2100, ANC 900. Complaining of severe fatigue.");
+              }}
+              style={{
+                fontSize: "12px",
+                fontWeight: 600,
+                padding: "4px 10px",
+                borderRadius: "6px",
+                background: transcript.includes("900") ? "#fef3c7" : "#f1f5f9",
+                color: transcript.includes("900") ? "#92400e" : "#475569",
+                border: transcript.includes("900") ? "1px solid #fcd34d" : "1px solid #cbd5e1",
+                cursor: "pointer",
+              }}
+            >
+              Case 1: Pt #104 (ANC 900 + Fever 38.4°C → Secondary Alert)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const pt = patients.find((p) => p.id === "105");
+                if (pt) setSelectedPatient(pt);
+                setTranscript("Patient 105 is a 46-year-old female with lymphoma. Cycle 2 chemotherapy. Developed fever 38.5C, severe chills. ANC 450, WBC 1800, platelets 120000.");
+              }}
+              style={{
+                fontSize: "12px",
+                fontWeight: 600,
+                padding: "4px 10px",
+                borderRadius: "6px",
+                background: transcript.includes("450") ? "#fee2e2" : "#f1f5f9",
+                color: transcript.includes("450") ? "#991b1b" : "#475569",
+                border: transcript.includes("450") ? "1px solid #fca5a5" : "1px solid #cbd5e1",
+                cursor: "pointer",
+              }}
+            >
+              Case 2: Pt #105 (ANC 450 + Fever 38.5°C → Primary Sentinel)
+            </button>
+          </div>
+
           <textarea
             value={transcript}
             onChange={(e) => setTranscript(e.target.value)}
@@ -832,6 +1133,35 @@ export default function Dashboard() {
               <span>Attach Lab Scan / Document</span>
             </button>
 
+            {/* STT Mode Badge */}
+            <div
+              style={{
+                marginLeft: "auto",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "5px",
+                padding: "5px 10px",
+                borderRadius: "6px",
+                fontSize: "11px",
+                fontWeight: 700,
+                letterSpacing: "0.02em",
+                background: transcriptionMode === "local" ? "#f0fdf4" : "#eff6ff",
+                border: transcriptionMode === "local" ? "1px solid #86efac" : "1px solid #bfdbfe",
+                color: transcriptionMode === "local" ? "#166534" : "#1d4ed8",
+              }}
+              title={
+                transcriptionMode === "local"
+                  ? "Local Whisper mode: Audio processed on-device, designed for zero audio egress in local mode"
+                  : `Transcription mode: ${transcriptionMode}`
+              }
+            >
+              <ShieldIcon size={12} color={transcriptionMode === "local" ? "#166534" : "#1d4ed8"} />
+              <span>STT: {transcriptionMode.toUpperCase()}</span>
+              {transcriptionMode === "local" && (
+                <span style={{ fontSize: "10px", opacity: 0.85 }}>(0 Egress)</span>
+              )}
+            </div>
+
             <input
               type="file"
               ref={fileInputRef}
@@ -876,9 +1206,71 @@ export default function Dashboard() {
                   }}
                 >
                   <UndoIcon size={12} color="#15803d" />
-                  <span>Undo Change</span>
+                  <span>Undo All</span>
                 </button>
               )}
+            </div>
+          )}
+
+          {/* Autocorrect Changes Chips with Individual Undo */}
+          {autocorrectChanges.length > 0 && (
+            <div
+              style={{
+                background: "#f0fdf4",
+                border: "1px solid #bbf7d0",
+                borderRadius: "8px",
+                padding: "8px 12px",
+                marginBottom: "12px",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                <span style={{ fontSize: "11px", fontWeight: 700, color: "#166534" }}>
+                  NORMALIZED TERMS ({autocorrectChanges.length})
+                </span>
+                <span style={{ fontSize: "10.5px", color: "#64748b" }}>
+                  Click &ldquo;Undo&rdquo; to revert individual substitutions
+                </span>
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                {autocorrectChanges.map((ch, idx) => (
+                  <span
+                    key={idx}
+                    style={{
+                      background: "#ffffff",
+                      border: "1px solid #86efac",
+                      borderRadius: "4px",
+                      padding: "2px 8px",
+                      fontSize: "11px",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                    }}
+                  >
+                    <span>
+                      <strong style={{ color: "#166534" }}>{ch.corrected || ch.to}</strong>
+                      <span style={{ color: "#64748b", marginLeft: "4px" }}>
+                        (was &ldquo;{ch.original || ch.from}&rdquo;)
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleUndoSingleChange(ch, idx)}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        color: "#dc2626",
+                        fontSize: "10.5px",
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        padding: "0 2px",
+                      }}
+                      title="Undo this change"
+                    >
+                      Undo
+                    </button>
+                  </span>
+                ))}
+              </div>
             </div>
           )}
 
@@ -924,10 +1316,36 @@ export default function Dashboard() {
         {error && <p className="error">{error}</p>}
       </section>
 
+      {/* ── Local Rules Fallback Banner ──────────────────────────────── */}
+      {result && result.fallback_used && (
+        <div
+          style={{
+            background: "#fff7ed",
+            border: "1px solid #fb923c",
+            borderRadius: "10px",
+            padding: "12px 16px",
+            marginBottom: "16px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "12px",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", color: "#9a3412", fontSize: "13px", fontWeight: "600" }}>
+            <span style={{ background: "#ea580c", color: "#ffffff", padding: "2px 8px", borderRadius: "4px", fontSize: "11px", fontWeight: "800" }}>
+              LOCAL RULES FALLBACK
+            </span>
+            <span>
+              {result.fallback_message || "One or more pipeline stages ran using deterministic local rules instead of Gemini."}
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* ── Results Section ──────────────────────────────────────────── */}
       {result && (
         <section className="results">
-          {/* Patient Summary */}
+          {/* Patient Summary & Stage Engines */}
           <div className="card">
             <p className="eyebrow">PATIENT SUMMARY</p>
             <h2>Patient #{result.extraction.patient_id ?? "104"}</h2>
@@ -938,8 +1356,12 @@ export default function Dashboard() {
               <dd>{result.extraction.treatment_cycle ? `Cycle ${result.extraction.treatment_cycle}` : "Not stated"}</dd>
               <dt>Symptoms</dt>
               <dd>{result.extraction.symptoms.join(", ") || "None extracted"}</dd>
-              <dt>Extraction</dt>
-              <dd>{result.extraction.source ?? "Multimodal Rules"}</dd>
+              <dt>Extraction Engine</dt>
+              <dd>{result.stage_engines?.extraction ?? result.extraction.source ?? "local-rules"}</dd>
+              <dt>Vision Engine</dt>
+              <dd>{result.stage_engines?.vision ?? "not_run"}</dd>
+              <dt>Polish Engine</dt>
+              <dd>{result.stage_engines?.polish ?? "not_run"}</dd>
             </dl>
           </div>
 
@@ -956,44 +1378,72 @@ export default function Dashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {result.lab_trends.map((t) => (
-                    <tr key={t.name}>
-                      <td className="lab-name">{t.name}</td>
-                      <td>
-                        {t.value} {t.unit}
-                      </td>
-                      <td>
-                        {t.trend === "down" && (
-                          <span className="trend-down">
-                            <TrendingDownIcon size={14} color="#dc2626" />
-                            <span>Decreased</span>
-                            {t.previous_value !== undefined && (
-                              <span className="prev-lab">(prev: {t.previous_value})</span>
-                            )}
-                          </span>
-                        )}
-                        {t.trend === "up" && (
-                          <span className="trend-up">
-                            <TrendingUpIcon size={14} color="#0284c7" />
-                            <span>Elevated</span>
-                            {t.previous_value !== undefined && (
-                              <span className="prev-lab">(prev: {t.previous_value})</span>
-                            )}
-                          </span>
-                        )}
-                        {t.trend === "stable" && (
-                          <span className="trend-stable">
-                            <MinusIcon size={14} color="#64748b" />
-                            <span>Stable</span>
-                            {t.previous_value !== undefined && (
-                              <span className="prev-lab">(prev: {t.previous_value})</span>
-                            )}
-                          </span>
-                        )}
-                        {t.trend === "new" && <span className="trend-stable">New value</span>}
-                      </td>
-                    </tr>
-                  ))}
+                  {result.lab_trends.map((t) => {
+                    const matchedLab = result.extraction.labs.find((l) => l.name === t.name);
+                    const isDemoLab =
+                      matchedLab?.confidence === "demo data - not read from image" ||
+                      matchedLab?.flag_reason === "demo data - not read from image" ||
+                      t.source?.includes("demo data");
+                    return (
+                      <tr key={t.name}>
+                        <td className="lab-name">
+                          {t.name}
+                          {isDemoLab && (
+                            <span
+                              style={{
+                                marginLeft: "6px",
+                                background: "#fef3c7",
+                                color: "#b45309",
+                                border: "1px solid #f59e0b",
+                                fontSize: "10px",
+                                padding: "1px 6px",
+                                borderRadius: "4px",
+                                fontWeight: "700",
+                              }}
+                            >
+                              demo data - not read from image
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          {t.value} {t.unit}
+                        </td>
+                        <td>
+                          {t.trend === "down" && (
+                            <span className="trend-down">
+                              <TrendingDownIcon size={14} color="#dc2626" />
+                              <span>Decreased</span>
+                              {t.previous_value !== undefined && (
+                                <span className="prev-lab">(prev: {t.previous_value})</span>
+                              )}
+                            </span>
+                          )}
+                          {t.trend === "up" && (
+                            <span className="trend-up">
+                              <TrendingUpIcon size={14} color="#0284c7" />
+                              <span>Elevated</span>
+                              {t.previous_value !== undefined && (
+                                <span className="prev-lab">(prev: {t.previous_value})</span>
+                              )}
+                            </span>
+                          )}
+                          {t.trend === "stable" && (
+                            <span className="trend-stable">
+                              <MinusIcon size={14} color="#64748b" />
+                              <span>Stable</span>
+                              {t.previous_value !== undefined && (
+                                <span className="prev-lab">(prev: {t.previous_value})</span>
+                              )}
+                            </span>
+                          )}
+                          {t.trend === "new" && <span className="trend-stable">New value</span>}
+                          {t.trend === "insufficient data" && (
+                            <span className="trend-stable">Insufficient data</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             ) : result.extraction.labs.length > 0 ? (
@@ -1045,9 +1495,11 @@ export default function Dashboard() {
             {result.retrieved_evidence && result.retrieved_evidence.length > 0 ? (
               result.retrieved_evidence.map((ev, idx) => (
                 <div key={idx} className="evidence-item">
-                  <div className="evidence-title">{ev.title}</div>
-                  <div className="evidence-relevance">{ev.relevance}</div>
-                  <p className="evidence-rec">{ev.recommendation}</p>
+                  <div className="evidence-title">
+                    {ev.title} {ev.year ? `(${ev.year})` : ""}
+                  </div>
+                  <div className="evidence-relevance">{ev.source}</div>
+                  <p className="evidence-rec">{ev.description}</p>
                 </div>
               ))
             ) : (
@@ -1055,26 +1507,231 @@ export default function Dashboard() {
             )}
           </div>
 
+          {/* Saved Locally Only Warning Banner */}
+          {result.saved_to_db === false && (
+            <div
+              style={{
+                gridColumn: "1 / -1",
+                background: "#fef3c7",
+                border: "1px solid #f59e0b",
+                borderRadius: "8px",
+                padding: "12px 16px",
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                color: "#92400e",
+                fontSize: "13px",
+                fontWeight: "600",
+              }}
+            >
+              <AlertCircleIcon size={18} color="#d97706" />
+              <span>
+                Saved Locally Only: Cloud database write was unavailable. This round is safely stored in local memory on this device, but not synced to central cloud storage.
+              </span>
+            </div>
+          )}
+
+          {/* Confirm Before Signing Section */}
+          {confirmItems.length > 0 && (
+            <div
+              className="card full"
+              style={{
+                border: pendingConfirmCount > 0 ? "1px solid #f59e0b" : "1px solid #86efac",
+                background: pendingConfirmCount > 0 ? "#fffbeb" : "#f0fdf4",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                <p className="eyebrow" style={{ color: pendingConfirmCount > 0 ? "#b45309" : "#166534", margin: 0, display: "flex", alignItems: "center", gap: "6px" }}>
+                  <AlertCircleIcon size={13} color={pendingConfirmCount > 0 ? "#b45309" : "#166534"} />
+                  <span>
+                    CONFIRM BEFORE SIGNING ({pendingConfirmCount} PENDING VERIFICATION)
+                  </span>
+                </p>
+                <span
+                  style={{
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    padding: "2px 8px",
+                    borderRadius: "10px",
+                    background: pendingConfirmCount > 0 ? "#fef3c7" : "#dcfce7",
+                    color: pendingConfirmCount > 0 ? "#92400e" : "#166534",
+                  }}
+                >
+                  {pendingConfirmCount === 0 ? "✓ All Items Reconciled" : "Action Required"}
+                </span>
+              </div>
+              <p style={{ fontSize: "12.5px", color: "#475569", marginBottom: "12px" }}>
+                The following lab values or findings had low extraction confidence, conflicts between dictation and scanned documents, or out-of-range values. Please confirm or dismiss each item prior to note attestation.
+              </p>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                {confirmItems.map((item) => (
+                  <div
+                    key={item.id}
+                    style={{
+                      background: "#ffffff",
+                      border: item.confirmed
+                        ? "1px solid #86efac"
+                        : item.dismissed
+                        ? "1px solid #cbd5e1"
+                        : "1px solid #fcd34d",
+                      borderRadius: "6px",
+                      padding: "10px 14px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: "12px",
+                      opacity: item.dismissed ? 0.6 : 1,
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: "13px", color: "#0f172a" }}>
+                        {item.label}:{" "}
+                        {typeof item.value === "object" && item.value !== null
+                          ? Object.entries(item.value)
+                              .map(([k, v]) => `${k}: ${v}`)
+                              .join(" vs ")
+                          : String(item.value)}{" "}
+                        {item.unit || ""}
+                        <span
+                          style={{
+                            marginLeft: "8px",
+                            fontSize: "10px",
+                            fontWeight: 600,
+                            padding: "1px 6px",
+                            borderRadius: "4px",
+                            background: "#f1f5f9",
+                            color: "#475569",
+                          }}
+                        >
+                          Source: {item.source}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: "12px", color: "#64748b", marginTop: "2px" }}>
+                        {item.reason}
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
+                      {item.confirmed ? (
+                        <span
+                          style={{
+                            fontSize: "12px",
+                            fontWeight: 700,
+                            color: "#166534",
+                            background: "#dcfce7",
+                            padding: "4px 10px",
+                            borderRadius: "4px",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "4px",
+                          }}
+                        >
+                          <CheckIcon size={12} color="#166534" /> Confirmed
+                        </span>
+                      ) : item.dismissed ? (
+                        <span
+                          style={{
+                            fontSize: "12px",
+                            fontWeight: 700,
+                            color: "#64748b",
+                            background: "#f1f5f9",
+                            padding: "4px 10px",
+                            borderRadius: "4px",
+                          }}
+                        >
+                          Dismissed
+                        </span>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleConfirmItem(item.id)}
+                            style={{
+                              background: "#16a34a",
+                              color: "#fff",
+                              border: "none",
+                              borderRadius: "4px",
+                              padding: "4px 10px",
+                              fontSize: "12px",
+                              fontWeight: 600,
+                              cursor: "pointer",
+                            }}
+                          >
+                            Confirm Value
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDismissItem(item.id)}
+                            style={{
+                              background: "#f1f5f9",
+                              color: "#475569",
+                              border: "1px solid #cbd5e1",
+                              borderRadius: "4px",
+                              padding: "4px 10px",
+                              fontSize: "12px",
+                              fontWeight: 600,
+                              cursor: "pointer",
+                            }}
+                          >
+                            Dismiss
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Editable AI Draft Note */}
           <div className="card full">
-            <p className="eyebrow">
-              <FileTextIcon size={12} color="#0284c7" />
-              <span>CLINICAL PROGRESS NOTE — REVIEW & ATTESTATION</span>
-            </p>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+              <p className="eyebrow" style={{ margin: 0, display: "flex", alignItems: "center", gap: "6px" }}>
+                <FileTextIcon size={12} color="#0284c7" />
+                <span>CLINICAL PROGRESS NOTE — REVIEW & ATTESTATION</span>
+              </p>
+              {result.ctcae_version && (
+                <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>
+                  Grading Standard: {result.ctcae_version}
+                </span>
+              )}
+            </div>
             <textarea
               className="note"
               defaultValue={result.draft_note}
               aria-label="Editable clinical draft note"
             />
-            <div className="actions">
+            <div className="actions" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "10px" }}>
+              <div style={{ fontSize: "12px", color: "#64748b" }}>
+                {isApproved ? (
+                  <span style={{ color: "#166534", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                    <CheckIcon size={14} color="#166534" />
+                    Attested by {approvalInfo?.by || "Clinician"} at {approvalInfo?.at || "recently"}
+                  </span>
+                ) : pendingConfirmCount > 0 ? (
+                  <span style={{ color: "#b45309", fontWeight: 600 }}>
+                    ⚠️ {pendingConfirmCount} item{pendingConfirmCount > 1 ? "s" : ""} pending confirmation before attestation
+                  </span>
+                ) : (
+                  <span>Ready for clinician sign-off</span>
+                )}
+              </div>
               <button
                 type="button"
                 className="secondary"
-                onClick={() => alert("Note approved by clinician and verified into patient record.")}
-                style={{ background: "#0f172a", color: "#ffffff", border: "none" }}
+                disabled={isApproved || isApproving || pendingConfirmCount > 0}
+                onClick={handleApproveNote}
+                style={{
+                  background: isApproved ? "#166534" : pendingConfirmCount > 0 ? "#94a3b8" : "#0f172a",
+                  color: "#ffffff",
+                  border: "none",
+                  cursor: isApproved || pendingConfirmCount > 0 ? "not-allowed" : "pointer",
+                }}
               >
                 <CheckIcon size={14} color="#ffffff" />
-                <span>ATTEST & APPROVE NOTE</span>
+                <span>{isApproved ? "ATTESTED & APPROVED" : isApproving ? "APPROVING..." : "ATTEST & APPROVE NOTE"}</span>
               </button>
             </div>
           </div>

@@ -1,7 +1,8 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 import logging
+import threading
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -58,12 +59,14 @@ _DEFAULT_PATIENTS: list[dict] = [
     },
 ]
 
+_PATIENTS_LOCK = threading.Lock()
 _PATIENTS_STORE: dict[str, dict] = {p["id"]: dict(p) for p in _DEFAULT_PATIENTS}
 
 
 def list_patients(status: Optional[str] = "admitted") -> list[Patient]:
     """Return all oncology ward patients, optionally filtered by status."""
-    patients = list(_PATIENTS_STORE.values())
+    with _PATIENTS_LOCK:
+        patients = [dict(p) for p in _PATIENTS_STORE.values()]
     if status:
         patients = [p for p in patients if p.get("status") == status]
     patients.sort(key=lambda x: x.get("ward_bed", ""))
@@ -72,13 +75,14 @@ def list_patients(status: Optional[str] = "admitted") -> list[Patient]:
 
 def get_patient(patient_id: str) -> Optional[Patient]:
     """Retrieve a single patient by ID."""
-    p = _PATIENTS_STORE.get(str(patient_id))
-    if not p:
-        for k, v in _PATIENTS_STORE.items():
-            if k.lower() == str(patient_id).lower():
-                return Patient(**v)
-        return None
-    return Patient(**p)
+    with _PATIENTS_LOCK:
+        p = _PATIENTS_STORE.get(str(patient_id))
+        if not p:
+            for k, v in _PATIENTS_STORE.items():
+                if k.lower() == str(patient_id).lower():
+                    return Patient(**v)
+            return None
+        return Patient(**p)
 
 
 def create_patient(data: PatientCreate) -> Patient:
@@ -90,7 +94,8 @@ def create_patient(data: PatientCreate) -> Patient:
     record["created_at"] = now_iso
     record["status"] = "admitted"
 
-    _PATIENTS_STORE[pid] = record
+    with _PATIENTS_LOCK:
+        _PATIENTS_STORE[pid] = record
     logger.info("Admitted new patient: %s (%s)", pid, data.name)
     return Patient(**record)
 
@@ -98,22 +103,24 @@ def create_patient(data: PatientCreate) -> Patient:
 def update_patient(patient_id: str, data: PatientUpdate) -> Optional[Patient]:
     """Update patient information (e.g. advance chemo cycle, change bed)."""
     pid = str(patient_id)
-    existing = _PATIENTS_STORE.get(pid)
-    if not existing:
-        return None
+    with _PATIENTS_LOCK:
+        existing = _PATIENTS_STORE.get(pid)
+        if not existing:
+            return None
 
-    updates = {k: v for k, v in data.model_dump().items() if v is not None}
-    existing.update(updates)
-    _PATIENTS_STORE[pid] = existing
-    logger.info("Updated patient %s: %s", pid, updates)
-    return Patient(**existing)
+        updates = {k: v for k, v in data.model_dump().items() if v is not None}
+        existing.update(updates)
+        _PATIENTS_STORE[pid] = existing
+        logger.info("Updated patient %s: %s", pid, updates)
+        return Patient(**existing)
 
 
 def discharge_patient(patient_id: str) -> bool:
     """Discharge patient from active oncology ward."""
     pid = str(patient_id)
-    if pid in _PATIENTS_STORE:
-        _PATIENTS_STORE[pid]["status"] = "discharged"
-        logger.info("Discharged patient %s from ward", pid)
-        return True
-    return False
+    with _PATIENTS_LOCK:
+        if pid in _PATIENTS_STORE:
+            _PATIENTS_STORE[pid]["status"] = "discharged"
+            logger.info("Discharged patient %s from ward", pid)
+            return True
+        return False

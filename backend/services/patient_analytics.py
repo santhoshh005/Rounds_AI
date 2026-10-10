@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Optional
 from datetime import datetime, timezone
+
 
 from backend.models.analytics import (
     CTCAEToxicity,
@@ -21,14 +23,16 @@ logger = logging.getLogger(__name__)
 
 def _grade_anc(anc: float) -> tuple[int, str]:
     """CTCAE v5.0 grading for Absolute Neutrophil Count (cells/uL)."""
-    if anc >= 1500:
+    if anc >= 2000:
         return 0, "normal"
+    elif anc >= 1500:
+        return 1, "normal"  # Mild / Grade 1 (< LLN - 1500)
     elif anc >= 1000:
-        return 2, "normal"  # Mild / Grade 2
+        return 2, "normal"  # Moderate / Grade 2 (< 1500 - 1000)
     elif anc >= 500:
-        return 3, "warning"  # Moderate / Grade 3 (High risk)
+        return 3, "warning"  # Severe / Grade 3 (< 1000 - 500)
     else:
-        return 4, "critical"  # Severe / Grade 4 (< 500)
+        return 4, "critical"  # Life-threatening / Grade 4 (< 500)
 
 
 def _grade_platelets(plt: float) -> tuple[int, str]:
@@ -246,15 +250,20 @@ def _generate_demo_104_analytics(p_record) -> PatientAnalyticsResponse:
     ]
 
     synthesis = (
-        "58-year-old male with Stage III Colorectal Cancer on adjuvant mFOLFOX6 (Cycle 3 of 6). "
+        "[DEMO DATA] 58-year-old male with Stage III Colorectal Cancer on adjuvant mFOLFOX6 (Cycle 3 of 6). "
         "Longitudinal lab trajectory reveals progressive myelosuppression with ANC nadir dropping -35.7% from "
         "baseline to 900 cells/uL (CTCAE Grade 3 Neutropenia). Concomitant low-grade pyrexia (38.4°C) elevates "
         "febrile neutropenia risk. Grade 2 peripheral neurotoxicity is present. Immediate action items: blood cultures, "
         "empiric IV antibiotics, secondary G-CSF support, and consideration of 20% dose modification for Cycle 4."
     )
 
+    for hr in rounds_history:
+        if not hr.summary.startswith("[DEMO DATA]"):
+            hr.summary = f"[DEMO DATA] {hr.summary}"
+
     return PatientAnalyticsResponse(
         patient=p_record,
+        demo_mode=True,
         ecog_performance_status=1,
         days_inpatient=4,
         trajectories=[anc_traj, plt_traj, wbc_traj, hb_traj],
@@ -264,6 +273,7 @@ def _generate_demo_104_analytics(p_record) -> PatientAnalyticsResponse:
         rounds_history=rounds_history,
         clinical_synthesis=synthesis,
     )
+
 
 
 def _generate_demo_105_analytics(p_record) -> PatientAnalyticsResponse:
@@ -362,14 +372,19 @@ def _generate_demo_105_analytics(p_record) -> PatientAnalyticsResponse:
     ]
 
     synthesis = (
-        "46-year-old female receiving Cycle 2 R-CHOP for Diffuse Large B-Cell Lymphoma. "
+        "[DEMO DATA] 46-year-old female receiving Cycle 2 R-CHOP for Diffuse Large B-Cell Lymphoma. "
         "Bone marrow reserve remains adequate with ANC 1,600 cells/uL and Platelets 190,000 /uL. "
         "Tolerating immunochemotherapy satisfactorily with Grade 2 fatigue and Grade 1 mucositis as primary symptoms. "
         "Recommendation: Monitor blood sugars during prednisone phase and encourage hydration."
     )
 
+    for hr in rounds_history:
+        if not hr.summary.startswith("[DEMO DATA]"):
+            hr.summary = f"[DEMO DATA] {hr.summary}"
+
     return PatientAnalyticsResponse(
         patient=p_record,
+        demo_mode=True,
         ecog_performance_status=1,
         days_inpatient=2,
         trajectories=[anc_traj, plt_traj],
@@ -382,7 +397,7 @@ def _generate_demo_105_analytics(p_record) -> PatientAnalyticsResponse:
 
 
 def _generate_generic_analytics(p_record) -> PatientAnalyticsResponse:
-    """Dynamically construct clinically plausible analytics for any newly admitted or existing patient."""
+    """Dynamically construct demo analytics for any newly admitted or existing patient when DEMO_MODE=true."""
     base_anc = p_record.baseline_anc or 1800.0
     base_plt = p_record.baseline_platelets or 200000.0
     base_wbc = p_record.baseline_wbc or 4000.0
@@ -392,7 +407,6 @@ def _generate_generic_analytics(p_record) -> PatientAnalyticsResponse:
     cycle_factor = max(0.65, 1.0 - (curr_cycle - 1) * 0.1)
     current_anc = round(base_anc * cycle_factor, 0)
     current_plt = round(base_plt * cycle_factor, 0)
-    current_wbc = round(base_wbc * cycle_factor, 0)
 
     anc_grade, anc_status = _grade_anc(current_anc)
     plt_grade, plt_status = _grade_platelets(current_plt)
@@ -479,20 +493,21 @@ def _generate_generic_analytics(p_record) -> PatientAnalyticsResponse:
             date="2026-09-07 09:00",
             cycle=curr_cycle,
             clinician="Dr. Santhosh (Attending Medical Oncologist)",
-            summary=f"Admission assessment for {p_record.name} ({p_record.diagnosis}). Bed {p_record.ward_bed}.",
+            summary=f"[DEMO DATA] Admission assessment for {p_record.name} ({p_record.diagnosis}). Bed {p_record.ward_bed}.",
             note_snippet=f"Admitted for {p_record.regimen} Cycle {curr_cycle}. Vitals stable. Baseline labs catalogued.",
             status="approved",
         )
     ]
 
     synthesis = (
-        f"{p_record.age}-year-old {p_record.sex} diagnosed with {p_record.diagnosis}, currently on cycle {p_record.cycle} of {p_record.regimen}. "
+        f"[DEMO DATA] {p_record.age}-year-old {p_record.sex} diagnosed with {p_record.diagnosis}, currently on cycle {p_record.cycle} of {p_record.regimen}. "
         f"Located in {p_record.ward_bed}. Lab trend reflects baseline ANC of {int(base_anc)} cells/uL and current value of {int(current_anc)} cells/uL ({anc_pct}% change). "
         f"Active clinical management is concordant with NCCN guidelines."
     )
 
     return PatientAnalyticsResponse(
         patient=p_record,
+        demo_mode=True,
         ecog_performance_status=1,
         days_inpatient=3,
         trajectories=[anc_traj, plt_traj],
@@ -504,11 +519,132 @@ def _generate_generic_analytics(p_record) -> PatientAnalyticsResponse:
     )
 
 
+def _generate_real_baseline_analytics(p_record) -> PatientAnalyticsResponse:
+    """Construct honest baseline-only analytics when DEMO_MODE=false and no synthetic history is used.
+
+    With fewer than 2 timepoints per analyte, all trajectories report trend='insufficient data'
+    and percent_change=None, with empty rounds_history, toxicities, and safety_alerts until
+    actual ward rounds are recorded.
+    """
+    trajectories: list[LabTrajectory] = []
+
+    # 1. ANC trajectory (baseline only if present)
+    anc_pts: list[LabDataPoint] = []
+    if p_record.baseline_anc is not None:
+        anc_g, anc_st = _grade_anc(float(p_record.baseline_anc))
+        anc_pts.append(
+            LabDataPoint(
+                label="Baseline",
+                date="2026-08-01",
+                value=float(p_record.baseline_anc),
+                unit="cells/uL",
+                ctcae_grade=anc_g,
+                status=anc_st,
+            )
+        )
+    trajectories.append(
+        LabTrajectory(
+            lab_name="Absolute Neutrophil Count (ANC)",
+            unit="cells/uL",
+            reference_range="1,500 - 8,000 cells/uL (default LLN: 2,000 cells/uL)",
+            baseline_value=float(p_record.baseline_anc) if p_record.baseline_anc is not None else None,
+            current_value=float(p_record.baseline_anc) if p_record.baseline_anc is not None else None,
+            percent_change=None,
+            trend="insufficient data",
+            data_points=anc_pts,
+        )
+    )
+
+    # 2. Platelets trajectory (baseline only if present)
+    plt_pts: list[LabDataPoint] = []
+    if p_record.baseline_platelets is not None:
+        plt_g, plt_st = _grade_platelets(float(p_record.baseline_platelets))
+        plt_pts.append(
+            LabDataPoint(
+                label="Baseline",
+                date="2026-08-01",
+                value=float(p_record.baseline_platelets),
+                unit="/uL",
+                ctcae_grade=plt_g,
+                status=plt_st,
+            )
+        )
+    trajectories.append(
+        LabTrajectory(
+            lab_name="Platelet Count",
+            unit="/uL",
+            reference_range="150,000 - 450,000 /uL (default LLN: 150,000 /uL)",
+            baseline_value=float(p_record.baseline_platelets) if p_record.baseline_platelets is not None else None,
+            current_value=float(p_record.baseline_platelets) if p_record.baseline_platelets is not None else None,
+            percent_change=None,
+            trend="insufficient data",
+            data_points=plt_pts,
+        )
+    )
+
+    # 3. WBC trajectory (baseline only if present)
+    wbc_pts: list[LabDataPoint] = []
+    if p_record.baseline_wbc is not None:
+        wbc_val = float(p_record.baseline_wbc)
+        wbc_pts.append(
+            LabDataPoint(
+                label="Baseline",
+                date="2026-08-01",
+                value=wbc_val,
+                unit="cells/uL",
+                ctcae_grade=1 if wbc_val < 3000 else 0,
+                status="warning" if wbc_val < 3000 else "normal",
+            )
+        )
+    trajectories.append(
+        LabTrajectory(
+            lab_name="White Blood Cell (WBC)",
+            unit="cells/uL",
+            reference_range="4,000 - 11,000 cells/uL",
+            baseline_value=float(p_record.baseline_wbc) if p_record.baseline_wbc is not None else None,
+            current_value=float(p_record.baseline_wbc) if p_record.baseline_wbc is not None else None,
+            percent_change=None,
+            trend="insufficient data",
+            data_points=wbc_pts,
+        )
+    )
+
+    guidelines = [
+        GuidelineConcordance(
+            title=f"Clinical Practice Guideline Reference for {p_record.diagnosis}",
+            source="ASCO / NCCN",
+            evidence_level="Category 1",
+            recommendation=f"Protocol reference for {p_record.regimen} (Cycle {p_record.cycle}). Verify complete blood counts and organ function prior to each cycle.",
+            concordance="Review Recommended",
+        )
+    ]
+
+    synthesis = (
+        f"Insufficient data: No longitudinal ward rounds recorded yet for Patient #{p_record.id} ({p_record.name}). "
+        f"Only admission baseline census values are on file; record ward rounds to compute cycle-over-cycle trends."
+    )
+
+    return PatientAnalyticsResponse(
+        patient=p_record,
+        demo_mode=False,
+        ecog_performance_status=1,
+        days_inpatient=1,
+        trajectories=trajectories,
+        toxicities=[],
+        safety_alerts=[],
+        guidelines=guidelines,
+        rounds_history=[],
+        clinical_synthesis=synthesis,
+    )
+
+
 def _enrich_analytics_with_recorded_rounds(
     base_resp: PatientAnalyticsResponse, patient_id: str
 ) -> PatientAnalyticsResponse:
     """Dynamically incorporate live ward rounds into longitudinal trajectories and safety alerts."""
     from backend.services.persistence import get_rounds_for_patient
+    from backend.services.clinical_negation import evaluate_fever_status
+    from backend.services.lab_validation import validate_and_normalize_lab
 
     recorded_rounds = get_rounds_for_patient(patient_id)
     if not recorded_rounds:
@@ -519,8 +655,9 @@ def _enrich_analytics_with_recorded_rounds(
     safety_alerts = list(base_resp.safety_alerts)
     rounds_history = list(base_resp.rounds_history)
 
-    has_fever = False
+    has_active_fever = False
     latest_anc = None
+    latest_plt = None
     latest_date = None
 
     for r in recorded_rounds:
@@ -530,16 +667,18 @@ def _enrich_analytics_with_recorded_rounds(
         extractions = r.get("extractions", [])
         ext = extractions[0] if extractions else {}
         extracted_labs = ext.get("labs", [])
-        extracted_symptoms = [str(s).lower() for s in ext.get("symptoms", [])]
 
-        if "fever" in transcript.lower() or any("fever" in s for s in extracted_symptoms) or "38." in transcript:
-            has_fever = True
+        # Strict negation check for fever
+        fever_eval = evaluate_fever_status(transcript)
+        if fever_eval["active_fever"]:
+            has_active_fever = True
 
         if not any(h.round_id == rid for h in rounds_history):
             note_content = ""
             if r.get("draft_notes"):
                 note_content = r["draft_notes"][0].get("content", "")
             snippet = note_content[:130] if note_content else transcript[:130]
+            round_status = r.get("status", "draft")
 
             rounds_history.insert(
                 0,
@@ -547,76 +686,133 @@ def _enrich_analytics_with_recorded_rounds(
                     round_id=rid,
                     date=c_date,
                     cycle=base_resp.patient.cycle,
-                    clinician="Dr. Attending (Bedside Ward Round)",
+                    clinician="Ward Round (Draft)" if round_status == "draft" else str(r.get("approved_by") or "unverified (client-supplied)"),
                     summary=f"Ward Round Assessment — Cycle {base_resp.patient.cycle}",
                     note_snippet=snippet,
-                    status="verified",
+                    status=round_status,
                 ),
             )
 
-        # Update lab trajectories with freshly extracted labs
-        for lab in extracted_labs:
-            lname = str(lab.get("name", "")).upper()
-            lval = float(lab.get("value", 0))
-            if lval <= 0:
+        # Incorporate review_flags from recorded rounds into safety_alerts if not already present
+        for rf in r.get("review_flags", []):
+            rf_rule = rf.get("rule_id") if isinstance(rf, dict) else getattr(rf, "rule_id", None)
+            rf_msg = rf.get("message") if isinstance(rf, dict) else getattr(rf, "message", "")
+            rf_rat = rf.get("rationale") if isinstance(rf, dict) else getattr(rf, "rationale", "")
+            rf_sev = rf.get("severity") if isinstance(rf, dict) else getattr(rf, "severity", "medium")
+            alert_id = f"ROUND-FLAG-{rf_rule or rid}"
+            if rf_msg and not any(a.id == alert_id for a in safety_alerts):
+                safety_alerts.append(
+                    SafetyAlertSummary(
+                        id=alert_id,
+                        severity="critical" if rf_sev == "high" else ("high" if rf_sev == "medium" else "moderate"),
+                        title=rf_rule or "Clinical Review Flag",
+                        message=rf_msg,
+                        rationale=rf_rat,
+                        action_required="For clinician review and correlation.",
+                        timestamp=c_date,
+                        status="active",
+                    )
+                )
+
+        # Update lab trajectories with freshly extracted and validated labs
+        for lab_data in extracted_labs:
+            from backend.models.round import LabValue
+            raw_lab = LabValue(**lab_data) if isinstance(lab_data, dict) else lab_data
+            v_lab, _ = validate_and_normalize_lab(raw_lab)
+
+            if v_lab.status == "implausible":
                 continue
+
+            lname = v_lab.name.upper()
+            lval = v_lab.value
 
             for traj in trajectories:
                 tname = traj.lab_name.upper()
+                matched = False
+                grade = 0
+                status = "normal"
+
                 if ("ANC" in lname or "NEUTROPHIL" in lname) and ("ANC" in tname or "NEUTROPHIL" in tname):
                     latest_anc = lval
                     latest_date = c_date
                     grade, status = _grade_anc(lval)
-                    traj.data_points.append(
-                        LabDataPoint(
-                            label=f"Round {len(traj.data_points)}",
-                            date=c_date,
-                            value=lval,
-                            unit=traj.unit,
-                            ctcae_grade=grade,
-                            status=status,
-                        )
-                    )
-                    traj.current_value = lval
-                    if traj.baseline_value:
-                        traj.percent_change = round(((lval - traj.baseline_value) / traj.baseline_value) * 100, 1)
-                        traj.trend = "down" if traj.percent_change < -10 else ("up" if traj.percent_change > 10 else "stable")
-
+                    matched = True
                 elif ("PLATELET" in lname or "PLT" in lname) and ("PLATELET" in tname or "PLT" in tname):
+                    latest_plt = lval
                     grade, status = _grade_platelets(lval)
-                    traj.data_points.append(
-                        LabDataPoint(
-                            label=f"Round {len(traj.data_points)}",
-                            date=c_date,
-                            value=lval,
-                            unit=traj.unit,
-                            ctcae_grade=grade,
-                            status=status,
-                        )
-                    )
-                    traj.current_value = lval
-                    if traj.baseline_value:
-                        traj.percent_change = round(((lval - traj.baseline_value) / traj.baseline_value) * 100, 1)
-                        traj.trend = "down" if traj.percent_change < -10 else ("up" if traj.percent_change > 10 else "stable")
-
+                    matched = True
                 elif "WBC" in lname and "WBC" in tname:
-                    traj.data_points.append(
-                        LabDataPoint(
-                            label=f"Round {len(traj.data_points)}",
-                            date=c_date,
-                            value=lval,
-                            unit=traj.unit,
-                            ctcae_grade=1 if lval < 3000 else 0,
-                            status="warning" if lval < 3000 else "normal",
-                        )
+                    grade = 1 if lval < 3000 else 0
+                    status = "warning" if lval < 3000 else "normal"
+                    matched = True
+
+                if matched:
+                    # De-duplicate: replace existing reading on same date or append
+                    dup_idx = next((i for i, dp in enumerate(traj.data_points) if dp.date == c_date), None)
+                    new_dp = LabDataPoint(
+                        label=f"Round {len(traj.data_points) + 1}",
+                        date=c_date,
+                        value=lval,
+                        unit=traj.unit,
+                        ctcae_grade=grade,
+                        status=status,
                     )
-                    traj.current_value = lval
-                    if traj.baseline_value:
-                        traj.percent_change = round(((lval - traj.baseline_value) / traj.baseline_value) * 100, 1)
-                        traj.trend = "down" if traj.percent_change < -10 else "stable"
+                    if dup_idx is not None:
+                        traj.data_points[dup_idx] = new_dp
+                    else:
+                        traj.data_points.append(new_dp)
+
+    # Clean, sort chronologically, and compute nadirs / trends for all trajectories
+    for traj in trajectories:
+        traj.data_points.sort(key=lambda dp: dp.date)
+        validated_pts = [dp for dp in traj.data_points if dp.status != "implausible"]
+
+        if len(validated_pts) < 2:
+            traj.trend = "insufficient data"
+            traj.percent_change = None
+            if validated_pts:
+                traj.current_value = validated_pts[-1].value
+        else:
+            baseline = validated_pts[0].value
+            current = validated_pts[-1].value
+            traj.baseline_value = baseline
+            traj.current_value = current
+            if baseline > 0:
+                pct = round(((current - baseline) / baseline) * 100, 1)
+                traj.percent_change = pct
+                traj.trend = "down" if pct < -10 else ("up" if pct > 10 else "stable")
+
+    # Populate graded toxicities from recorded labs when not in demo mode
+    if not base_resp.demo_mode:
+        if latest_anc is not None:
+            anc_g, _ = _grade_anc(latest_anc)
+            if anc_g >= 1 and not any(t.symptom == "Neutropenia" for t in toxicities):
+                toxicities.append(
+                    CTCAEToxicity(
+                        category="Hematologic",
+                        symptom="Neutropenia",
+                        grade=anc_g,
+                        description=f"Recorded ANC {latest_anc:g} cells/uL (CTCAE v5.0 Grade {anc_g}, default LLN 2,000 cells/uL).",
+                        management_recommendation="Criterion met, for clinician review.",
+                        trend="worsening" if anc_g >= 3 else "stable",
+                    )
+                )
+        if latest_plt is not None:
+            plt_g, _ = _grade_platelets(latest_plt)
+            if plt_g >= 1 and not any(t.symptom == "Thrombocytopenia" for t in toxicities):
+                toxicities.append(
+                    CTCAEToxicity(
+                        category="Hematologic",
+                        symptom="Thrombocytopenia",
+                        grade=plt_g,
+                        description=f"Recorded Platelets {latest_plt:g} /uL (CTCAE v5.0 Grade {plt_g}, default LLN 150,000 /uL).",
+                        management_recommendation="Criterion met, for clinician review.",
+                        trend="worsening" if plt_g >= 3 else "stable",
+                    )
+                )
 
     # If Febrile Neutropenia is detected
-    if has_fever and latest_anc is not None and latest_anc < 1000:
+    if has_active_fever and latest_anc is not None and latest_anc < 1000:
         fn_alert_id = "fn-active-critical"
         if not any(a.id == fn_alert_id for a in safety_alerts):
             safety_alerts.insert(
@@ -624,17 +820,32 @@ def _enrich_analytics_with_recorded_rounds(
                 SafetyAlertSummary(
                     id=fn_alert_id,
                     severity="critical",
-                    title="FEBRILE NEUTROPENIA MEDICAL ONCOLOGY EMERGENCY",
-                    message=f"Current ANC {int(latest_anc)} cells/µL with documented fever spike. High mortality risk without immediate broad-spectrum coverage.",
-                    rationale="ASCO / IDSA Guidelines: Empiric IV antipseudomonal beta-lactam (Cefepime 2g IV q8h) required within 60 minutes.",
-                    action_required="Draw 2 sets of peripheral & central blood cultures STAT. Initiate empirical Cefepime 2g IV. Order STAT chest radiograph and urine analysis.",
+                    title="Criterion met, for clinician review: Febrile Neutropenia",
+                    message=f"Current ANC {int(latest_anc)} cells/µL with documented pyrexia. For prompt clinician evaluation.",
+                    rationale="ASCO / IDSA Guidelines: Empiric inpatient broad-spectrum antibacterial coverage indicated for neutropenic fever.",
+                    action_required="Clinician review indicated: blood cultures STAT, empiric antibiotic evaluation per institutional protocol.",
                     timestamp=latest_date or "2026-09-08",
                     status="active",
                 ),
             )
 
+    synthesis = base_resp.clinical_synthesis
+    if not base_resp.demo_mode and rounds_history:
+        anc_t = next((t for t in trajectories if "ANC" in t.lab_name.upper()), None)
+        anc_summary = (
+            f"ANC {anc_t.current_value:g} cells/uL ({anc_t.percent_change:+.1f}% vs baseline)"
+            if anc_t and anc_t.percent_change is not None and anc_t.current_value is not None
+            else (f"ANC {anc_t.current_value:g} cells/uL (insufficient data for trend)" if anc_t and anc_t.current_value is not None else "ANC not recorded")
+        )
+        synthesis = (
+            f"{len(rounds_history)} recorded ward round(s) on file for Patient #{base_resp.patient.id} ({base_resp.patient.name}). "
+            f"Latest hematologic status: {anc_summary}. "
+            f"Active safety review flags: {len(safety_alerts)}. For clinician review."
+        )
+
     return PatientAnalyticsResponse(
         patient=base_resp.patient,
+        demo_mode=base_resp.demo_mode,
         ecog_performance_status=base_resp.ecog_performance_status,
         days_inpatient=base_resp.days_inpatient,
         trajectories=trajectories,
@@ -642,22 +853,33 @@ def _enrich_analytics_with_recorded_rounds(
         safety_alerts=safety_alerts,
         guidelines=base_resp.guidelines,
         rounds_history=rounds_history,
-        clinical_synthesis=base_resp.clinical_synthesis,
+        clinical_synthesis=synthesis,
     )
 
 
 def get_patient_analytics(patient_id: str) -> Optional[PatientAnalyticsResponse]:
-    """Retrieve full analytics profile for the specified patient, enriched with live ward rounds."""
+    """Retrieve full analytics profile for the specified patient, enriched with live ward rounds.
+
+    When DEMO_MODE=false (default), returns only real admission baseline values and actual
+    recorded rounds, marking any trajectory with <2 timepoints as 'insufficient data'.
+    When DEMO_MODE=true, populates synthetic multi-cycle demo trajectories labeled '[DEMO DATA]'.
+    """
     p_record = get_patient(patient_id)
     if not p_record:
         return None
 
+    demo_mode = os.getenv("DEMO_MODE", "false").strip().lower() in ("true", "1", "yes")
     pid = str(p_record.id).strip().lower()
-    if pid in ("104", "pt-104", "p104"):
-        base_resp = _generate_demo_104_analytics(p_record)
-    elif pid in ("105", "pt-105", "p105"):
-        base_resp = _generate_demo_105_analytics(p_record)
+
+    if demo_mode:
+        if pid in ("104", "pt-104", "p104"):
+            base_resp = _generate_demo_104_analytics(p_record)
+        elif pid in ("105", "pt-105", "p105"):
+            base_resp = _generate_demo_105_analytics(p_record)
+        else:
+            base_resp = _generate_generic_analytics(p_record)
     else:
-        base_resp = _generate_generic_analytics(p_record)
+        base_resp = _generate_real_baseline_analytics(p_record)
 
     return _enrich_analytics_with_recorded_rounds(base_resp, p_record.id)
+

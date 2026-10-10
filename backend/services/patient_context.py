@@ -6,7 +6,9 @@ and compute cycle-over-cycle lab trends (e.g. ANC 1,200 -> 900 down).
 from __future__ import annotations
 
 import logging
+import os
 from typing import Optional
+
 
 from backend.models.round import ClinicalExtraction, LabTrend
 from backend.services.supabase_client import get_supabase
@@ -25,45 +27,45 @@ _DEMO_BASELINE_104 = {
 def build_patient_context(extraction: ClinicalExtraction) -> list[LabTrend]:
     """Calculate longitudinal lab trends by comparing with previous rounds."""
     trends: list[LabTrend] = []
-    pid = extraction.patient_id or "104"
-    current_labs = {lab.name.upper(): lab for lab in extraction.labs}
-
+    pid = extraction.patient_id
     prior_labs: dict[str, float] = {}
 
-    # 1. Try querying Supabase for the most recent prior extraction of this patient
-    try:
-        sb = get_supabase()
-        res = (
-            sb.table("extractions")
-            .select("labs, created_at")
-            .eq("patient_id", pid)
-            .order("created_at", desc=True)
-            .limit(2)
-            .execute()
-        )
-        if res.data and len(res.data) > 1:
-            # The second most recent is the previous round
-            prev_row = res.data[1]
-            raw_labs = prev_row.get("labs") or []
-            for item in raw_labs:
-                if isinstance(item, dict) and "name" in item and "value" in item:
-                    prior_labs[item["name"].upper()] = float(item["value"])
-    except Exception as exc:
-        logger.info("Could not fetch prior Supabase context: %s. Using baseline.", exc)
+    if pid:
+        # 1. Try querying Supabase for the most recent prior extraction of this patient
+        try:
+            sb = get_supabase()
+            res = (
+                sb.table("extractions")
+                .select("labs, created_at")
+                .eq("patient_id", pid)
+                .order("created_at", desc=True)
+                .limit(2)
+                .execute()
+            )
+            if res.data and len(res.data) > 1:
+                # The second most recent is the previous round
+                prev_row = res.data[1]
+                raw_labs = prev_row.get("labs") or []
+                for item in raw_labs:
+                    if isinstance(item, dict) and "name" in item and "value" in item:
+                        prior_labs[item["name"].upper()] = float(item["value"])
+        except Exception as exc:
+            logger.info("Could not fetch prior Supabase context: %s. Using patient record baseline if available.", exc)
 
-    # 2. If no DB history yet, populate from patient record baseline
-    if not prior_labs:
-        from backend.services.patient_service import get_patient
-        p_record = get_patient(pid)
-        if p_record:
-            if p_record.baseline_anc is not None:
-                prior_labs["ANC"] = p_record.baseline_anc
-            if p_record.baseline_platelets is not None:
-                prior_labs["PLATELETS"] = p_record.baseline_platelets
-            if p_record.baseline_wbc is not None:
-                prior_labs["WBC"] = p_record.baseline_wbc
-        elif pid.upper() in ("104", "PT-104", "P104"):
-            prior_labs = {k: v[0] for k, v in _DEMO_BASELINE_104.items()}
+        # 2. If no DB history yet, populate from patient record baseline
+        if not prior_labs:
+            from backend.services.patient_service import get_patient
+            p_record = get_patient(pid)
+            if p_record:
+                if p_record.baseline_anc is not None:
+                    prior_labs["ANC"] = p_record.baseline_anc
+                if p_record.baseline_platelets is not None:
+                    prior_labs["PLATELETS"] = p_record.baseline_platelets
+                if p_record.baseline_wbc is not None:
+                    prior_labs["WBC"] = p_record.baseline_wbc
+            elif pid.upper() in ("104", "PT-104", "P104") and os.getenv("DEMO_MODE", "false").strip().lower() in ("true", "1", "yes"):
+                prior_labs = {k: v[0] for k, v in _DEMO_BASELINE_104.items()}
+
 
 
     # 3. Compute trends for each current lab

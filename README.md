@@ -7,7 +7,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-3178C6?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![Python](https://img.shields.io/badge/Python-3.12+-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org)
 [![Whisper AI](https://img.shields.io/badge/Whisper-On--Device%20Base%20int8-orange?style=flat)](https://github.com/openai/whisper)
-[![Google Gemini](https://img.shields.io/badge/Gemini%202.5%20Flash-Free%20Tier-4285F4?style=flat&logo=google&logoColor=white)](https://ai.google.dev)
+[![Google Gemini](https://img.shields.io/badge/Gemini%203.5%20Flash-Stable-4285F4?style=flat&logo=google&logoColor=white)](https://ai.google.dev)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ---
@@ -18,11 +18,11 @@ Inpatient oncology rounds are among the most cognitively demanding workflows in 
 
 **RoundsAI** is a multimodal clinical intelligence copilot built specifically for the inpatient oncology ward:
 - **Bedside Mobile Companion (`/mobile`)**: Oncologists dictate clinical observations on the move or scan bedside lab reports with their mobile camera.
-- **Privacy-First On-Device Whisper AI**: Voice dictation is transcribed 100% locally on CPU via `faster-whisper` (base int8), ensuring **zero patient audio leaves the hospital firewall** with **₹0 cloud API fees**.
+- **Privacy-First On-Device Whisper AI**: Voice dictation is transcribed 100% locally on CPU via `faster-whisper` (base int8), designed for zero audio egress in local mode with **₹0 cloud API fees**.
 - **Specialized Oncology Normalizer**: A clinical phonetic engine corrects 120+ oncology acoustic homophones (*"fall fox"* $\rightarrow$ **mFOLFOX6**, *"anc nine hundred"* $\rightarrow$ **ANC 900 /µL**).
 - **Instant Bedside-to-Desktop Synchronization**: 1-tap transmission immediately triggers a live sentinel banner on the desktop workstation with 1-click loading.
 - **Automated CTCAE v5.0 Toxicity Grading**: Calculates baseline-to-current lab deltas and detects Grade 1–4 myelosuppression.
-- **Active Safety Sentinels**: Instantly triggers emergency protocols (e.g., **Febrile Neutropenia** blood cultures and empiric antipseudomonal IV antibiotics within 60 minutes).
+- **Assistive Safety Sentinels**: Flags configured clinical criteria (e.g., **Febrile Neutropenia** screening criteria per IDSA/ASCO 2018) as `"Criterion met, for clinician review"` alongside neutral guideline reference citations.
 - **Longitudinal Patient Analytics (`/analytics`)**: Charts ANC/WBC/Platelet nadirs across chemotherapy cycles, predicts recovery windows, and recommends guideline-concordant dose modifications.
 - **Hospital EMR Grade UI**: Clean, distraction-free interface built with Lucide-style vector SVG icons, tabular monospace lab typography, and strict 0-emoji compliance.
 
@@ -122,7 +122,7 @@ sequenceDiagram
 ## ⚡ Key Features
 
 ### 1. High-Accuracy Voice & Zero-Cost Clinical Transcription
-- **On-Device Whisper**: Employs `faster-whisper` (base int8) running locally on CPU. No external audio APIs, guaranteeing total HIPAA compliance and ₹0 per-minute billing.
+- **On-Device Whisper**: Employs `faster-whisper` (base int8) running locally on CPU. No external audio APIs, designed for zero audio egress in local mode and ₹0 per-minute billing.
 - **120+ Specialized Oncology Regimens**: Normalizes acoustic homophones:
   - *Chemotherapy*: `"fall fox"` $\rightarrow$ `mFOLFOX6`, `"carbo taxol"` $\rightarrow$ `Carboplatin + Paclitaxel`, `"our chop"` $\rightarrow$ `R-CHOP`, `"fol fir inox"` $\rightarrow$ `FOLFIRINOX`.
   - *Lab Counts*: `"anc nine hundred"` $\rightarrow$ `ANC 900 /µL`, `"platelets one forty five k"` $\rightarrow$ `Platelets 145,000 /µL`.
@@ -135,9 +135,9 @@ sequenceDiagram
 - 1-click **"Load into Assessment Station"** transfers the complete clinical encounter to desktop without re-typing.
 
 ### 3. Automated CTCAE v5.0 & Clinical Safety Sentinels
-- **Febrile Neutropenia Protocol**: Flags temperature $\ge 38.3^\circ\text{C}$ with $\text{ANC} < 1000$ /µL. Urgently prompts for blood cultures and empiric antipseudomonal IV antibiotics (*Cefepime 2g IV q8h*) within 60 minutes.
-- **Myelosuppression Nadir Detection**: Computes baseline vs. current lab delta and classifies Grade 3 ($500 \le \text{ANC} < 1000$) and Grade 4 ($\text{ANC} < 500$) neutropenia.
-- **Dose Modification Guidance**: Links nadir findings directly to NCCN guidelines, recommending a 20% dose reduction for subsequent cycles.
+- **Febrile Neutropenia Screening**: When the configured fever criterion is met alongside a critically low ANC, the system surfaces a `"Criterion met, for clinician review"` sentinel alert citing the IDSA/ASCO (Taplitz et al., 2018) guideline. The alert text states only what the configured rule actually checks; it does not prescribe treatment or attribute specific management steps to the guideline. Thresholds are configurable and require clinical review.
+- **Myelosuppression Grading**: Computes baseline vs. current lab delta and classifies Grade 1–4 myelosuppression per CTCAE v5.0 (NCI, November 27, 2017).
+- **Thrombocytopenia & Anemia Sentinels**: Flags critical platelet and hemoglobin values with neutral guideline citations (NCCN Hematopoietic Growth Factors; ASCO/ASH Anemia Guideline).
 
 ### 4. Longitudinal Patient Analytics
 - Cycle-over-cycle laboratory trend charts for Absolute Neutrophil Count (ANC), White Blood Cells (WBC), and Platelets.
@@ -158,9 +158,9 @@ sequenceDiagram
 | **Frontend** | Next.js 15 (App Router), React 19, TypeScript, Vanilla CSS | Doctor Workstation, Bedside Mobile Companion, Longitudinal Analytics |
 | **Backend** | FastAPI, Python 3.12+, Uvicorn, Pydantic v2 | High-performance asynchronous REST API & clinical routing |
 | **Local Speech AI** | `faster-whisper` (base int8), CTranslate2, Web Speech API | Offline, zero-cloud transcription on CPU |
-| **Multimodal Vision** | Google Gemini 2.5 Flash SDK, Tesseract OCR | Multimodal lab sheet transcription & document analysis |
+| **Multimodal Vision** | Google Gemini 3.5 Flash / 3.5 Flash-Lite SDK | Multimodal lab sheet transcription & document analysis |
 | **Clinical Logic** | CTCAE v5.0 Scoring Matrix, NCCN / ASCO Guidelines | Automated toxicity grading and safety sentinels |
-| **Data & Storage** | In-memory cache, SQLite / PostgreSQL, Supabase integration | Longitudinal patient census & round audit logging |
+| **Data & Storage** | In-memory cache, PostgreSQL, Supabase integration | Longitudinal patient census & round audit logging |
 
 ---
 
@@ -205,6 +205,25 @@ npm install
 npm run dev
 ```
 *Application available at [http://localhost:3000](http://localhost:3000).*
+
+### 4. Supabase Database Migration (`patients` Table & Row Level Security)
+To create the `public.patients` table (and add the `draft_notes.approved_by` and `review_flags.guideline` columns) in your Supabase project:
+
+1. **Via Supabase Dashboard SQL Editor (Recommended)**:
+   - Open your project in the [Supabase Dashboard](https://supabase.com/dashboard) and navigate to **SQL Editor** $\rightarrow$ **New Query**.
+   - Paste the contents of [`supabase/migrations/20261010_create_patients_table.sql`](supabase/migrations/20261010_create_patients_table.sql) and click **Run**.
+   - Go to **Project Settings** $\rightarrow$ **API** and click **Reload schema cache** (or run `NOTIFY pgrst, 'reload schema';`) so PostgREST immediately recognizes `public.patients`.
+2. **Via Supabase CLI**:
+   ```bash
+   supabase db push
+   ```
+
+> [!IMPORTANT]
+> **Row Level Security (RLS) Status**:
+> On the existing Supabase tables (`rounds`, `extractions`, `draft_notes`, `review_flags`), unauthenticated `SELECT` and `INSERT` calls using `SUPABASE_ANON_KEY` succeed without a user JWT, indicating that RLS is currently either disabled on those tables or configured with a permissive `anon` policy. The migration file [`supabase/migrations/20261010_create_patients_table.sql`](supabase/migrations/20261010_create_patients_table.sql) enables RLS on `public.patients` (`ALTER TABLE public.patients ENABLE ROW LEVEL SECURITY;`) with a demo access policy; for production deployments, restrict table policies to `authenticated` / `service_role` only.
+>
+> **Test Isolation**:
+> Automated test runs (`pytest` and `test_features.py`) automatically set `TEST_MODE=true` / `X-Test-Mode: true`, which strictly skips all Supabase network reads/writes so tests never write rows to your Supabase project.
 
 ---
 
@@ -269,14 +288,106 @@ npm run dev
 
 ---
 
-## 🔒 Clinical Safety & Data Privacy Notice
+## 🔒 Clinical Safety, Privacy Modes & Accuracy Safeguards
 
-1. **Clinician-in-the-Loop Governance**: RoundsAI is strictly an assistive productivity copilot. It does not replace clinical judgment, provide independent diagnoses, or execute unverified EMR submissions. Every generated SOAP note, CTCAE grade, and protocol advisory requires attending clinician review and sign-off.
-2. **Zero Audio Egress**: When using On-Device Audio, voice data is processed locally on the host machine using `faster-whisper`. No audio recordings are transmitted to third-party cloud APIs.
-3. **Synthetic / De-identified Demo Data**: All patient names, MRNs, and laboratory values provided in this repository are entirely synthetic and designed solely for demonstration purposes.
+### 1. Privacy Modes & Audio Egress Controls
+RoundsAI is engineered with a strict privacy-first architecture controlled via the `TRANSCRIPTION_MODE` configuration:
+- **`local` (Default — Zero Audio Egress)**: Voice recordings are processed entirely on-device on CPU via `faster-whisper` (int8 quantized). Zero audio bytes leave the clinician's workstation or device firewall, designed for zero audio egress in local mode with ₹0 cloud API fees.
+- **`cloud`**: Utilizes Google Gemini audio processing (`gemini-3.5-flash`) when cloud processing is explicitly authorized by hospital policy.
+- **`hybrid`**: Attempts low-latency cloud transcription with seamless local on-device fallback if network connectivity drops.
+
+The active mode is displayed directly in the header and toolbar (`STT: LOCAL (0 Egress)`), and speech recognition types are fully typed without dynamic `any` window casts.
+
+### 2. Clinical Accuracy & Hallucination Prevention
+To eliminate hallucinations in high-stakes oncology inpatient environments, RoundsAI implements deterministic safeguards:
+- **Zero Invented Clinical Values**: The system never invents or hallucinates clinical metrics. Missing, ambiguous, or out-of-range values are flagged as `needs_confirmation` and surfaced in the interactive **"Confirm Before Signing"** review queue.
+- **LLM Polish Diff Verification Guard**: Any LLM-assisted note polishing is verified against the original dictation via a strict diff checker. If any numeric digit, laboratory unit, medication name, or negation term is mutated, the LLM output is rejected immediately in favor of deterministic rule-based text.
+- **Laboratory Normalization & Physiological Range Checks**: Standardizes units (e.g. ANC to `cells/µL`, Hemoglobin to `g/dL`, Platelets to `/µL`) and inspects biological plausibility boundaries, flagging possible 10× scaling or dictation errors for confirmation.
+- **Deterministic Negation & Temporality Engine**: Uses rule-based regex parsing to differentiate acute ongoing fevers from negated or historical observations (`"no fever"`, `"afebrile"`, `"fever resolved"`, `"fever yesterday"` vs `"fever since yesterday"`), eliminating false-alarm Febrile Neutropenia alerts.
+- **Deterministic CTCAE v5.0 Toxicity Grading**: Evaluates myelosuppression and toxicities against a canonical, versioned configuration table (`CTCAE v5.0, November 27, 2017`), citing standard practice guidelines (ASCO/IDSA and NCCN).
+- **Human-in-the-Loop Attestation**: Notes remain strictly in `status="draft"` until a licensed clinician reviews and clicks **"ATTEST & APPROVE NOTE"**. Sign-off is locked while unconfirmed items remain in the queue.
+- **Assistive Documentation Boundaries**: Alerts are strictly assistive and non-prescriptive, always phrased as `"Criterion met, for clinician review: ..."` rather than autonomous diagnostic claims or treatment orders.
+- **Thread-Safe Resilient Persistence**: In-memory stores are protected by threading locks (`threading.Lock`), and database write failures trigger a prominent `"Saved Locally Only"` warning in the UI without losing clinician work.
+
+### 3. Authentication & Client Credentials Notice
+> [!WARNING]
+> `NEXT_PUBLIC_API_KEY` is embedded directly into client-side browser bundles and is visible in browser dev tools / network inspectors. It is intended strictly for prototype and demonstration purposes.
+>
+> **Clinician Identity & Note Sign-Off Limitations**:
+> Client-supplied headers (such as `X-Verified-User` or `X-Authenticated-Clinician`) are untrusted and rejected by the server because any client could spoof them. The backend only records an attested identity if a cryptographically valid Firebase ID token is supplied in the `Authorization: Bearer <token>` header and validated server-side. In all other cases (including client request bodies and mock credentials), `approved_by` is strictly and permanently recorded as `"unverified (client-supplied)"`.
+
+---
+
+## 🔑 Required Environment Variables
+
+Copy `.env.example` to `.env` and fill in the values marked `REQUIRED`.
+
+| Variable | Required | Description |
+| :--- | :--- | :--- |
+| `GEMINI_API_KEY` | Optional | Enables Gemini vision, extraction, and polish. Omit to use local rules only. |
+| `LLM_PROVIDER` | Optional | `local` (default) or `gemini`. |
+| `GEMINI_MODEL_VISION` | Optional | Gemini model for lab image OCR (default: `gemini-3.5-flash`). |
+| `GEMINI_MODEL_DRAFT` | Optional | Gemini model for extraction drafting (default: `gemini-3.5-flash`). |
+| `GEMINI_MODEL_POLISH` | Optional | Gemini model for note polish (default: `gemini-3.5-flash-lite`). |
+| `TRANSCRIPTION_MODE` | Optional | `local` / `cloud` / `hybrid` (default: `local`). |
+| `WHISPER_MODEL_SIZE` | Optional | faster-whisper model size (default: `base`). |
+| `ALLOWED_ORIGINS` | Optional | Comma-separated CORS origins. |
+| `REQUIRE_AUTH` | Optional | `true` to require `API_KEY` or Bearer token on all endpoints. |
+| `API_KEY` | If REQUIRE_AUTH=true | Server-side API key for `X-API-Key` header or Bearer token. |
+| `NEXT_PUBLIC_API_URL` | Optional | Backend URL for the frontend (default: `http://localhost:8000`). |
+| `NEXT_PUBLIC_API_KEY` | Optional | ⚠️ Visible in browser. Demo use only. |
+| `SUPABASE_URL` | **REQUIRED** for DB | Your Supabase project URL. |
+| `SUPABASE_SERVICE_ROLE_KEY` | Recommended | Server-side only. Bypasses RLS. **Never use in NEXT_PUBLIC_ vars or frontend code.** Preferred over anon key when set. |
+| `SUPABASE_ANON_KEY` | Fallback | Used when SERVICE_ROLE_KEY is absent. Subject to Row Level Security. |
+| `NEXT_PUBLIC_FIREBASE_*` | Optional | Firebase client auth configuration (6 variables, see `.env.example`). |
+| `DEMO_MODE` | Optional | `true` enables synthetic demo data labeled `[DEMO DATA]`. Off by default. |
+| `TEST_MODE` | Optional | `true` disables all Supabase writes for this server instance. CI/test use only. |
+
+---
+
+## 🔒 Privacy Modes (TRANSCRIPTION_MODE)
+
+| Mode | Audio Egress | Description |
+| :--- | :--- | :--- |
+| `local` (default) | **Zero** | faster-whisper int8 on CPU. No audio bytes leave the device. |
+| `cloud` | All audio sent to Gemini API | Uses Gemini multimodal audio; requires valid `GEMINI_API_KEY`. |
+| `hybrid` | Cloud first, local fallback | Attempts cloud; falls back to on-device if unavailable. |
+
+---
+
+## 🧪 DEMO_MODE and TEST_MODE
+
+| Mode | Purpose | Effect |
+| :--- | :--- | :--- |
+| `DEMO_MODE=true` | Presentations and screenshots | Enables synthetic patient trajectories and fallback vision values. Every synthetic value is labeled `[DEMO DATA]`. Shown in UI header and analytics. |
+| `TEST_MODE=true` | CI / automated test runs | Disables all Supabase DB writes and reads. Shown in logs (WARNING level), in `/health` response, and in a red "PERSISTENCE DISABLED" banner in the UI. **Never use in production.** A client sending `X-Test-Mode: true` header has no effect unless the server was started with `TEST_MODE=true`. |
+
+---
+
+## ⚠️ NOT TESTED / KNOWN LIMITATIONS
+
+The following capabilities have NOT been tested with real-world inputs in this version and require further validation before any clinical deployment:
+
+1. **Real phone-photo lab OCR**: The vision pipeline has only been tested with a single synthetic lab PNG in an automated test. Real-world photo quality, lighting variation, and handwritten values have not been evaluated.
+
+2. **Real microphone audio through Whisper**: Local faster-whisper transcription runs in the server environment but has only been invoked via `b"mock audio bytes"` in tests. Actual microphone audio captured in a clinical environment has not been tested end-to-end.
+
+3. **Browser UI interaction**: All UI testing is screenshot-only. No automated end-to-end browser interaction (click flows, dictation, image upload, approve button) has been run.
+
+4. **Firebase token verification of `approved_by`**: The server attempts `firebase_admin.auth.verify_id_token()` when a `Bearer` token is supplied, but this code path has not been tested with a real Firebase-issued JWT. In all current test runs, `approved_by` is stored as `"unverified (client-supplied)"`.
+
+5. **Clinician review of alert thresholds and wording**: All CTCAE v5.0 thresholds, febrile neutropenia criteria, and alert message wording must be reviewed and approved by a licensed oncologist before any clinical use. These are not validated medical devices.
+
+6. **Supabase Row Level Security in production**: RLS is currently disabled on the live project tables (rounds, extractions, draft_notes, review_flags). The migration file `20261010b_enable_rls.sql` must be applied and tested before any deployment with real patient data.
+
+7. **Multi-user authentication**: The current backend enforces a single shared `API_KEY`. Per-user Firebase identity is read from the Bearer token but is only used for `approved_by` attribution, not for data isolation between users.
+
+> [!CAUTION]
+> This is a **research and demonstration prototype**. It must not be used for autonomous clinical decision-making, real patient data, or production hospital workflows without independent clinical validation, regulatory review, and appropriate data governance controls.
 
 ---
 
 ## 📄 License
 
 This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+

@@ -21,9 +21,9 @@ class LabTrajectory(BaseModel):
     unit: str
     reference_range: str
     baseline_value: Optional[float] = None
-    current_value: float
+    current_value: Optional[float] = None
     percent_change: Optional[float] = None
-    trend: str = Field("stable", description="up | down | stable | new")
+    trend: str = Field("stable", description="up | down | stable | new | insufficient data")
     data_points: list[LabDataPoint] = Field(default_factory=list)
 
 
@@ -67,6 +67,7 @@ class GuidelineConcordance(BaseModel):
 
 class PatientAnalyticsResponse(BaseModel):
     patient: Patient
+    demo_mode: bool = Field(default=False, description="True if populated with synthetic demo data")
     ecog_performance_status: int = Field(1, ge=0, le=4)
     days_inpatient: int = 4
     trajectories: list[LabTrajectory] = Field(default_factory=list)
@@ -75,3 +76,4 @@ class PatientAnalyticsResponse(BaseModel):
     guidelines: list[GuidelineConcordance] = Field(default_factory=list)
     rounds_history: list[HistoricalRound] = Field(default_factory=list)
     clinical_synthesis: str
+
