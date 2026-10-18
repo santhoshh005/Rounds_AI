@@ -226,6 +226,15 @@ export function SquareIcon({ size = 16, color = "currentColor", style, className
   );
 }
 
+export function ClipboardIcon({ size = 16, color = "currentColor", style, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
+      <rect width="8" height="4" x="8" y="2" rx="1" ry="1" />
+      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+    </svg>
+  );
+}
+
 export function XIcon({ size = 16, color = "currentColor", style, className }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
@@ -234,3 +243,36 @@ export function XIcon({ size = 16, color = "currentColor", style, className }: I
     </svg>
   );
 }
+
+
+export function RoundsAiLogo({ size = 28, className, style }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 32 32"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      style={style}
+    >
+      <rect width="32" height="32" rx="8" fill="#0f172a" />
+      <path d="M16 6v20M6 16h20" stroke="#1e293b" strokeWidth="3" strokeLinecap="round" />
+      <path
+        d="M6 16h4.5l2-4.5 3.5 9.5 3-6.5 2 3h7"
+        stroke="url(#roundsai-logo-grad)"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle cx="27.5" cy="16" r="1.8" fill="#38bdf8" />
+      <defs>
+        <linearGradient id="roundsai-logo-grad" x1="6" y1="16" x2="28" y2="16" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#38bdf8" />
+          <stop offset="0.55" stopColor="#0284c7" />
+          <stop offset="1" stopColor="#10b981" />
+        </linearGradient>
+      </defs>
+    </svg>
+  );
+}

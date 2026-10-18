@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { auth, signInWithEmailAndPassword, createUserWithEmailAndPassword } from "../../lib/firebase";
+import { RoundsAiLogo } from "../components/Icons";
 
 export default function LoginPage() {
   const [isLogin, setIsLogin] = useState(true);
@@ -43,11 +44,15 @@ export default function LoginPage() {
   return (
     <main>
       <header>
-        <div>
-          <p className="eyebrow">CLINICIAN PORTAL</p>
-          <h1>RoundsAI Authentication</h1>
+        <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+          <RoundsAiLogo size={40} />
+          <div>
+            <p className="eyebrow" style={{ margin: 0 }}>CLINICIAN PORTAL</p>
+            <h1 style={{ margin: "2px 0 0" }}>RoundsAI Authentication</h1>
+          </div>
         </div>
       </header>
+
       <section className="input-card" style={{ maxWidth: "420px", margin: "2rem auto" }}>
         <h2>{isLogin ? "Sign In" : "Sign Up"}</h2>
         <form onSubmit={handleSubmit}>

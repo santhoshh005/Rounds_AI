@@ -14,7 +14,9 @@ import {
   UndoIcon,
   CheckIcon,
   AlertCircleIcon,
+  RoundsAiLogo,
 } from "../components/Icons";
+
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY ?? "";
@@ -320,11 +322,14 @@ export default function MobileCapturePage() {
     <div style={{ maxWidth: "440px", margin: "0 auto", padding: "16px", minHeight: "100vh", background: "#f8fafc" }}>
       {/* Mobile Top App Bar */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-        <div>
-          <span style={{ fontSize: "11px", fontWeight: "700", color: "#0284c7", letterSpacing: "0.08em" }}>
-            MOBILE CLINICAL CAPTURE
-          </span>
-          <h1 style={{ fontSize: "22px", margin: "2px 0 0", color: "#0f172a" }}>RoundsAI Companion</h1>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <RoundsAiLogo size={32} />
+          <div>
+            <span style={{ fontSize: "11px", fontWeight: "700", color: "#0284c7", letterSpacing: "0.08em" }}>
+              MOBILE CLINICAL CAPTURE
+            </span>
+            <h1 style={{ fontSize: "20px", margin: "1px 0 0", color: "#0f172a" }}>RoundsAI Companion</h1>
+          </div>
         </div>
         <div style={{ display: "flex", gap: "6px" }}>
           <a

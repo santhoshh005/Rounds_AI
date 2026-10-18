@@ -24,7 +24,18 @@ import {
   MinusIcon,
   XIcon,
   RefreshIcon,
+  ClipboardIcon,
+  RoundsAiLogo,
 } from "./components/Icons";
+import {
+  getCtcaeBadgeStyle,
+  getSentinelSeverityTheme,
+  analyzeLabTrend,
+  formatProvenanceBadge,
+  extractOncologyTriad,
+  formatEmrClipboardNote,
+} from "../lib/clinical-utils";
+
 
 type LabValue = {
   name: string;
@@ -91,6 +102,8 @@ type AutoCorrectChange = {
 type Result = {
   extraction: {
     patient_id?: string;
+    patient_name?: string;
+    mrn?: string;
     diagnosis?: string;
     treatment_cycle?: number;
     symptoms: string[];
@@ -118,6 +131,7 @@ type Result = {
 type PatientRecord = {
   id: string;
   name: string;
+  mrn?: string;
   age: number;
   sex: string;
   diagnosis: string;
@@ -202,6 +216,43 @@ export default function Dashboard() {
   const [isApproved, setIsApproved] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
   const [approvalInfo, setApprovalInfo] = useState<{ by?: string; at?: string } | null>(null);
+  const [copiedNote, setCopiedNote] = useState(false);
+  const [copiedType, setCopiedType] = useState<"emr" | "raw" | null>(null);
+  const [activeDraftNote, setActiveDraftNote] = useState<string>("");
+
+  function handleCopyEmr(noteText: string) {
+    if (!noteText) return;
+    const formatted = formatEmrClipboardNote({
+      patientName: selectedPatient?.name || result?.extraction?.patient_name || `Patient #${result?.extraction?.patient_id || "104"}`,
+      mrn: selectedPatient?.mrn || result?.extraction?.mrn || `MRN-${result?.extraction?.patient_id || "104"}`,
+      note: noteText,
+      attestedBy: isApproved ? (approvalInfo?.by || user?.displayName || user?.email || "Attending Clinician") : undefined,
+      attestedAt: isApproved ? approvalInfo?.at : undefined,
+    });
+    navigator.clipboard.writeText(formatted);
+    setCopiedNote(true);
+    setCopiedType("emr");
+    setTimeout(() => {
+      setCopiedNote(false);
+      setCopiedType(null);
+    }, 3000);
+  }
+
+  function handleCopyRaw(noteText: string) {
+    if (!noteText) return;
+    navigator.clipboard.writeText(noteText);
+    setCopiedNote(true);
+    setCopiedType("raw");
+    setTimeout(() => {
+      setCopiedNote(false);
+      setCopiedType(null);
+    }, 2500);
+  }
+
+  function handleCopyNote(text: string) {
+    handleCopyRaw(text);
+  }
+
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -419,13 +470,14 @@ export default function Dashboard() {
     if (ext) {
       const flags = roundData.review_flags || [];
       const confirms = roundData.confirm_before_signing || [];
+      const draftText = roundData.draft_notes?.[0]?.content || roundData.draft_note || "";
       setResult({
         round_id: roundData.id || roundData.round_id,
         extraction: ext,
         lab_trends: roundData.lab_trends || [],
         review_flags: flags,
         retrieved_evidence: roundData.retrieved_evidence || [],
-        draft_note: roundData.draft_notes?.[0]?.content || roundData.draft_note || "",
+        draft_note: draftText,
         disclaimer: "Demo / research prototype. Not for autonomous clinical decision-making or real patient data.",
         provenance: roundData.provenance || {},
         saved_to_db: roundData.saved_to_db ?? true,
@@ -437,6 +489,7 @@ export default function Dashboard() {
         fallback_used: Boolean(roundData.fallback_used),
         fallback_message: roundData.fallback_message || null,
       });
+      setActiveDraftNote(draftText);
       setConfirmItems(confirms);
       setIsApproved(false);
       setApprovalInfo(null);
@@ -819,8 +872,8 @@ export default function Dashboard() {
     <main>
       <header>
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <div style={{ width: "36px", height: "36px", borderRadius: "8px", background: "#f0f9ff", border: "1px solid #bae6fd", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <StethoscopeIcon size={20} color="#0284c7" />
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <RoundsAiLogo size={36} />
           </div>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -1031,8 +1084,63 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* ── Active Patient Clinical Cockpit ─────────────────────────── */}
+      <div className="patient-cockpit" role="region" aria-label="Active Inpatient Context">
+        <div className="cockpit-identity">
+          <div className="cockpit-avatar">
+            {selectedPatient?.name
+              ? selectedPatient.name
+                  .split(" ")
+                  .map((n: string) => n[0])
+                  .join("")
+                  .slice(0, 2)
+                  .toUpperCase()
+              : "PT"}
+          </div>
+          <div>
+            <div className="cockpit-title">
+              <span>{selectedPatient?.name || "Patient #104"}</span>
+              <span className="cockpit-pill" style={{ background: "#f0f9ff", color: "#0369a1", borderColor: "#bae6fd" }}>
+                MRN #{selectedPatient?.id || "104"}
+              </span>
+              <span className="cockpit-pill">
+                {selectedPatient?.ward_bed ? selectedPatient.ward_bed.split(" - ")[1] || selectedPatient.ward_bed : "Bed 12-A"}
+              </span>
+            </div>
+            <div className="cockpit-subtitle">
+              <span><strong>Diagnosis:</strong> {selectedPatient?.diagnosis || "Colorectal Carcinoma (Stage III)"}</span>
+              <span>·</span>
+              <span><strong>Regimen:</strong> {selectedPatient?.regimen || "mFOLFOX6"} (Cycle {selectedPatient?.cycle || 3})</span>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+          <button
+            type="button"
+            onClick={() => setShowRosterModal(true)}
+            className="toolbar-btn"
+            style={{ padding: "6px 12px", fontSize: "12px" }}
+            title="Switch active inpatient"
+          >
+            <UsersIcon size={13} />
+            <span>Switch Patient</span>
+          </button>
+          <a
+            href={`/analytics?patientId=${selectedPatient?.id || "104"}`}
+            className="toolbar-btn"
+            style={{ padding: "6px 12px", fontSize: "12px", textDecoration: "none" }}
+            title="View cycle-over-cycle laboratory trends"
+          >
+            <BarChartIcon size={13} color="#0284c7" />
+            <span>Longitudinal Trajectory ↗</span>
+          </a>
+        </div>
+      </div>
+
       {/* ── Input Section ────────────────────────────────────────────── */}
       <section className="input-card">
+
         <h2>Clinical Round Assessment</h2>
         <p>
           Dictate or transcribe clinician observations, or attach laboratory scans and clinical pathology sheets.

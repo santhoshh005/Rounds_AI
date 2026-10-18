@@ -206,7 +206,25 @@ npm run dev
 ```
 *Application available at [http://localhost:3000](http://localhost:3000).*
 
-### 4. Supabase Database Migration (`patients` Table & Row Level Security)
+### 4. Deploying Frontend to Vercel
+The frontend is built with Next.js 15 and is fully optimized for 1-click deployment on [Vercel](https://vercel.com):
+
+1. **Import Repository**:
+   - Push your code to GitHub and import the repository into Vercel.
+   - Vercel automatically detects the configuration via `vercel.json` (or set **Root Directory** to `apps/web`).
+2. **Environment Variables**:
+   In the Vercel Project Settings $\rightarrow$ **Environment Variables**, add:
+   - `NEXT_PUBLIC_API_URL`: URL of your deployed FastAPI backend (e.g., `https://roundsai-backend.onrender.com`).
+   - `NEXT_PUBLIC_FIREBASE_API_KEY`, `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`, `NEXT_PUBLIC_FIREBASE_PROJECT_ID`, etc. (see `apps/web/.env.example`).
+3. **Backend CORS Configuration**:
+   - In your backend environment, update `ALLOWED_ORIGINS` to include your Vercel URL:
+     ```bash
+     ALLOWED_ORIGINS=http://localhost:3000,https://roundsai.vercel.app,https://your-project.vercel.app
+     ```
+4. **Real-Time Live Sync**:
+   - Because the frontend connects directly from the clinician's browser to the FastAPI backend's `/api/v1/rounds/stream` endpoint, Server-Sent Events (SSE) and bedside sync operate in real time without being constrained by Vercel serverless function execution timeouts.
+
+### 5. Supabase Database Migration (`patients` Table & Row Level Security)
 To create the `public.patients` table (and add the `draft_notes.approved_by` and `review_flags.guideline` columns) in your Supabase project:
 
 1. **Via Supabase Dashboard SQL Editor (Recommended)**:

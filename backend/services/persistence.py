@@ -165,7 +165,14 @@ def save_review_flags(round_id: str, flags: list[ReviewFlag]) -> bool:
 
     def _insert(rid: str, flag_list: list[dict]) -> None:
         sb = get_supabase()
-        sb.table("review_flags").insert(flag_list).execute()
+        try:
+            sb.table("review_flags").insert(flag_list).execute()
+        except Exception as e:
+            if "guideline" in str(e).lower():
+                stripped = [{k: v for k, v in row.items() if k != "guideline"} for row in flag_list]
+                sb.table("review_flags").insert(stripped).execute()
+            else:
+                raise
 
     _, db_ok = _safe_persist("save_review_flags", _insert, round_id, flag_rows)
     return db_ok

@@ -17,7 +17,9 @@ import {
   RefreshIcon,
   CheckIcon,
   SparklesIcon,
+  RoundsAiLogo,
 } from "../components/Icons";
+
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY || "";
@@ -223,8 +225,8 @@ export default function PatientAnalyticsPage() {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
-          <div style={{ width: "36px", height: "36px", borderRadius: "8px", background: "#f0f9ff", border: "1px solid #bae6fd", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <StethoscopeIcon size={20} color="#0284c7" />
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <RoundsAiLogo size={36} />
           </div>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>

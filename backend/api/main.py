@@ -267,7 +267,7 @@ async def stream_rounds(request: Request, patient_id: str | None = None):
                 if await request.is_disconnected():
                     break
                 try:
-                    payload = await asyncio.wait_for(queue.get(), timeout=15.0)
+                    payload = await asyncio.wait_for(queue.get(), timeout=3.0)
                     yield f"event: round_update\ndata: {payload}\n\n"
                 except asyncio.TimeoutError:
                     yield ": keepalive\n\n"
