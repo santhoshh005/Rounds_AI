@@ -594,3 +594,15 @@ def test_health_exposes_test_mode_when_active(client, monkeypatch):
     assert data.get("test_mode") == "true", f"Expected test_mode='true' in /health, got {data}"
     assert "persistence" in data
     assert "disabled" in data["persistence"].lower()
+
+
+# ── 17. HEAD Probes for Load Balancers & Health Checkers ──────────────
+def test_head_probes_return_200(client):
+    res_root = client.head("/")
+    assert res_root.status_code == 200
+
+    res_health = client.head("/health")
+    assert res_health.status_code == 200
+
+    res_api_health = client.head("/api/v1/health")
+    assert res_api_health.status_code == 200

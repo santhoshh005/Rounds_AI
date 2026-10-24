@@ -6,6 +6,11 @@ import os
 import warnings
 warnings.filterwarnings("ignore", category=PendingDeprecationWarning)
 warnings.filterwarnings("ignore", message=".*allowed_objects.*")
+try:
+    from langchain_core._api.deprecation import LangChainPendingDeprecationWarning
+    warnings.filterwarnings("ignore", category=LangChainPendingDeprecationWarning)
+except ImportError:
+    pass
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -141,8 +146,8 @@ class ApiKeyAuthMiddleware:
             method = scope.get("method", "")
             require_auth = os.getenv("REQUIRE_AUTH", "false").strip().lower() in ("true", "1", "yes")
 
-            # Allow public endpoints and preflight
-            if not require_auth or method == "OPTIONS" or path in ("/", "/health", "/api/v1/health", "/docs", "/openapi.json", "/redoc"):
+            # Allow public endpoints, HEAD health checks, and preflight
+            if not require_auth or method in ("OPTIONS", "HEAD") or path in ("/", "/health", "/api/v1/health", "/docs", "/openapi.json", "/redoc"):
                 return await self.app(scope, receive, send)
 
             expected_key = os.getenv("API_KEY") or os.getenv("AUTH_TOKEN") or ""
@@ -195,7 +200,7 @@ def startup_checks():
     logger.info("==================================================")
 
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 def root() -> dict[str, str]:
     return {
         "status": "online",
@@ -206,8 +211,8 @@ def root() -> dict[str, str]:
     }
 
 
-@app.get("/health")
-@app.get("/api/v1/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
+@app.api_route("/api/v1/health", methods=["GET", "HEAD"])
 def health() -> dict[str, str]:
     test_mode_active = os.getenv("TEST_MODE", "false").strip().lower() in ("true", "1", "yes")
     result = {

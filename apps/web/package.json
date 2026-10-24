@@ -2,6 +2,7 @@
   "name": "roundsai-dashboard",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -19,5 +20,11 @@
     "@types/react": "19.1.13",
     "@types/react-dom": "19.1.9",
     "typescript": "5.9.2"
+  },
+  "overrides": {
+    "@grpc/grpc-js": "^1.14.6",
+    "postcss": "^8.5.31",
+    "sharp": "^0.35.5",
+    "source-map-js": "^1.2.2"
   }
 }
