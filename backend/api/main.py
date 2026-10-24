@@ -141,7 +141,7 @@ class ApiKeyAuthMiddleware:
             require_auth = os.getenv("REQUIRE_AUTH", "false").strip().lower() in ("true", "1", "yes")
 
             # Allow public endpoints and preflight
-            if not require_auth or method == "OPTIONS" or path in ("/health", "/docs", "/openapi.json", "/redoc"):
+            if not require_auth or method == "OPTIONS" or path in ("/", "/health", "/api/v1/health", "/docs", "/openapi.json", "/redoc"):
                 return await self.app(scope, receive, send)
 
             expected_key = os.getenv("API_KEY") or os.getenv("AUTH_TOKEN") or ""
@@ -194,7 +194,19 @@ def startup_checks():
     logger.info("==================================================")
 
 
+@app.get("/")
+def root() -> dict[str, str]:
+    return {
+        "status": "online",
+        "service": "RoundsAI Inpatient Oncology Copilot API",
+        "version": "1.0.0",
+        "docs": "/docs",
+        "health": "/health",
+    }
+
+
 @app.get("/health")
+@app.get("/api/v1/health")
 def health() -> dict[str, str]:
     test_mode_active = os.getenv("TEST_MODE", "false").strip().lower() in ("true", "1", "yes")
     result = {
