@@ -381,6 +381,9 @@ export default function MobileCapturePage() {
           </div>
           <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
             <select
+              id="mobile-patient-select"
+              name="mobilePatientSelect"
+              aria-label="Select Inpatient Bed"
               value={patientId}
               onChange={(e) => handlePatientChange(e.target.value)}
               style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "13px", fontWeight: "600", maxWidth: "170px" }}
@@ -437,6 +440,9 @@ export default function MobileCapturePage() {
         </div>
 
         <textarea
+          id="mobile-dictation-transcript"
+          name="mobileDictationTranscript"
+          aria-label="Clinician bedside dictation text"
           value={transcript}
           onChange={(e) => setTranscript(e.target.value)}
           placeholder="Speak or type clinical observations..."
@@ -593,6 +599,8 @@ export default function MobileCapturePage() {
         )}
 
         <input
+          id="mobile-camera-capture-input"
+          name="mobileCameraCaptureInput"
           ref={fileInputRef}
           type="file"
           accept="image/*"
@@ -774,10 +782,12 @@ export default function MobileCapturePage() {
 
             <form onSubmit={handleAdmitSubmit}>
               <div style={{ marginBottom: "10px" }}>
-                <label style={{ display: "block", fontSize: "11px", fontWeight: "700", color: "#475569", marginBottom: "3px" }}>
+                <label htmlFor="mobile-admit-id" style={{ display: "block", fontSize: "11px", fontWeight: "700", color: "#475569", marginBottom: "3px" }}>
                   Patient ID / MRN *
                 </label>
                 <input
+                  id="mobile-admit-id"
+                  name="mobileAdmitId"
                   type="text"
                   required
                   placeholder="e.g. 107 or MRN-4421"
@@ -788,10 +798,12 @@ export default function MobileCapturePage() {
               </div>
 
               <div style={{ marginBottom: "10px" }}>
-                <label style={{ display: "block", fontSize: "11px", fontWeight: "700", color: "#475569", marginBottom: "3px" }}>
+                <label htmlFor="mobile-admit-name" style={{ display: "block", fontSize: "11px", fontWeight: "700", color: "#475569", marginBottom: "3px" }}>
                   Patient Full Name
                 </label>
                 <input
+                  id="mobile-admit-name"
+                  name="mobileAdmitName"
                   type="text"
                   placeholder="e.g. Robert Chen"
                   value={newName}
@@ -802,10 +814,12 @@ export default function MobileCapturePage() {
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "10px" }}>
                 <div>
-                  <label style={{ display: "block", fontSize: "11px", fontWeight: "700", color: "#475569", marginBottom: "3px" }}>
+                  <label htmlFor="mobile-admit-age" style={{ display: "block", fontSize: "11px", fontWeight: "700", color: "#475569", marginBottom: "3px" }}>
                     Age
                   </label>
                   <input
+                    id="mobile-admit-age"
+                    name="mobileAdmitAge"
                     type="number"
                     value={newAge}
                     onChange={(e) => setNewAge(Number(e.target.value))}
@@ -813,10 +827,13 @@ export default function MobileCapturePage() {
                   />
                 </div>
                 <div>
-                  <label style={{ display: "block", fontSize: "11px", fontWeight: "700", color: "#475569", marginBottom: "3px" }}>
+                  <label htmlFor="mobile-admit-sex" style={{ display: "block", fontSize: "11px", fontWeight: "700", color: "#475569", marginBottom: "3px" }}>
                     Sex
                   </label>
                   <select
+                    id="mobile-admit-sex"
+                    name="mobileAdmitSex"
+                    aria-label="Patient Sex"
                     value={newSex}
                     onChange={(e) => setNewSex(e.target.value)}
                     style={{ width: "100%", padding: "8px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "13px" }}
@@ -829,10 +846,12 @@ export default function MobileCapturePage() {
               </div>
 
               <div style={{ marginBottom: "10px" }}>
-                <label style={{ display: "block", fontSize: "11px", fontWeight: "700", color: "#475569", marginBottom: "3px" }}>
+                <label htmlFor="mobile-admit-diagnosis" style={{ display: "block", fontSize: "11px", fontWeight: "700", color: "#475569", marginBottom: "3px" }}>
                   Cancer Diagnosis *
                 </label>
                 <input
+                  id="mobile-admit-diagnosis"
+                  name="mobileAdmitDiagnosis"
                   type="text"
                   required
                   placeholder="e.g. Non-Small Cell Lung Cancer"
@@ -844,10 +863,12 @@ export default function MobileCapturePage() {
 
               <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "8px", marginBottom: "10px" }}>
                 <div>
-                  <label style={{ display: "block", fontSize: "11px", fontWeight: "700", color: "#475569", marginBottom: "3px" }}>
+                  <label htmlFor="mobile-admit-regimen" style={{ display: "block", fontSize: "11px", fontWeight: "700", color: "#475569", marginBottom: "3px" }}>
                     Chemo Regimen
                   </label>
                   <input
+                    id="mobile-admit-regimen"
+                    name="mobileAdmitRegimen"
                     type="text"
                     placeholder="e.g. Carboplatin + Pemetrexed"
                     value={newRegimen}
@@ -856,10 +877,12 @@ export default function MobileCapturePage() {
                   />
                 </div>
                 <div>
-                  <label style={{ display: "block", fontSize: "11px", fontWeight: "700", color: "#475569", marginBottom: "3px" }}>
+                  <label htmlFor="mobile-admit-cycle" style={{ display: "block", fontSize: "11px", fontWeight: "700", color: "#475569", marginBottom: "3px" }}>
                     Cycle #
                   </label>
                   <input
+                    id="mobile-admit-cycle"
+                    name="mobileAdmitCycle"
                     type="number"
                     min="1"
                     max="50"
@@ -871,10 +894,12 @@ export default function MobileCapturePage() {
               </div>
 
               <div style={{ marginBottom: "10px" }}>
-                <label style={{ display: "block", fontSize: "11px", fontWeight: "700", color: "#475569", marginBottom: "3px" }}>
+                <label htmlFor="mobile-admit-bed" style={{ display: "block", fontSize: "11px", fontWeight: "700", color: "#475569", marginBottom: "3px" }}>
                   Ward & Bed Location *
                 </label>
                 <input
+                  id="mobile-admit-bed"
+                  name="mobileAdmitBed"
                   type="text"
                   required
                   placeholder="e.g. Ward 4B · Bed 18"
@@ -886,10 +911,12 @@ export default function MobileCapturePage() {
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "14px" }}>
                 <div>
-                  <label style={{ display: "block", fontSize: "11px", fontWeight: "700", color: "#475569", marginBottom: "3px" }}>
+                  <label htmlFor="mobile-admit-anc" style={{ display: "block", fontSize: "11px", fontWeight: "700", color: "#475569", marginBottom: "3px" }}>
                     Baseline ANC
                   </label>
                   <input
+                    id="mobile-admit-anc"
+                    name="mobileAdmitAnc"
                     type="number"
                     placeholder="cells/uL"
                     value={newAnc || ""}
@@ -898,10 +925,12 @@ export default function MobileCapturePage() {
                   />
                 </div>
                 <div>
-                  <label style={{ display: "block", fontSize: "11px", fontWeight: "700", color: "#475569", marginBottom: "3px" }}>
+                  <label htmlFor="mobile-admit-plt" style={{ display: "block", fontSize: "11px", fontWeight: "700", color: "#475569", marginBottom: "3px" }}>
                     Baseline Platelets
                   </label>
                   <input
+                    id="mobile-admit-plt"
+                    name="mobileAdmitPlt"
                     type="number"
                     placeholder="/uL"
                     value={newPlt || ""}

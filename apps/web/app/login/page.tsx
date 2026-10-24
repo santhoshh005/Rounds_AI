@@ -60,7 +60,9 @@ export default function LoginPage() {
             <label htmlFor="email" style={{ display: "block", marginBottom: "0.5rem" }}>Email</label>
             <input 
               id="email" 
+              name="email"
               type="email" 
+              autoComplete="username"
               value={email} 
               onChange={e => setEmail(e.target.value)} 
               required 
@@ -71,7 +73,9 @@ export default function LoginPage() {
             <label htmlFor="password" style={{ display: "block", marginBottom: "0.5rem" }}>Password</label>
             <input 
               id="password" 
+              name="password"
               type="password" 
+              autoComplete="current-password"
               value={password} 
               onChange={e => setPassword(e.target.value)} 
               required 

@@ -258,6 +258,7 @@ export default function Dashboard() {
 
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const loadedRoundIdsRef = useRef<Set<string>>(new Set());
 
   async function fetchPatients() {
     try {
@@ -466,6 +467,15 @@ export default function Dashboard() {
 
   function loadBedsideRound(roundData: any) {
     if (!roundData) return;
+    const rId = roundData.id || roundData.round_id;
+    if (rId) {
+      loadedRoundIdsRef.current.add(String(rId));
+      if (typeof window !== "undefined" && window.location.search.includes("roundId")) {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("roundId");
+        window.history.replaceState({}, "", url.pathname + (url.searchParams.toString() ? `?${url.searchParams.toString()}` : ""));
+      }
+    }
     if (roundData.transcript) {
       setTranscript(roundData.transcript);
     }
@@ -535,7 +545,8 @@ export default function Dashboard() {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const roundIdParam = params.get("roundId");
-      if (roundIdParam) {
+      if (roundIdParam && !loadedRoundIdsRef.current.has(roundIdParam)) {
+        loadedRoundIdsRef.current.add(roundIdParam);
         fetch(`${API}/api/v1/rounds/${roundIdParam}`, {
           headers: getAuthHeaders(),
         })
@@ -1198,6 +1209,8 @@ export default function Dashboard() {
           </div>
 
           <textarea
+            id="clinical-round-text"
+            name="clinicalRoundText"
             value={transcript}
             onChange={(e) => setTranscript(e.target.value)}
             aria-label="Clinical round text"
@@ -1274,6 +1287,8 @@ export default function Dashboard() {
             </div>
 
             <input
+              id="lab-scan-file-input"
+              name="labScanFileInput"
               type="file"
               ref={fileInputRef}
               onChange={handleImageSelect}
@@ -1810,6 +1825,8 @@ export default function Dashboard() {
               )}
             </div>
             <textarea
+              id="editable-clinical-draft-note"
+              name="editableClinicalDraftNote"
               className="note"
               defaultValue={result.draft_note}
               aria-label="Editable clinical draft note"
@@ -2107,10 +2124,12 @@ export default function Dashboard() {
             <form onSubmit={handleAdmitSubmit}>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "10px", marginBottom: "12px" }}>
                 <div>
-                  <label style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "#475569", marginBottom: "4px" }}>
+                  <label htmlFor="admit-patient-id" style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "#475569", marginBottom: "4px" }}>
                     Patient ID / MRN *
                   </label>
                   <input
+                    id="admit-patient-id"
+                    name="admitPatientId"
                     type="text"
                     required
                     placeholder="e.g. 108"
@@ -2120,10 +2139,12 @@ export default function Dashboard() {
                   />
                 </div>
                 <div>
-                  <label style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "#475569", marginBottom: "4px" }}>
+                  <label htmlFor="admit-patient-name" style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "#475569", marginBottom: "4px" }}>
                     Full Patient Name
                   </label>
                   <input
+                    id="admit-patient-name"
+                    name="admitPatientName"
                     type="text"
                     placeholder="e.g. Maria Santos"
                     value={admitName}
@@ -2135,10 +2156,12 @@ export default function Dashboard() {
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 2fr", gap: "10px", marginBottom: "12px" }}>
                 <div>
-                  <label style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "#475569", marginBottom: "4px" }}>
+                  <label htmlFor="admit-patient-age" style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "#475569", marginBottom: "4px" }}>
                     Age
                   </label>
                   <input
+                    id="admit-patient-age"
+                    name="admitPatientAge"
                     type="number"
                     value={admitAge}
                     onChange={(e) => setAdmitAge(Number(e.target.value))}
@@ -2146,10 +2169,13 @@ export default function Dashboard() {
                   />
                 </div>
                 <div>
-                  <label style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "#475569", marginBottom: "4px" }}>
+                  <label htmlFor="admit-patient-sex" style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "#475569", marginBottom: "4px" }}>
                     Sex
                   </label>
                   <select
+                    id="admit-patient-sex"
+                    name="admitPatientSex"
+                    aria-label="Patient Sex"
                     value={admitSex}
                     onChange={(e) => setAdmitSex(e.target.value)}
                     style={{ width: "100%", padding: "8px", borderRadius: "6px", border: "1px solid #cbd5e1" }}
@@ -2160,10 +2186,12 @@ export default function Dashboard() {
                   </select>
                 </div>
                 <div>
-                  <label style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "#475569", marginBottom: "4px" }}>
+                  <label htmlFor="admit-ward-bed" style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "#475569", marginBottom: "4px" }}>
                     Ward & Bed *
                   </label>
                   <input
+                    id="admit-ward-bed"
+                    name="admitWardBed"
                     type="text"
                     required
                     placeholder="Ward 4B - Bed 22"
@@ -2175,10 +2203,12 @@ export default function Dashboard() {
               </div>
 
               <div style={{ marginBottom: "12px" }}>
-                <label style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "#475569", marginBottom: "4px" }}>
+                <label htmlFor="admit-diagnosis" style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "#475569", marginBottom: "4px" }}>
                   Cancer Diagnosis & Stage *
                 </label>
                 <input
+                  id="admit-diagnosis"
+                  name="admitDiagnosis"
                   type="text"
                   required
                   placeholder="e.g. Ovarian Carcinoma (High Grade Serous)"
@@ -2190,10 +2220,12 @@ export default function Dashboard() {
 
               <div style={{ display: "grid", gridTemplateColumns: "3fr 1fr", gap: "10px", marginBottom: "12px" }}>
                 <div>
-                  <label style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "#475569", marginBottom: "4px" }}>
+                  <label htmlFor="admit-regimen" style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "#475569", marginBottom: "4px" }}>
                     Chemotherapy Regimen
                   </label>
                   <input
+                    id="admit-regimen"
+                    name="admitRegimen"
                     type="text"
                     placeholder="e.g. Paclitaxel + Carboplatin"
                     value={admitRegimen}
@@ -2202,10 +2234,12 @@ export default function Dashboard() {
                   />
                 </div>
                 <div>
-                  <label style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "#475569", marginBottom: "4px" }}>
+                  <label htmlFor="admit-cycle" style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "#475569", marginBottom: "4px" }}>
                     Cycle #
                   </label>
                   <input
+                    id="admit-cycle"
+                    name="admitCycle"
                     type="number"
                     min="1"
                     max="50"
@@ -2218,10 +2252,12 @@ export default function Dashboard() {
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px", marginBottom: "16px" }}>
                 <div>
-                  <label style={{ display: "block", fontSize: "11px", fontWeight: "700", color: "#64748b", marginBottom: "3px" }}>
+                  <label htmlFor="admit-anc" style={{ display: "block", fontSize: "11px", fontWeight: "700", color: "#64748b", marginBottom: "3px" }}>
                     Baseline ANC
                   </label>
                   <input
+                    id="admit-anc"
+                    name="admitAnc"
                     type="number"
                     placeholder="cells/uL"
                     value={admitAnc || ""}
@@ -2230,10 +2266,12 @@ export default function Dashboard() {
                   />
                 </div>
                 <div>
-                  <label style={{ display: "block", fontSize: "11px", fontWeight: "700", color: "#64748b", marginBottom: "3px" }}>
+                  <label htmlFor="admit-plt" style={{ display: "block", fontSize: "11px", fontWeight: "700", color: "#64748b", marginBottom: "3px" }}>
                     Baseline Platelets
                   </label>
                   <input
+                    id="admit-plt"
+                    name="admitPlt"
                     type="number"
                     placeholder="/uL"
                     value={admitPlt || ""}
@@ -2242,10 +2280,12 @@ export default function Dashboard() {
                   />
                 </div>
                 <div>
-                  <label style={{ display: "block", fontSize: "11px", fontWeight: "700", color: "#64748b", marginBottom: "3px" }}>
+                  <label htmlFor="admit-wbc" style={{ display: "block", fontSize: "11px", fontWeight: "700", color: "#64748b", marginBottom: "3px" }}>
                     Baseline WBC
                   </label>
                   <input
+                    id="admit-wbc"
+                    name="admitWbc"
                     type="number"
                     placeholder="cells/uL"
                     value={admitWbc || ""}
@@ -2328,10 +2368,12 @@ export default function Dashboard() {
 
             <form onSubmit={handleEditSubmit}>
               <div style={{ marginBottom: "12px" }}>
-                <label style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "#475569", marginBottom: "4px" }}>
+                <label htmlFor="edit-cycle" style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "#475569", marginBottom: "4px" }}>
                   Current Chemotherapy Cycle
                 </label>
                 <input
+                  id="edit-cycle"
+                  name="editCycle"
                   type="number"
                   min="1"
                   max="50"
@@ -2342,10 +2384,12 @@ export default function Dashboard() {
               </div>
 
               <div style={{ marginBottom: "12px" }}>
-                <label style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "#475569", marginBottom: "4px" }}>
+                <label htmlFor="edit-bed" style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "#475569", marginBottom: "4px" }}>
                   Ward & Bed Location
                 </label>
                 <input
+                  id="edit-bed"
+                  name="editBed"
                   type="text"
                   value={editBed}
                   onChange={(e) => setEditBed(e.target.value)}
@@ -2354,10 +2398,12 @@ export default function Dashboard() {
               </div>
 
               <div style={{ marginBottom: "12px" }}>
-                <label style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "#475569", marginBottom: "4px" }}>
+                <label htmlFor="edit-regimen" style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "#475569", marginBottom: "4px" }}>
                   Chemotherapy Regimen
                 </label>
                 <input
+                  id="edit-regimen"
+                  name="editRegimen"
                   type="text"
                   value={editRegimen}
                   onChange={(e) => setEditRegimen(e.target.value)}
@@ -2366,10 +2412,12 @@ export default function Dashboard() {
               </div>
 
               <div style={{ marginBottom: "16px" }}>
-                <label style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "#475569", marginBottom: "4px" }}>
+                <label htmlFor="edit-diagnosis" style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "#475569", marginBottom: "4px" }}>
                   Diagnosis Description
                 </label>
                 <input
+                  id="edit-diagnosis"
+                  name="editDiagnosis"
                   type="text"
                   value={editDiagnosis}
                   onChange={(e) => setEditDiagnosis(e.target.value)}

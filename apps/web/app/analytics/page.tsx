@@ -389,6 +389,9 @@ export default function PatientAnalyticsPage() {
               Select Inpatient:
             </span>
             <select
+              id="analytics-patient-select"
+              name="analyticsPatientSelect"
+              aria-label="Select Inpatient"
               value={selectedPatientId}
               onChange={(e) => handlePatientSwitch(e.target.value)}
               style={{
