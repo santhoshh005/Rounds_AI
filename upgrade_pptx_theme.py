@@ -58,8 +58,8 @@ SLIDE_DATA = {
          "Real-time sync alert banner, Active Patient Cockpit, CTCAE v5.0 severity badges, guideline provenance tags, and editable clinical progress note."),
         ("Longitudinal Patient Analytics (/analytics)",
          "Patient #104 cycle-over-cycle ANC nadir curves, recovery trajectories, NCCN 20% dose delay recommendations, and historical round audit logs."),
-        ("Demonstration Video Link",
-         "[Insert 2–3 Minute Video Demo URL — e.g., Loom / YouTube demonstrating bedside sync and EMR attestation]."),
+        ("Live Deployment & Demo Video",
+         "Live Web App: https://rounds-ai-umber.vercel.app  •  Backend API: https://rounds-ai-backend.onrender.com  •  Demo Video: [Insert 2–3 Min Loom/YouTube Link]."),
     ],
     7: [
         ("AI Models & Frameworks Used",
@@ -394,7 +394,7 @@ def upgrade_presentation():
         elif "https://github.com" in full_text or "[Contact" in full_text:
             for t in t_nodes:
                 if "[Contact" in (t.text or ""):
-                    t.text = "[Contact Email]  |  [Live MVP Link]  |  https://github.com/santhoshh005/Rounds_AI"
+                    t.text = "Live Web App: https://rounds-ai-umber.vercel.app  •  Backend: https://rounds-ai-backend.onrender.com  •  GitHub: https://github.com/santhoshh005/Rounds_AI"
             for rPr in sp.findall(f".//{{{A_NS}}}rPr"):
                 rPr.set("sz", "1300")
                 for srgb in rPr.findall(f".//{{{A_NS}}}srgbClr"):
@@ -408,19 +408,29 @@ def upgrade_presentation():
                     srgb.set("val", "64748B")
     tree13.write(s13_path, encoding="utf-8", xml_declaration=True)
 
-    # Repack into OUTPUT_PATH
-    if os.path.exists(OUTPUT_PATH):
-        os.remove(OUTPUT_PATH)
+    # Repack into target paths (Downloads, Workspace, Brain Artifacts)
+    local_output = r"C:\Users\saisa\Documents\Codex\2026-09-07\RoundsAI\Health-a-thon 2026 Final Submission - RoundsAI (Modern Theme).pptx"
+    brain_output = r"C:\Users\saisa\.gemini\antigravity\brain\c68413c6-d89d-4149-9a5c-5c229ff3649c\Health-a-thon 2026 Final Submission - RoundsAI (Modern Theme).pptx"
     
-    with zipfile.ZipFile(OUTPUT_PATH, "w", zipfile.ZIP_DEFLATED) as z_out:
+    with zipfile.ZipFile(local_output, "w", zipfile.ZIP_DEFLATED) as z_out:
         for root_dir, dirs, files in os.walk(temp_dir):
             for file in files:
                 full_f = os.path.join(root_dir, file)
                 rel_f = os.path.relpath(full_f, temp_dir)
                 z_out.write(full_f, rel_f)
+    print(f"SUCCESS: Upgraded PPTX Theme at {local_output}")
+
+    shutil.copy2(local_output, brain_output)
+
+    try:
+        shutil.copy2(local_output, OUTPUT_PATH)
+        print(f"SUCCESS: Upgraded PPTX Theme at {OUTPUT_PATH}")
+    except PermissionError:
+        alt_path = r"C:\Users\saisa\Downloads\Health-a-thon 2026 Final Submission - RoundsAI (Modern Theme v2).pptx"
+        shutil.copy2(local_output, alt_path)
+        print(f"NOTICE: Original download file was locked by PowerPoint. Saved updated copy at: {alt_path}")
     
     shutil.rmtree(temp_dir)
-    print(f"SUCCESS: Upgraded PPTX Theme at {OUTPUT_PATH}")
 
 if __name__ == "__main__":
     upgrade_presentation()

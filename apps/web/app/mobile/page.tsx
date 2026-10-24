@@ -18,7 +18,11 @@ import {
 } from "../components/Icons";
 
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API =
+  process.env.NEXT_PUBLIC_API_URL ||
+  (typeof window !== "undefined" && window.location.hostname.includes("vercel.app")
+    ? "https://rounds-ai-backend.onrender.com"
+    : "http://localhost:8000");
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY ?? "";
 
 function getAuthHeaders(extraHeaders: Record<string, string> = {}): Record<string, string> {
