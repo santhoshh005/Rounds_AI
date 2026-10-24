@@ -108,13 +108,14 @@ sse_manager = RoundSSEManager()
 # ── Security: Configurable CORS without Wildcard Regex ────────────────
 allowed_origins_raw = os.getenv(
     "ALLOWED_ORIGINS",
-    "http://localhost:3000,http://127.0.0.1:3000,https://rounds-ai-app.firebaseapp.com,https://rounds-ai-app.web.app",
+    "http://localhost:3000,http://127.0.0.1:3000,https://rounds-ai-app.firebaseapp.com,https://rounds-ai-app.web.app,https://rounds-ai-umber.vercel.app",
 )
 allowed_origins = [o.strip() for o in allowed_origins_raw.split(",") if o.strip()]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
+    allow_origin_regex=r"^https://rounds-ai(-[a-z0-9\-]+)?\.vercel\.app$",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],

@@ -40,6 +40,14 @@ def test_cors_allowed_origin(client):
     res = client.options("/health", headers=headers)
     assert res.headers.get("access-control-allow-origin") == "http://localhost:3000"
 
+    # Vercel production origin
+    vercel_headers = {
+        "Origin": "https://rounds-ai-umber.vercel.app",
+        "Access-Control-Request-Method": "GET",
+    }
+    vercel_res = client.options("/health", headers=vercel_headers)
+    assert vercel_res.headers.get("access-control-allow-origin") == "https://rounds-ai-umber.vercel.app"
+
 
 def test_cors_disallowed_origin(client):
     # Disallowed origin should NOT receive Access-Control-Allow-Origin
