@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import base64
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 from pydantic import BaseModel, Field, field_validator
 
 

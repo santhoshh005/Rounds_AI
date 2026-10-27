@@ -1,6 +1,5 @@
 import os
 import threading
-import json
 import asyncio
 import pytest
 from starlette.testclient import TestClient
@@ -20,7 +19,6 @@ from backend.services.persistence import (
     _STORE_LOCK,
 )
 from backend.services.voice_transcriber import (
-    get_transcription_mode,
     transcribe_audio_with_details,
 )
 

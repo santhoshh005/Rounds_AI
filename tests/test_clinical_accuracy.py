@@ -13,10 +13,9 @@ from backend.services.lab_validation import (
 )
 from backend.agents.round_graph import (
     compute_ctcae_grade,
-    CTCAE_V5_CONFIG,
     verification_node,
 )
-from backend.models.round import ClinicalExtraction, LabValue, ReviewFlag, ConfirmItem, LabTrend
+from backend.models.round import ClinicalExtraction, LabValue, ReviewFlag, LabTrend
 
 
 # ======================================================================

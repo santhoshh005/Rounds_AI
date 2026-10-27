@@ -18,16 +18,14 @@ load_dotenv()
 from fastapi import FastAPI, HTTPException, UploadFile, File, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from backend.agents.round_graph import round_graph, CTCAE_V5_CONFIG
 from backend.models.round import ExtractRoundRequest, ExtractRoundResponse
 from backend.models.patient import Patient, PatientCreate, PatientUpdate
 from backend.models.analytics import PatientAnalyticsResponse
 from backend.services.voice_transcriber import (
-    transcribe_audio_on_device,
     transcribe_audio_with_details,
     get_transcription_mode,
 )

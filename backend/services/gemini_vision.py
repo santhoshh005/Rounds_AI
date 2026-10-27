@@ -9,11 +9,10 @@ from __future__ import annotations
 import base64
 import logging
 import os
-import re
 from typing import Optional
 from pydantic import BaseModel, Field
 
-from backend.models.round import ImageAttachment, LabValue
+from backend.models.round import ImageAttachment
 
 logger = logging.getLogger(__name__)
 
