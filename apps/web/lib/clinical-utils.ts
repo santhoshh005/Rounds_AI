@@ -712,4 +712,98 @@ export function getDoseModificationRecommendation(
   };
 }
 
+export interface ClinicianProfile {
+  name: string;
+  title: string;
+  department: string;
+  hospital: string;
+  ward: string;
+  shift: string;
+  npi: string;
+  hospitalId: string;
+  initials: string;
+}
+
+export const DEFAULT_CLINICIAN_PROFILE: ClinicianProfile = {
+  name: "Dr. Amrut S Kadam, MD",
+  title: "Lead Attending Oncologist",
+  department: "Hematology & Medical Oncology",
+  hospital: "City Cancer Center",
+  ward: "Ward 4B",
+  shift: "Day Rounds (07:00 – 19:00)",
+  npi: "1849204821",
+  hospitalId: "CCC-4B-9102",
+  initials: "AK",
+};
+
+export interface ClinicalNotification {
+  id: string;
+  title: string;
+  message: string;
+  timestamp: number;
+  timeStr: string;
+  type: "alert" | "warning" | "info" | "success";
+  read: boolean;
+  patientId?: string;
+  patientName?: string;
+}
+
+export const INITIAL_CLINICAL_NOTIFICATIONS: ClinicalNotification[] = [
+  {
+    id: "notif-init-1",
+    title: "CTCAE Grade 4 Alert · Bed 12",
+    message: "David Miller: ANC 420/µL with fever 38.4°C. Secondary G-CSF protocol recommended.",
+    patientId: "104",
+    patientName: "David Miller",
+    timestamp: 1729000000000,
+    timeStr: "1 hr ago",
+    type: "alert",
+    read: false,
+  },
+  {
+    id: "notif-init-2",
+    title: "CTCAE Grade 3 Alert · Bed 14",
+    message: "Sarah Jenkins: ANC 750/µL nadir. Thermal vigilance and hydration ordered.",
+    patientId: "105",
+    patientName: "Sarah Jenkins",
+    timestamp: 1728990000000,
+    timeStr: "2 hrs ago",
+    type: "warning",
+    read: false,
+  },
+  {
+    id: "notif-init-3",
+    title: "Hematologic Recovery · Bed 16",
+    message: "Elena Rostova: ANC 1,620/µL verified. Grade 0 stable.",
+    patientId: "106",
+    patientName: "Elena Rostova",
+    timestamp: 1728980000000,
+    timeStr: "3 hrs ago",
+    type: "success",
+    read: true,
+  },
+];
+
+/**
+ * Strips leading status/checkmark emoji or symbols from toast notifications
+ * to prevent double icons when rendered next to UI SVG icons.
+ */
+export function cleanToastMessage(msg: string): string {
+  if (!msg) return "";
+  return msg.replace(/^[✓✔✅⚠️ℹ️\s]+/u, "").trim();
+}
+
+/**
+ * Derives clean 2-letter uppercase clinician initials from formal MD name.
+ */
+export function deriveDoctorInitials(name: string): string {
+  if (!name) return "MD";
+  const clean = name.replace(/^Dr\.?\s*/i, "").replace(/,?\s*(?:MD|DO|MBBS|PhD).*$/i, "").trim();
+  const parts = clean.split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "MD";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+
 

@@ -4,16 +4,17 @@ import * as assert from "node:assert/strict";
 async function main() {
   console.log("=== Launching Browser to Verify All User Requirements ===");
   const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-  const page = await context.newPage();
+  try {
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const page = await context.newPage();
 
-  // Set auth demo token
-  await page.goto("http://localhost:3000/roster");
-  await page.evaluate(() => {
-    localStorage.setItem("rounds-auth", "demo");
-  });
-  await page.goto("http://localhost:3000/roster");
-  await page.waitForLoadState("networkidle");
+    // Set auth demo token
+    await page.goto("http://localhost:3000/roster");
+    await page.evaluate(() => {
+      localStorage.setItem("rounds-auth", "demo");
+    });
+    await page.goto("http://localhost:3000/roster");
+    await page.waitForLoadState("networkidle");
 
   console.log("\n--- TEST 1: Bed Occupancy Validation ---");
   // Check Roster is open and 3 patients are admitted
@@ -195,8 +196,165 @@ async function main() {
   );
   await page.screenshot({ path: "C:/Users/saisa/.gemini/antigravity/brain/c68413c6-d89d-4149-9a5c-5c229ff3649c/verified_analytics_reactive_attestation.png" });
 
-  console.log("\n=== ALL 5 VERIFICATION CHECKS PASSED PERFECTLY! ===");
-  await browser.close();
+  console.log("\n--- TEST 6: Toast Notification Auto-Dismiss & Clean Message (No Double Checkmarks) ---");
+  await page.goto("http://localhost:3000/station");
+  await page.waitForLoadState("networkidle");
+  await page.waitForTimeout(500);
+
+  // Jump to Step 2 Review
+  await page.locator(".stepper button").nth(1).click();
+  await page.waitForTimeout(400);
+
+  // Click 'Edit' on verification point 2
+  console.log("Clicking Edit on verification point 2...");
+  const editBtnPoint2 = page.locator(".check-row").nth(1).locator("button:has-text('Edit')");
+  await editBtnPoint2.click();
+  await page.waitForTimeout(300);
+
+  const editInput = page.locator(".check-row").nth(1).locator("input[type='text']");
+  await editInput.fill("Point 2 Confirm patient is afebrile (36.8°C) with no focal toxicity");
+  await page.locator(".check-row").nth(1).locator("button:has-text('Save')").click();
+  await page.waitForTimeout(300);
+
+  // Verify toast appears
+  const toastLocator = page.locator(".toast");
+  assert.equal(await toastLocator.isVisible(), true, "Toast banner must be visible after editing point");
+
+  const toastText = await toastLocator.locator("span").textContent();
+  console.log(`Toast message text: "${toastText}"`);
+  assert.equal(toastText?.trim(), "Updated verification point 2", "Toast message must NOT duplicate checkmark icon");
+
+  await page.screenshot({ path: "C:/Users/saisa/.gemini/antigravity/brain/c68413c6-d89d-4149-9a5c-5c229ff3649c/verified_toast_clean_single_icon.png" });
+
+  // Test Auto-Dismiss: Wait 4 seconds and check that toast has automatically disappeared
+  console.log("Waiting 4 seconds to verify toast auto-dismiss...");
+  await page.waitForTimeout(4000);
+  const isToastStillVisible = await toastLocator.isVisible();
+  console.log(`Toast visible after 4 seconds: ${isToastStillVisible}`);
+  assert.equal(isToastStillVisible, false, "Toast banner must auto-dismiss after timeout");
+
+  // Test Manual Dismiss
+  console.log("Testing manual dismiss button...");
+  await editBtnPoint2.click();
+  await page.waitForTimeout(200);
+  await page.locator(".check-row").nth(1).locator("button:has-text('Save')").click();
+  await page.waitForTimeout(300);
+  assert.equal(await toastLocator.isVisible(), true, "Toast should appear again");
+  await toastLocator.locator("button:has-text('Dismiss')").click();
+  await page.waitForTimeout(200);
+  assert.equal(await toastLocator.isVisible(), false, "Clicking Dismiss should immediately remove toast");
+
+  console.log("\n--- TEST 7: Clinical Notification Center ---");
+  // Check notification bell button
+  const bellBtn = page.locator(".notification-bell-btn");
+  assert.equal(await bellBtn.isVisible(), true, "Notification bell button must be present in header");
+
+  // Check unread badge
+  const badgeLocator = page.locator(".notification-badge");
+  const hasBadge = await badgeLocator.isVisible();
+  console.log(`Notification unread badge visible: ${hasBadge}`);
+  if (hasBadge) {
+    const unreadCount = await badgeLocator.textContent();
+    console.log(`Unread alerts count: ${unreadCount}`);
+    assert.ok(parseInt(unreadCount || "0", 10) > 0, "Unread count should be > 0");
+  }
+
+  // Click bell to open Notification Center
+  console.log("Opening Notification Center popover...");
+  await bellBtn.click();
+  await page.waitForTimeout(400);
+
+  const notifPopover = page.locator(".notification-popover");
+  assert.equal(await notifPopover.isVisible(), true, "Notification popover must open on bell click");
+
+  const notifItemsCount = await page.locator(".notification-item").count();
+  console.log(`Notification feed items count: ${notifItemsCount}`);
+  assert.ok(notifItemsCount >= 2, "Expected clinical alert items in feed");
+
+  await page.screenshot({ path: "C:/Users/saisa/.gemini/antigravity/brain/c68413c6-d89d-4149-9a5c-5c229ff3649c/verified_notification_center_open.png" });
+
+  // Click 'Mark all read'
+  console.log("Clicking 'Mark all read'...");
+  const markAllReadBtn = page.locator(".notification-mark-read");
+  if (await markAllReadBtn.isVisible()) {
+    await markAllReadBtn.click();
+    await page.waitForTimeout(400);
+  }
+
+  // Badge should now be gone or 0
+  const badgeAfter = await page.locator(".notification-badge").isVisible();
+  console.log(`Badge visible after mark all read: ${badgeAfter}`);
+  assert.equal(badgeAfter, false, "Notification unread badge should disappear once marked all read");
+
+  // Close notification popover by clicking outside
+  await page.mouse.click(200, 200);
+  await page.waitForTimeout(300);
+
+  console.log("\n--- TEST 8: Clinician Doctor Profile Editing & Cross-App Reflection ---");
+  // Open Clinician Menu
+  const avatarBtn = page.locator(".avatar-button");
+  console.log("Opening Clinician Profile menu...");
+  await avatarBtn.click();
+  await page.waitForTimeout(400);
+
+  // Click 'Profile'
+  await page.locator(".profile-menu button:has-text('Profile')").click();
+  await page.waitForTimeout(500);
+
+  const profileDialog = page.locator(".clinician-profile-dialog");
+  assert.equal(await profileDialog.isVisible(), true, "Clinician profile modal must be open");
+  await page.screenshot({ path: "C:/Users/saisa/.gemini/antigravity/brain/c68413c6-d89d-4149-9a5c-5c229ff3649c/verified_doctor_profile_view_mode.png" });
+
+  // Switch to Edit Mode
+  console.log("Clicking 'Edit Details' button...");
+  await page.locator(".clinician-profile-dialog button:has-text('Edit Details')").click();
+  await page.waitForTimeout(400);
+
+  // Verify form fields
+  assert.equal(await page.locator("#clinician-name").isVisible(), true, "Clinician name field must be present");
+  await page.locator("#clinician-name").fill("Dr. Gregory House, MD");
+  await page.locator("#clinician-title").fill("Head of Diagnostic & Medical Oncology");
+  await page.locator("#clinician-ward").fill("Ward 4B Senior Attending");
+  await page.locator("#clinician-initials").fill(""); // Clear initials to verify auto-derivation to 'GH'
+
+  // Save changes
+  console.log("Saving doctor profile changes...");
+  await page.locator(".clinician-profile-dialog button:has-text('Save Changes')").click();
+  await page.waitForTimeout(600);
+
+  // Verify toast appears
+  const profileToast = await page.locator(".toast span").textContent();
+  console.log(`Doctor profile update toast: "${profileToast}"`);
+  assert.ok(profileToast?.includes("Dr. Gregory House, MD"), "Toast should confirm profile update");
+
+  // Verify avatar initials updated to 'GH'
+  const newInitials = await avatarBtn.textContent();
+  console.log(`Updated avatar initials: "${newInitials?.trim()}"`);
+  assert.equal(newInitials?.trim(), "GH", "Doctor initials should auto-derive to 'GH'");
+
+  // Verify header menu displays 'Dr. Gregory House, MD'
+  await avatarBtn.click();
+  await page.waitForTimeout(300);
+  const menuDoctorName = await page.locator(".profile-menu strong").textContent();
+  console.log(`Profile menu doctor name: "${menuDoctorName}"`);
+  assert.equal(menuDoctorName?.trim(), "Dr. Gregory House, MD");
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(300);
+
+  // Check Station Step 3 Sign shows updated attending name
+  console.log("Checking attestation signature in Station Sign Step...");
+  await page.locator(".stepper button").nth(2).click();
+  await page.waitForTimeout(500);
+
+  const attendingLabel = await page.locator(".soap-header span").textContent();
+  console.log(`Attending label in SOAP note: "${attendingLabel?.trim()}"`);
+  assert.ok(attendingLabel?.includes("Dr. Gregory House, MD"), "SOAP header must show updated attending doctor name");
+  await page.screenshot({ path: "C:/Users/saisa/.gemini/antigravity/brain/c68413c6-d89d-4149-9a5c-5c229ff3649c/verified_doctor_profile_updated_soap_note.png" });
+
+    console.log("\n=== ALL 8 VERIFICATION CHECKS PASSED PERFECTLY! ===");
+  } finally {
+    await browser.close();
+  }
 }
 
 main().catch((err) => {

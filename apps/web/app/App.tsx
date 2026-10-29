@@ -3,7 +3,21 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { Icon } from "./components/Icons"
 import { roundsApi, type ExtractRoundResponse } from "../lib/api"
-import { formatEmrClipboardNote, parseClinicalLabReport, validateBedOccupancy, getDoseModificationRecommendation, normalizeBedIdentifier, type ParsedClinicalOcr, type DoseModificationGuideline } from "../lib/clinical-utils"
+import {
+  formatEmrClipboardNote,
+  parseClinicalLabReport,
+  validateBedOccupancy,
+  getDoseModificationRecommendation,
+  normalizeBedIdentifier,
+  cleanToastMessage,
+  deriveDoctorInitials,
+  DEFAULT_CLINICIAN_PROFILE,
+  INITIAL_CLINICAL_NOTIFICATIONS,
+  type ParsedClinicalOcr,
+  type DoseModificationGuideline,
+  type ClinicianProfile,
+  type ClinicalNotification,
+} from "../lib/clinical-utils"
 import { autocorrectOncologyTranscript, applySelectedCorrections, formatSpokenClinicalPunctuation, type AutocorrectChange, type AutocorrectResult } from "../lib/oncology-autocorrect"
 
 
@@ -372,64 +386,293 @@ function ThemeToggle() {
 function ClinicianProfileModal({
   isOpen,
   onClose,
+  profile,
+  onUpdateProfile,
 }: {
   isOpen: boolean
   onClose: () => void
+  profile: ClinicianProfile
+  onUpdateProfile: (updated: ClinicianProfile) => void
 }) {
+  const [isEditing, setIsEditing] = useState(false)
+  const [formData, setFormData] = useState<ClinicianProfile>(profile)
+
+  useEffect(() => {
+    if (isOpen) {
+      setFormData(profile)
+      setIsEditing(false)
+    }
+  }, [isOpen, profile])
+
+  useEffect(() => {
+    if (!isOpen) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose()
+    }
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [isOpen, onClose])
+
   if (!isOpen) return null
+
+  const handleSave = (e: React.FormEvent) => {
+    e.preventDefault()
+    const rawInitials = (formData.initials || "").trim()
+    const finalInitials = rawInitials || deriveDoctorInitials(formData.name)
+    const updated: ClinicianProfile = {
+      ...formData,
+      initials: finalInitials,
+    }
+    onUpdateProfile(updated)
+    setIsEditing(false)
+    onClose()
+  }
+
+  const currentInitials = (isEditing ? formData.initials : profile.initials) || deriveDoctorInitials(isEditing ? formData.name : profile.name)
 
   return (
     <div className="dialog-layer" role="dialog" aria-modal="true" style={{ zIndex: 1100 }}>
       <button className="dialog-backdrop" onClick={onClose} aria-label="Close clinician profile" />
-      <div className="confirm-dialog clinician-profile-dialog" style={{ maxWidth: "560px", width: "92vw", padding: "28px", borderRadius: "16px", background: "var(--surface)", border: "1px solid var(--border)", boxShadow: "var(--shadow)" }}>
+      <div
+        className="confirm-dialog clinician-profile-dialog"
+        style={{
+          maxWidth: "580px",
+          width: "92vw",
+          padding: "28px",
+          borderRadius: "16px",
+          background: "var(--surface)",
+          border: "1px solid var(--border)",
+          boxShadow: "var(--shadow)",
+          maxHeight: "90vh",
+          overflowY: "auto",
+        }}
+      >
         <div style={{ display: "flex", alignItems: "center", gap: "16px", marginBottom: "20px" }}>
-          <span className="patient-avatar large" style={{ background: "var(--brand-tint)", color: "var(--brand)", fontSize: "20px", fontWeight: 700, width: "64px", height: "64px" }}>
-            DA
+          <span
+            className="patient-avatar large"
+            style={{
+              background: "var(--brand-tint)",
+              color: "var(--brand)",
+              fontSize: "20px",
+              fontWeight: 700,
+              width: "64px",
+              height: "64px",
+            }}
+          >
+            {currentInitials}
           </span>
           <div style={{ flex: 1 }}>
-            <h2 style={{ fontSize: "22px", margin: 0, fontWeight: 700 }}>Dr. Attending, MD</h2>
+            <h2 style={{ fontSize: "22px", margin: 0, fontWeight: 700 }}>
+              {isEditing ? (formData.name || "Clinician Profile") : profile.name}
+            </h2>
             <p style={{ margin: "2px 0 0", color: "var(--secondary)", fontSize: "14px" }}>
-              Lead Attending Oncologist · Ward 4B Chief of Service
+              {isEditing ? formData.title : profile.title} · {isEditing ? formData.ward : profile.ward}
             </p>
-            <span style={{ display: "inline-block", marginTop: "4px", padding: "2px 8px", background: "var(--brand-tint)", color: "var(--brand)", borderRadius: "6px", fontSize: "12px", fontWeight: 600 }}>
-              NPI: 1849204821 · Hospital ID: CCC-4B-9102
+            <span
+              style={{
+                display: "inline-block",
+                marginTop: "4px",
+                padding: "2px 8px",
+                background: "var(--brand-tint)",
+                color: "var(--brand)",
+                borderRadius: "6px",
+                fontSize: "12px",
+                fontWeight: 600,
+              }}
+            >
+              NPI: {isEditing ? formData.npi : profile.npi} · Hospital ID: {isEditing ? formData.hospitalId : profile.hospitalId}
             </span>
           </div>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", margin: "16px 0", padding: "16px", background: "var(--subtle)", borderRadius: "12px", border: "1px solid var(--border)" }}>
-          <div>
-            <span style={{ fontSize: "12px", color: "var(--secondary)", display: "block" }}>Department</span>
-            <strong style={{ fontSize: "14px" }}>Medical Oncology</strong>
-          </div>
-          <div>
-            <span style={{ fontSize: "12px", color: "var(--secondary)", display: "block" }}>Location</span>
-            <strong style={{ fontSize: "14px" }}>City Cancer Center · Ward 4B</strong>
-          </div>
-          <div>
-            <span style={{ fontSize: "12px", color: "var(--secondary)", display: "block" }}>Active Shift</span>
-            <strong style={{ fontSize: "14px" }}>Day Rounds (07:00 – 19:00)</strong>
-          </div>
-          <div>
-            <span style={{ fontSize: "12px", color: "var(--secondary)", display: "block" }}>Patients on Service</span>
-            <strong style={{ fontSize: "14px" }}>3 Admitted (Beds 12, 14, 16)</strong>
-          </div>
-        </div>
+        {isEditing ? (
+          <form onSubmit={handleSave}>
+            <div className="profile-edit-grid">
+              <div className="profile-edit-field">
+                <label htmlFor="clinician-name">Full Name & Credentials</label>
+                <input
+                  id="clinician-name"
+                  type="text"
+                  required
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="e.g. Dr. Amrut S Kadam, MD"
+                />
+              </div>
+              <div className="profile-edit-field">
+                <label htmlFor="clinician-title">Professional Title</label>
+                <input
+                  id="clinician-title"
+                  type="text"
+                  required
+                  value={formData.title}
+                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                  placeholder="e.g. Lead Attending Oncologist"
+                />
+              </div>
+              <div className="profile-edit-field">
+                <label htmlFor="clinician-dept">Department</label>
+                <input
+                  id="clinician-dept"
+                  type="text"
+                  value={formData.department}
+                  onChange={(e) => setFormData({ ...formData, department: e.target.value })}
+                  placeholder="e.g. Medical Oncology"
+                />
+              </div>
+              <div className="profile-edit-field">
+                <label htmlFor="clinician-hospital">Hospital Name</label>
+                <input
+                  id="clinician-hospital"
+                  type="text"
+                  value={formData.hospital}
+                  onChange={(e) => setFormData({ ...formData, hospital: e.target.value })}
+                  placeholder="e.g. City Cancer Center"
+                />
+              </div>
+              <div className="profile-edit-field">
+                <label htmlFor="clinician-ward">Ward / Service Assignment</label>
+                <input
+                  id="clinician-ward"
+                  type="text"
+                  value={formData.ward}
+                  onChange={(e) => setFormData({ ...formData, ward: e.target.value })}
+                  placeholder="e.g. Ward 4B Chief of Service"
+                />
+              </div>
+              <div className="profile-edit-field">
+                <label htmlFor="clinician-shift">Active Shift</label>
+                <input
+                  id="clinician-shift"
+                  type="text"
+                  value={formData.shift}
+                  onChange={(e) => setFormData({ ...formData, shift: e.target.value })}
+                  placeholder="e.g. Day Rounds (07:00 – 19:00)"
+                />
+              </div>
+              <div className="profile-edit-field">
+                <label htmlFor="clinician-npi">NPI Number</label>
+                <input
+                  id="clinician-npi"
+                  type="text"
+                  value={formData.npi}
+                  onChange={(e) => setFormData({ ...formData, npi: e.target.value })}
+                  placeholder="10-digit NPI"
+                  pattern="\d{10}"
+                  maxLength={10}
+                  title="10-digit National Provider Identifier"
+                />
+              </div>
+              <div className="profile-edit-field">
+                <label htmlFor="clinician-hid">Hospital ID</label>
+                <input
+                  id="clinician-hid"
+                  type="text"
+                  value={formData.hospitalId}
+                  onChange={(e) => setFormData({ ...formData, hospitalId: e.target.value })}
+                  placeholder="e.g. CCC-4B-9102"
+                />
+              </div>
+              <div className="profile-edit-field" style={{ gridColumn: "1 / -1" }}>
+                <label htmlFor="clinician-initials">Custom Initials (Optional)</label>
+                <input
+                  id="clinician-initials"
+                  type="text"
+                  maxLength={4}
+                  value={formData.initials}
+                  onChange={(e) => setFormData({ ...formData, initials: e.target.value.toUpperCase() })}
+                  placeholder="Leave blank to auto-derive from name"
+                />
+              </div>
+            </div>
 
-        <div style={{ padding: "14px", border: "1px solid var(--brand-border)", borderRadius: "12px", background: "var(--brand-tint)", margin: "16px 0", fontSize: "13px", lineHeight: "20px", color: "var(--brand)" }}>
-          <strong>Clinical Processing Architecture</strong>
-          <ul style={{ margin: "6px 0 0 18px", padding: 0 }}>
-            <li><strong>AI Multimodal Hierarchy:</strong> 4-model fallback cascade (Gemini 2.5 Flash → 2.5 Pro → 1.5 Flash → 1.5 Pro)</li>
-            <li><strong>Deterministic Offline Fallback:</strong> Local CPU regex parser & CTCAE v5.0 rules if offline / unauthenticated</li>
-            <li><strong>Zero Audio Egress:</strong> Bedside speech-to-text operates locally on-device</li>
-          </ul>
-        </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "24px" }}>
+              <Button variant="secondary" type="button" onClick={() => setIsEditing(false)}>
+                Cancel
+              </Button>
+              <Button variant="primary" type="submit">
+                Save Changes
+              </Button>
+            </div>
+          </form>
+        ) : (
+          <>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: "12px",
+                margin: "16px 0",
+                padding: "16px",
+                background: "var(--subtle)",
+                borderRadius: "12px",
+                border: "1px solid var(--border)",
+              }}
+            >
+              <div>
+                <span style={{ fontSize: "12px", color: "var(--secondary)", display: "block" }}>
+                  Department
+                </span>
+                <strong style={{ fontSize: "14px" }}>{profile.department}</strong>
+              </div>
+              <div>
+                <span style={{ fontSize: "12px", color: "var(--secondary)", display: "block" }}>
+                  Location
+                </span>
+                <strong style={{ fontSize: "14px" }}>
+                  {profile.hospital} · {profile.ward}
+                </strong>
+              </div>
+              <div>
+                <span style={{ fontSize: "12px", color: "var(--secondary)", display: "block" }}>
+                  Active Shift
+                </span>
+                <strong style={{ fontSize: "14px" }}>{profile.shift}</strong>
+              </div>
+              <div>
+                <span style={{ fontSize: "12px", color: "var(--secondary)", display: "block" }}>
+                  Patients on Service
+                </span>
+                <strong style={{ fontSize: "14px" }}>Active Inpatient Ward</strong>
+              </div>
+            </div>
 
-        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "20px" }}>
-          <Button variant="primary" onClick={onClose}>
-            Done
-          </Button>
-        </div>
+            <div
+              style={{
+                padding: "14px",
+                border: "1px solid var(--brand-border)",
+                borderRadius: "12px",
+                background: "var(--brand-tint)",
+                margin: "16px 0",
+                fontSize: "13px",
+                lineHeight: "20px",
+                color: "var(--brand)",
+              }}
+            >
+              <strong>Clinical Processing Architecture</strong>
+              <ul style={{ margin: "6px 0 0 18px", padding: 0 }}>
+                <li>
+                  <strong>AI Multimodal Hierarchy:</strong> 4-model fallback cascade (Gemini 2.5 Flash → 2.5 Pro → 1.5 Flash → 1.5 Pro)
+                </li>
+                <li>
+                  <strong>Deterministic Offline Fallback:</strong> Local CPU regex parser & CTCAE v5.0 rules if offline / unauthenticated
+                </li>
+                <li>
+                  <strong>Zero Audio Egress:</strong> Bedside speech-to-text operates locally on-device
+                </li>
+              </ul>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "24px" }}>
+              <Button variant="secondary" onClick={() => setIsEditing(true)}>
+                Edit Details
+              </Button>
+              <Button variant="primary" onClick={onClose}>
+                Done
+              </Button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   )
@@ -439,31 +682,50 @@ function Header({
   screen,
   go,
   onSignOut,
+  profile,
+  onUpdateProfile,
+  notifications,
+  onMarkNotificationRead,
+  onMarkAllNotificationsRead,
+  onClearNotifications,
 }: {
   screen: Screen
   go: (screen: Screen) => void
   onSignOut: () => void
+  profile: ClinicianProfile
+  onUpdateProfile: (updated: ClinicianProfile) => void
+  notifications: ClinicalNotification[]
+  onMarkNotificationRead: (id: string) => void
+  onMarkAllNotificationsRead: () => void
+  onClearNotifications: () => void
 }) {
   const [status, setStatus] = useState(false)
-  const [profile, setProfile] = useState(false)
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false)
+  const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [profileModal, setProfileModal] = useState(false)
 
+  const unreadCount = notifications.filter((n) => !n.read).length
+
   useEffect(() => {
-    if (!status && !profile) return
+    if (!status && !profileMenuOpen && !notificationsOpen) return
     const handleOutside = (event: MouseEvent | TouchEvent) => {
       const target = event.target as HTMLElement | null
       if (!target) return
       if (status && !target.closest(".status-wrap")) {
         setStatus(false)
       }
-      if (profile && !target.closest(".profile-wrap")) {
-        setProfile(false)
+      if (profileMenuOpen && !target.closest(".profile-wrap")) {
+        setProfileMenuOpen(false)
+      }
+      if (notificationsOpen && !target.closest(".notification-wrap")) {
+        setNotificationsOpen(false)
       }
     }
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         setStatus(false)
-        setProfile(false)
+        setProfileMenuOpen(false)
+        setNotificationsOpen(false)
       }
     }
     document.addEventListener("mousedown", handleOutside)
@@ -474,7 +736,9 @@ function Header({
       document.removeEventListener("touchstart", handleOutside)
       document.removeEventListener("keydown", handleKey)
     }
-  }, [status, profile])
+  }, [status, profileMenuOpen, notificationsOpen])
+
+  const initials = profile.initials || deriveDoctorInitials(profile.name)
 
   return (
     <>
@@ -509,7 +773,8 @@ function Header({
                 className="status-button"
                 onClick={() => {
                   setStatus((prev) => !prev)
-                  setProfile(false)
+                  setProfileMenuOpen(false)
+                  setNotificationsOpen(false)
                 }}
                 aria-label="Toggle clinical system status"
               >
@@ -518,7 +783,7 @@ function Header({
               </button>
               {status && (
                 <div className="status-popover">
-                  <strong>City Cancer Center · Ward 4B</strong>
+                  <strong>{profile.hospital} · {profile.ward}</strong>
                   <p>
                     <span />
                     All clinical systems online
@@ -528,34 +793,128 @@ function Header({
                 </div>
               )}
             </div>
-            <button
-              className="icon-button"
-              aria-label="Notifications"
-              title="Notifications"
-            >
-              <Icon name="bell" size={20} />
-            </button>
+
+            {/* Clinical Notification Center */}
+            <div className="notification-wrap">
+              <button
+                className="icon-button notification-bell-btn"
+                aria-label={`Notifications (${unreadCount} unread)`}
+                title="Clinical Notifications & Alerts"
+                aria-expanded={notificationsOpen}
+                aria-haspopup="dialog"
+                onClick={() => {
+                  setNotificationsOpen((prev) => !prev)
+                  setStatus(false)
+                  setProfileMenuOpen(false)
+                }}
+              >
+                <Icon name="bell" size={20} />
+                {unreadCount > 0 && (
+                  <span className="notification-badge" aria-label={`${unreadCount} unread`}>
+                    {unreadCount > 9 ? "9+" : unreadCount}
+                  </span>
+                )}
+              </button>
+              {notificationsOpen && (
+                <div className="notification-popover" role="dialog" aria-label="Clinical Notification Center">
+                  <div className="notification-header">
+                    <strong>
+                      Clinical Alerts
+                      {unreadCount > 0 && (
+                        <span className="notification-header-count">{unreadCount} new</span>
+                      )}
+                    </strong>
+                    {unreadCount > 0 && (
+                      <button
+                        className="notification-mark-read"
+                        onClick={onMarkAllNotificationsRead}
+                      >
+                        Mark all read
+                      </button>
+                    )}
+                  </div>
+                  <div className="notification-list">
+                    {notifications.length === 0 ? (
+                      <div className="notification-empty">
+                        <Icon name="check" size={24} />
+                        <p style={{ margin: "8px 0 0", color: "var(--secondary)", fontSize: "13px" }}>
+                          All caught up · Zero active ward alerts
+                        </p>
+                      </div>
+                    ) : (
+                      notifications.map((item) => (
+                        <div
+                          key={item.id}
+                          className={`notification-item type-${item.type} ${!item.read ? "unread" : ""}`}
+                          onClick={() => onMarkNotificationRead(item.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault()
+                              onMarkNotificationRead(item.id)
+                            }
+                          }}
+                          role="button"
+                          tabIndex={0}
+                          aria-label={`${item.title}: ${item.message} (${item.timeStr})`}
+                        >
+                          <div className="notification-item-icon">
+                            <Icon
+                              name={
+                                item.type === "alert"
+                                  ? "alert-triangle"
+                                  : item.type === "warning"
+                                  ? "alert-triangle"
+                                  : item.type === "success"
+                                  ? "check"
+                                  : "info"
+                              }
+                              size={16}
+                            />
+                          </div>
+                          <div className="notification-item-content">
+                            <div className="notification-item-title-row">
+                              <span className="notification-item-title">{item.title}</span>
+                              <span className="notification-item-time">{item.timeStr}</span>
+                            </div>
+                            <div className="notification-item-desc">{item.message}</div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  <div className="notification-footer">
+                    <small>CTCAE v5.0 Ward Feed</small>
+                    {notifications.length > 0 && (
+                      <button onClick={onClearNotifications}>Clear all</button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Clinician Profile */}
             <div className="profile-wrap">
               <button
                 className="avatar-button"
                 aria-label="Open clinician menu"
                 title="Open clinician menu"
                 onClick={() => {
-                  setProfile((prev) => !prev)
+                  setProfileMenuOpen((prev) => !prev)
                   setStatus(false)
+                  setNotificationsOpen(false)
                 }}
               >
-                DA
+                {initials}
               </button>
-              {profile && (
+              {profileMenuOpen && (
                 <div className="profile-menu">
                   <div>
-                    <strong>Dr. Attending, MD</strong>
-                    <span>City Cancer Center</span>
+                    <strong>{profile.name}</strong>
+                    <span>{profile.hospital}</span>
                   </div>
                   <button
                     onClick={() => {
-                      setProfile(false)
+                      setProfileMenuOpen(false)
                       setProfileModal(true)
                     }}
                   >
@@ -568,7 +927,12 @@ function Header({
           </div>
         </div>
       </header>
-      <ClinicianProfileModal isOpen={profileModal} onClose={() => setProfileModal(false)} />
+      <ClinicianProfileModal
+        isOpen={profileModal}
+        onClose={() => setProfileModal(false)}
+        profile={profile}
+        onUpdateProfile={onUpdateProfile}
+      />
     </>
   )
 }
@@ -2003,6 +2367,7 @@ function SignStep({
   onSoapChange,
   onCopy,
   onAttest,
+  attendingName,
 }: {
   patient: typeof patients[number]
   patientCase: typeof patientCases[string]
@@ -2012,6 +2377,7 @@ function SignStep({
   onSoapChange: (key: "s" | "o" | "a" | "p", value: string) => void
   onCopy: () => void
   onAttest: () => void
+  attendingName?: string
 }) {
   const sections: [string, "s" | "o" | "a" | "p"][] = [
     ["Subjective", "s"],
@@ -2041,7 +2407,9 @@ function SignStep({
               {patient.name} · {patient.mrn} · Bed {patient.bed} · {patient.regimen}
             </small>
           </div>
-          <span style={{ fontSize: "13px", color: "var(--brand)", fontWeight: 600 }}>Attending: Dr. Amrut S Kadam, MD</span>
+          <span style={{ fontSize: "13px", color: "var(--brand)", fontWeight: 600 }}>
+            Attending: {attendingName || "Dr. Amrut S Kadam, MD"}
+          </span>
         </div>
         {sections.map(([title, key]) => (
           <div className="soap-section" key={title}>
@@ -2188,6 +2556,8 @@ function Station({
   onOcrExtracted,
   onAttestRound,
   go,
+  onToast,
+  clinicianProfile,
 }: {
   patientsList?: typeof patients
   selectedPatientId: string
@@ -2196,6 +2566,8 @@ function Station({
   onOcrExtracted?: (patientId: string, fileName: string, extracted: any) => void
   onAttestRound?: (patientId: string, record: RoundRecord) => void
   go?: (screen: Screen) => void
+  onToast?: (msg: string, type?: "info" | "success" | "warning" | "alert") => void
+  clinicianProfile?: ClinicianProfile
 }) {
   const activePatients = patientsList && patientsList.length > 0 ? patientsList : patients
   const patient =
@@ -2244,7 +2616,6 @@ function Station({
   const [drawer, setDrawer] = useState(false)
   const [confirmed, setConfirmed] = useState([true, true, false])
   const [attested, setAttested] = useState(false)
-  const [toast, setToast] = useState("")
   const [soapSections, setSoapSections] = useState({
     s: patientCase.soapDraft.s,
     o: patientCase.soapDraft.o,
@@ -2295,8 +2666,7 @@ function Station({
       if (payload && payload.patientId === patient.id) {
         setBedsideDraft(payload)
         setSync(true)
-        setToast(`Bedside round received from Bed ${patient.bed} (${payload.wordCount || 0} words)`)
-        setTimeout(() => setToast(""), 3000)
+        if (onToast) onToast(`Bedside round received from Bed ${patient.bed} (${payload.wordCount || 0} words)`, "info")
       }
     }
     const handleStorageEvent = (e: StorageEvent) => {
@@ -2314,7 +2684,7 @@ function Station({
       window.removeEventListener("rounds-bedside-sync-event", handleSyncEvent)
       window.removeEventListener("storage", handleStorageEvent)
     }
-  }, [patient.id, patient.bed])
+  }, [patient.id, patient.bed, onToast])
 
   const loadBedsideToStation = () => {
     let textToLoad = bedsideDraft?.transcript
@@ -2332,11 +2702,9 @@ function Station({
       patientCase.transcript = textToLoad
       setSync(false)
       setStep(1)
-      setToast(`✓ Loaded bedside draft from Bed ${patient.bed} into Station`)
-      setTimeout(() => setToast(""), 3000)
+      if (onToast) onToast(`Loaded bedside draft from Bed ${patient.bed} into Station`, "success")
     } else {
-      setToast(`No pending bedside draft for Bed ${patient.bed}`)
-      setTimeout(() => setToast(""), 2000)
+      if (onToast) onToast(`No pending bedside draft for Bed ${patient.bed}`, "info")
     }
   }
 
@@ -2354,7 +2722,7 @@ function Station({
     if (textToLoad) {
       setStationTranscript(textToLoad)
       patientCase.transcript = textToLoad
-      setToast(`✓ Synchronized with Bedside Companion for Bed ${patient.bed}`)
+      if (onToast) onToast(`Synchronized with Bedside Companion for Bed ${patient.bed}`, "success")
     } else {
       const payload = {
         patientId: patient.id,
@@ -2369,9 +2737,8 @@ function Station({
       if (typeof localStorage !== "undefined") {
         localStorage.setItem(`rounds-bedside-sync-${patient.id}`, JSON.stringify(payload))
       }
-      setToast(`✓ Station draft saved to Bedside buffer for Bed ${patient.bed}`)
+      if (onToast) onToast(`Station draft saved to Bedside buffer for Bed ${patient.bed}`, "success")
     }
-    setTimeout(() => setToast(""), 2800)
   }
 
   const copyNote = () => {
@@ -2380,13 +2747,12 @@ function Station({
       rawNote,
       `round-${patient.id}-active`,
       patient.id,
-      "Dr. Amrut S Kadam, MD"
+      clinicianProfile?.name || "Dr. Amrut S Kadam, MD"
     )
     if (typeof navigator !== "undefined" && navigator.clipboard) {
       navigator.clipboard.writeText(noteText)
     }
-    setToast(`Verified EMR note for ${patient.name} copied`)
-    setTimeout(() => setToast(""), 2800)
+    if (onToast) onToast(`Verified EMR note for ${patient.name} copied`, "info")
   }
 
   const attestNote = () => {
@@ -2406,7 +2772,7 @@ function Station({
     const newRecord: RoundRecord = {
       id: `attested-${Date.now()}`,
       date: new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }),
-      doctor: "Dr. Attending, MD",
+      doctor: clinicianProfile?.name || "Dr. Amrut S Kadam, MD",
       anc: isNaN(acuteAnc) ? patient.baselineAnc : acuteAnc,
       wbc: isNaN(acuteWbc) ? 4800 : acuteWbc,
       platelets: isNaN(acutePlt) ? 180000 : acutePlt,
@@ -2419,8 +2785,7 @@ function Station({
     if (onAttestRound) {
       onAttestRound(patient.id, newRecord)
     }
-    setToast(`✓ Note for ${patient.name} attested and locked. Added to EMR history & analytics`)
-    setTimeout(() => setToast(""), 3000)
+    if (onToast) onToast(`Note for ${patient.name} attested and locked. Added to EMR history & analytics`, "success")
   }
 
   useEffect(() => {
@@ -2445,13 +2810,6 @@ function Station({
 
   return (
     <main className="station-page page-shell">
-      {toast && (
-        <div className="toast">
-          <Icon name="check" />
-          {toast}
-          <button onClick={() => setToast("")}>Dismiss</button>
-        </div>
-      )}
       {sync && (
         <div className="sync-notice">
           <span>
@@ -2524,7 +2882,7 @@ function Station({
               onSelectPatient={onSelectPatient}
               complete={false}
               onContinue={() => setStep(2)}
-              onToast={setToast}
+              onToast={onToast}
               onOcrExtracted={onOcrExtracted}
               transcript={stationTranscript}
               setTranscript={setStationTranscript}
@@ -2537,7 +2895,7 @@ function Station({
               confirmed={confirmed}
               setConfirmed={setConfirmed}
               onContinue={() => setStep(3)}
-              onToast={setToast}
+              onToast={onToast}
             />
           )}
           {step === 3 && (
@@ -2550,6 +2908,7 @@ function Station({
               onSoapChange={handleSoapChange}
               onCopy={copyNote}
               onAttest={attestNote}
+              attendingName={clinicianProfile?.name || "Dr. Amrut S Kadam, MD"}
             />
           )}
         </section>
@@ -2584,7 +2943,7 @@ function Roster({
   onAdmitPatient?: (patient: typeof patients[number]) => void
   onResetCensus?: () => void
   go: (screen: Screen) => void
-  onToast?: (msg: string) => void
+  onToast?: (msg: string, type?: "info" | "success" | "warning" | "alert") => void
 }) {
   const [drawer, setDrawer] = useState(false)
   const [editingPatient, setEditingPatient] = useState<typeof patients[number] | null>(null)
@@ -2661,7 +3020,9 @@ function Roster({
     const rawBed = String(data.get("bed") || admitBed || "").trim()
     const bedCheck = validateBedOccupancy(rawBed, patientsList)
     if (bedCheck.isOccupied) {
-      setBedError(bedCheck.message || `Bed ${rawBed} is currently occupied.`)
+      const err = bedCheck.message || `Bed ${rawBed} is currently occupied.`
+      setBedError(err)
+      if (onToast) onToast(err, "alert")
       return
     }
     setBedError("")
@@ -2709,7 +3070,9 @@ function Roster({
     const rawBed = String(data.get("bed") || editBed || editingPatient.bed).trim()
     const bedCheck = validateBedOccupancy(rawBed, patientsList, editingPatient.id)
     if (bedCheck.isOccupied) {
-      setBedError(bedCheck.message || `Bed ${rawBed} is currently occupied.`)
+      const err = bedCheck.message || `Bed ${rawBed} is currently occupied.`
+      setBedError(err)
+      if (onToast) onToast(err, "alert")
       return
     }
     setBedError("")
@@ -3771,16 +4134,17 @@ function Analytics({
   selectedPatientId,
   onSelectPatient,
   analyticsData = INITIAL_ANALYTICS,
+  onToast,
 }: {
   patientsList?: typeof patients
   selectedPatientId?: string
   onSelectPatient?: (id: string) => void
   analyticsData?: Record<string, PatientAnalytics>
+  onToast?: (msg: string, type?: "info" | "success" | "warning" | "alert") => void
 } = {}) {
   const activePatients = patientsList && patientsList.length > 0 ? patientsList : patients
   const activeId = selectedPatientId || activePatients[0]?.id || "104"
   const [ascending, setAscending] = useState(false)
-  const [toast, setToast] = useState("")
   const patient = activePatients.find((item) => item.id === activeId) || activePatients[0]
 
   const patientAnalytics = analyticsData[activeId] || INITIAL_ANALYTICS[activeId] || {
@@ -3834,19 +4198,12 @@ function Analytics({
     a.href = url
     a.download = `rounds_analytics_${patient.id}_${new Date().toISOString().slice(0, 10)}.json`
     a.click()
-    URL.revokeObjectURL(url)
-    setToast("Analytics JSON exported successfully")
-    setTimeout(() => setToast(""), 2800)
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+    if (onToast) onToast("Analytics JSON exported successfully", "success")
   }
 
   return (
     <main className="analytics page-shell">
-      {toast && (
-        <div className="toast">
-          <Icon name="check" />
-          {toast}
-        </div>
-      )}
       <div className="analytics-toolbar">
         <div>
           <label>
@@ -3893,8 +4250,7 @@ function Analytics({
                   } catch {}
                 }
               }
-              setToast(`✓ Synchronized ${count} clinical rounds with hospital audit log`)
-              setTimeout(() => setToast(""), 2800)
+              if (onToast) onToast(`Synchronized ${count} clinical rounds with hospital audit log`, "success")
             }}
           >
             Sync rounds
@@ -3940,8 +4296,7 @@ function Analytics({
           </div>
           <Button
             onClick={() => {
-              setToast("Analytics synchronized")
-              setTimeout(() => setToast(""), 2400)
+              if (onToast) onToast("Analytics synchronized", "success")
             }}
           >
             Sync rounds
@@ -4776,7 +5131,43 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
   }, [patientsList])
   const [selectedPatientId, setSelectedPatientId] = useState("104")
   const [screen, setScreen] = useState<Screen>(initialScreen || "landing")
-  const [globalToast, setGlobalToast] = useState("")
+
+  const [clinicianProfile, setClinicianProfile] = useState<ClinicianProfile>(() => {
+    if (typeof localStorage !== "undefined") {
+      const saved = localStorage.getItem("rounds-clinician-profile")
+      if (saved) {
+        try {
+          return { ...DEFAULT_CLINICIAN_PROFILE, ...JSON.parse(saved) }
+        } catch {}
+      }
+    }
+    return DEFAULT_CLINICIAN_PROFILE
+  })
+
+  useEffect(() => {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem("rounds-clinician-profile", JSON.stringify(clinicianProfile))
+    }
+  }, [clinicianProfile])
+
+  const [notifications, setNotifications] = useState<ClinicalNotification[]>(() => {
+    if (typeof localStorage !== "undefined") {
+      const saved = localStorage.getItem("rounds-notifications")
+      if (saved !== null) {
+        try {
+          const parsed = JSON.parse(saved)
+          if (Array.isArray(parsed)) return parsed
+        } catch {}
+      }
+    }
+    return INITIAL_CLINICAL_NOTIFICATIONS
+  })
+
+  useEffect(() => {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem("rounds-notifications", JSON.stringify(notifications))
+    }
+  }, [notifications])
 
   const [analyticsData, setAnalyticsData] = useState<Record<string, PatientAnalytics>>(() => {
     if (typeof localStorage !== "undefined") {
@@ -4796,9 +5187,95 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
     }
   }, [analyticsData])
 
-  const showToast = (msg: string) => {
-    setGlobalToast(msg)
-    setTimeout(() => setGlobalToast(""), 3200)
+  const [globalToast, setGlobalToast] = useState<{
+    message: string
+    type: "info" | "success" | "warning" | "alert"
+  } | null>(null)
+  const toastTimerRef = useRef<NodeJS.Timeout | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) {
+        clearTimeout(toastTimerRef.current)
+      }
+    }
+  }, [])
+
+  const showToast = useCallback(
+    (
+      rawMsg: string,
+      type: "info" | "success" | "warning" | "alert" = "success",
+      duration = 3500
+    ) => {
+      const clean = cleanToastMessage(rawMsg)
+      if (!clean) return
+
+      let resolvedType = type
+      const lower = clean.toLowerCase()
+      if (lower.includes("conflict") || lower.includes("occupied") || lower.includes("grade 4")) {
+        resolvedType = "alert"
+      } else if (lower.includes("warning") || lower.includes("grade 3") || lower.includes("nadir")) {
+        resolvedType = "warning"
+      }
+
+      if (toastTimerRef.current) {
+        clearTimeout(toastTimerRef.current)
+      }
+
+      setGlobalToast({ message: clean, type: resolvedType })
+
+      toastTimerRef.current = setTimeout(() => {
+        setGlobalToast(null)
+      }, duration)
+
+      if (
+        resolvedType === "alert" ||
+        resolvedType === "warning" ||
+        lower.includes("attested") ||
+        lower.includes("admitted") ||
+        lower.includes("discharged") ||
+        lower.includes("bedside round") ||
+        lower.includes("profile")
+      ) {
+        const newNotif: ClinicalNotification = {
+          id: `notif-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          title:
+            resolvedType === "alert"
+              ? "Ward Bed / Clinical Alert"
+              : resolvedType === "warning"
+              ? "Clinical Warning"
+              : "Ward Clinical Event",
+          message: clean,
+          timestamp: Date.now(),
+          timeStr: "Just now",
+          type: resolvedType,
+          read: false,
+        }
+        setNotifications((prev) => [newNotif, ...prev.slice(0, 24)])
+      }
+    },
+    []
+  )
+
+  const handleMarkNotificationRead = (id: string) => {
+    setNotifications((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, read: true } : item))
+    )
+  }
+
+  const handleMarkAllNotificationsRead = () => {
+    setNotifications((prev) => prev.map((item) => ({ ...item, read: true })))
+    showToast("All clinical notifications marked as read", "info")
+  }
+
+  const handleClearNotifications = () => {
+    setNotifications([])
+    showToast("Clinical notification feed cleared", "info")
+  }
+
+  const handleUpdateProfile = (updated: ClinicianProfile) => {
+    setClinicianProfile(updated)
+    showToast(`Updated clinician profile for ${updated.name}`, "success")
   }
 
   const handleAttestRound = (patientId: string, record: RoundRecord) => {
@@ -4866,7 +5343,7 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
     const newRound: RoundRecord = {
       id: `ocr-${Date.now()}`,
       date: dateStr,
-      doctor: "Dr. Amrut S Kadam, MD",
+      doctor: clinicianProfile.name,
       anc: extracted.anc,
       wbc: extracted.wbc,
       platelets: extracted.platelets,
@@ -4942,7 +5419,7 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
     const admissionRound: RoundRecord = {
       id: `adm-${newPatient.id}`,
       date: dateStr,
-      doctor: "Dr. Attending, MD",
+      doctor: clinicianProfile.name,
       anc: newPatient.baselineAnc,
       wbc: Math.round((newPatient.baselineAnc / 0.6) * 1.5) || 5200,
       platelets: 220000,
@@ -5088,13 +5565,42 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
         </div>
       )}
       {globalToast && (
-        <div className="toast" style={{ zIndex: 120 }}>
-          <Icon name="check" />
-          {globalToast}
-          <button onClick={() => setGlobalToast("")}>Dismiss</button>
+        <div
+          className={`toast toast-${globalToast.type}`}
+          style={{ zIndex: 120 }}
+          role={globalToast.type === "alert" ? "alert" : "status"}
+          aria-live={globalToast.type === "alert" ? "assertive" : "polite"}
+        >
+          <Icon
+            name={
+              globalToast.type === "alert" || globalToast.type === "warning"
+                ? "alert-triangle"
+                : "check"
+            }
+            size={18}
+          />
+          <span>{globalToast.message}</span>
+          <button
+            onClick={() => {
+              if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+              setGlobalToast(null)
+            }}
+          >
+            Dismiss
+          </button>
         </div>
       )}
-      <Header screen={screen} go={go} onSignOut={signOut} />
+      <Header
+        screen={screen}
+        go={go}
+        onSignOut={signOut}
+        profile={clinicianProfile}
+        onUpdateProfile={handleUpdateProfile}
+        notifications={notifications}
+        onMarkNotificationRead={handleMarkNotificationRead}
+        onMarkAllNotificationsRead={handleMarkAllNotificationsRead}
+        onClearNotifications={handleClearNotifications}
+      />
       {screen === "station" ? (
         <Station
           patientsList={patientsList}
@@ -5104,6 +5610,8 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
           onOcrExtracted={handleOcrExtracted}
           onAttestRound={handleAttestRound}
           go={go}
+          onToast={showToast}
+          clinicianProfile={clinicianProfile}
         />
       ) : screen === "roster" ? (
         <Roster
@@ -5131,6 +5639,7 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
           selectedPatientId={selectedPatientId}
           onSelectPatient={setSelectedPatientId}
           analyticsData={analyticsData}
+          onToast={showToast}
         />
       )}
       <footer className="quiet-footer">

@@ -11,6 +11,10 @@ import {
   validateBedOccupancy,
   normalizeBedIdentifier,
   getDoseModificationRecommendation,
+  cleanToastMessage,
+  deriveDoctorInitials,
+  DEFAULT_CLINICIAN_PROFILE,
+  INITIAL_CLINICAL_NOTIFICATIONS,
 } from "./clinical-utils.ts";
 
 
@@ -334,6 +338,45 @@ describe("Clinical Utilities — TDD Suite", () => {
       assert.equal(rec.badgeVariant, "warning");
       assert.match(rec.statusBadge, /Moderate Vigilance · Grade 2/);
       assert.match(rec.title, /Close Surveillance & Pre-infusion CBC Check/);
+    });
+  });
+
+  describe("cleanToastMessage", () => {
+    it("strips duplicate checkmarks, alert symbols, and leading whitespace", () => {
+      assert.equal(cleanToastMessage("✓ Updated verification point 2"), "Updated verification point 2");
+      assert.equal(cleanToastMessage("✓ ✓ Note attested"), "Note attested");
+      assert.equal(cleanToastMessage("✅ Patient admitted"), "Patient admitted");
+      assert.equal(cleanToastMessage("⚠️ Bed 12 occupied"), "Bed 12 occupied");
+      assert.equal(cleanToastMessage("ℹ️ New lab results"), "New lab results");
+      assert.equal(cleanToastMessage("Clinician profile updated"), "Clinician profile updated");
+      assert.equal(cleanToastMessage(""), "");
+    });
+  });
+
+  describe("deriveDoctorInitials", () => {
+    it("derives clean initials from physician names with titles and suffixes", () => {
+      assert.equal(deriveDoctorInitials("Dr. Amrut S Kadam, MD"), "AK");
+      assert.equal(deriveDoctorInitials("Dr. Gregory House, MD"), "GH");
+      assert.equal(deriveDoctorInitials("Dr. Sarah Jenkins"), "SJ");
+      assert.equal(deriveDoctorInitials("Elena Rostova"), "ER");
+      assert.equal(deriveDoctorInitials(""), "MD");
+    });
+  });
+
+  describe("Clinician Profile & Clinical Notifications Defaults", () => {
+    it("provides complete default clinician profile with valid NPI and initials", () => {
+      assert.equal(DEFAULT_CLINICIAN_PROFILE.name, "Dr. Amrut S Kadam, MD");
+      assert.equal(DEFAULT_CLINICIAN_PROFILE.initials, "AK");
+      assert.equal(DEFAULT_CLINICIAN_PROFILE.npi, "1849204821");
+      assert.equal(DEFAULT_CLINICIAN_PROFILE.hospital, "City Cancer Center");
+    });
+
+    it("initializes clinical notifications with active ward alerts and correct urgency types", () => {
+      assert.ok(INITIAL_CLINICAL_NOTIFICATIONS.length >= 3);
+      const grade4Notif = INITIAL_CLINICAL_NOTIFICATIONS.find((n) => n.type === "alert");
+      assert.ok(grade4Notif);
+      assert.match(grade4Notif.title, /Grade 4/);
+      assert.equal(grade4Notif.read, false);
     });
   });
 });
