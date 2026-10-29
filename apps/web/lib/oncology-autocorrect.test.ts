@@ -1,6 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { autocorrectOncologyTranscript } from "./oncology-autocorrect.ts";
+import {
+  autocorrectOncologyTranscript,
+  applySelectedCorrections,
+} from "./oncology-autocorrect.ts";
 
 describe("Oncology Terms Auto-Correction Engine", () => {
   it("normalizes spoken chemotherapy regimens accurately", () => {
@@ -10,6 +13,17 @@ describe("Oncology Terms Auto-Correction Engine", () => {
     assert.ok(result.correctedText.includes("mFOLFOX6"));
     assert.ok(result.correctedText.includes("AC-T"));
     assert.ok(result.correctedText.includes("5-FU"));
+    assert.ok(result.averageConfidence >= 95);
+  });
+
+  it("normalizes user speech misrecognitions 'Anarcho AMC, 1400 RPM' to 'ANC, 1,400 /µL'", () => {
+    const input = "Shen, Anarcho AMC, 1400 RPM. Patient is having fever.";
+    const result = autocorrectOncologyTranscript(input);
+    assert.ok(result.correctedText.includes("ANC"));
+    assert.ok(result.correctedText.includes("1,400 /µL") || result.correctedText.includes("/µL"));
+    assert.ok(result.correctedText.includes("febrile"));
+    assert.ok(result.changes.length >= 3);
+    assert.ok(result.averageConfidence >= 95);
   });
 
   it("normalizes oncology drugs and supportive agents", () => {
@@ -40,11 +54,18 @@ describe("Oncology Terms Auto-Correction Engine", () => {
     assert.ok(result.correctedText.includes("38.4°C"));
   });
 
-  it("returns structured changes tracking every replacement", () => {
-    const input = "our chop with and see 750";
+  it("applies only selected corrections using applySelectedCorrections", () => {
+    const input = "patient on our chop and has muc ositis";
     const result = autocorrectOncologyTranscript(input);
-    assert.ok(result.changes.length >= 2);
-    assert.ok(result.changes.some((c) => c.corrected === "R-CHOP"));
-    assert.ok(result.changes.some((c) => c.corrected === "ANC"));
+    assert.equal(result.changes.length, 2);
+
+    // Deselect the second change
+    const modifiedChanges = [
+      { ...result.changes[0], selected: true },
+      { ...result.changes[1], selected: false },
+    ];
+    const partiallyApplied = applySelectedCorrections(input, modifiedChanges);
+    assert.ok(partiallyApplied.includes("R-CHOP"));
+    assert.ok(partiallyApplied.includes("muc ositis")); // Kept original
   });
 });

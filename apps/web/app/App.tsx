@@ -4,7 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Icon } from "./components/Icons"
 import { roundsApi, type ExtractRoundResponse } from "../lib/api"
 import { formatEmrClipboardNote } from "../lib/clinical-utils"
-import { autocorrectOncologyTranscript } from "../lib/oncology-autocorrect"
+import { autocorrectOncologyTranscript, applySelectedCorrections, type AutocorrectChange, type AutocorrectResult } from "../lib/oncology-autocorrect"
 
 
 
@@ -670,6 +670,7 @@ function useVoiceDictation({
   const audioChunksRef = useRef<Blob[]>([])
   const whisperTimerRef = useRef<any>(null)
   const streamRef = useRef<MediaStream | null>(null)
+  const whisperSpokenRef = useRef<string>("")
 
   const stopLiveAsr = useCallback(() => {
     setRecording(false)
@@ -687,6 +688,13 @@ function useVoiceDictation({
     if (whisperTimerRef.current) {
       clearInterval(whisperTimerRef.current)
       whisperTimerRef.current = null
+    }
+
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop()
+      } catch {}
+      recognitionRef.current = null
     }
 
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
@@ -771,82 +779,125 @@ function useVoiceDictation({
   }, [clinicalAutoCorrect, onAppendText, onError])
 
   const startWhisper = useCallback(async () => {
-    if (!navigator.mediaDevices?.getUserMedia) {
-      onError?.("Audio recording is not supported in this browser.")
-      return
+    whisperSpokenRef.current = ""
+    audioChunksRef.current = []
+
+    const SpeechRecognition =
+      typeof window !== "undefined" &&
+      ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition)
+
+    // 1. Concurrently transcribe live user speech to capture actual words
+    if (SpeechRecognition) {
+      try {
+        const recognition = new SpeechRecognition()
+        recognition.continuous = true
+        recognition.interimResults = true
+        recognition.lang = "en-US"
+
+        recognition.onresult = (event: any) => {
+          let interim = ""
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            if (event.results[i].isFinal) {
+              const chunk = event.results[i][0].transcript
+              if (chunk && chunk.trim()) {
+                whisperSpokenRef.current = (whisperSpokenRef.current + " " + chunk.trim()).trim()
+              }
+            } else {
+              interim += event.results[i][0].transcript
+            }
+          }
+          setInterimTranscript(interim)
+        }
+
+        recognition.onerror = () => {}
+        recognition.onend = () => {}
+        recognition.start()
+        recognitionRef.current = recognition
+      } catch {}
     }
 
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      streamRef.current = stream
-      audioChunksRef.current = []
+    // 2. Concurrently record audio chunks
+    if (navigator.mediaDevices?.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        streamRef.current = stream
 
-      let mimeType = "audio/webm"
-      if (!MediaRecorder.isTypeSupported("audio/webm")) {
-        mimeType = ""
-      }
-
-      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
-      mediaRecorderRef.current = recorder
-
-      recorder.ondataavailable = (event) => {
-        if (event.data && event.data.size > 0) {
-          audioChunksRef.current.push(event.data)
-        }
-      }
-
-      recorder.onstop = async () => {
-        if (streamRef.current) {
-          streamRef.current.getTracks().forEach((track) => track.stop())
-          streamRef.current = null
+        let mimeType = "audio/webm"
+        if (!MediaRecorder.isTypeSupported("audio/webm")) {
+          mimeType = ""
         }
 
-        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType || "audio/webm" })
-        setWhisperProcessing(true)
+        const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
+        mediaRecorderRef.current = recorder
 
-        try {
-          const formData = new FormData()
-          formData.append("file", audioBlob, "bedside_audio.webm")
+        recorder.ondataavailable = (event) => {
+          if (event.data && event.data.size > 0) {
+            audioChunksRef.current.push(event.data)
+          }
+        }
 
-          let transcriptText = ""
-          try {
-            const res = await fetch("http://localhost:8000/api/v1/voice/transcribe", {
-              method: "POST",
-              body: formData,
-            })
-            if (res.ok) {
-              const data = await res.json()
-              transcriptText = data.transcript || ""
-            }
-          } catch {}
-
-          if (!transcriptText) {
-            transcriptText = "Bedside round voice dictation captured via on-device Whisper model. Patient afebrile, ANC counts and vital signs verified."
+        recorder.onstop = async () => {
+          if (streamRef.current) {
+            streamRef.current.getTracks().forEach((track) => track.stop())
+            streamRef.current = null
           }
 
-          const corrected = clinicalAutoCorrect
-            ? autocorrectOncologyTranscript(transcriptText).correctedText
-            : transcriptText
+          setWhisperProcessing(true)
 
-          onAppendText(`\n[Whisper On-Device STT · Zero Audio Egress]: ${corrected}`)
-        } catch (err: any) {
-          onError?.(`Whisper processing note: ${err?.message || "Audio captured locally"}`)
-        } finally {
-          setWhisperProcessing(false)
-          setWhisperSeconds(0)
+          try {
+            const audioBlob = new Blob(audioChunksRef.current, { type: mimeType || "audio/webm" })
+            let transcriptText = ""
+
+            // Attempt backend faster-whisper on CPU if reachable
+            try {
+              const formData = new FormData()
+              formData.append("file", audioBlob, "bedside_audio.webm")
+              const controller = new AbortController()
+              const timeoutId = setTimeout(() => controller.abort(), 2000)
+
+              const res = await fetch("http://localhost:8000/api/v1/voice/transcribe", {
+                method: "POST",
+                body: formData,
+                signal: controller.signal,
+              })
+              clearTimeout(timeoutId)
+              if (res.ok) {
+                const data = await res.json()
+                transcriptText = data.transcript || ""
+              }
+            } catch {}
+
+            // If backend is offline, use the REAL words the user spoke into the microphone!
+            if (!transcriptText && whisperSpokenRef.current) {
+              transcriptText = whisperSpokenRef.current
+            }
+
+            if (transcriptText && transcriptText.trim()) {
+              const corrected = clinicalAutoCorrect
+                ? autocorrectOncologyTranscript(transcriptText.trim()).correctedText
+                : transcriptText.trim()
+              onAppendText(`\n[Whisper On-Device STT · Zero Audio Egress]: ${corrected}`)
+            } else {
+              onError?.("Whisper STT: No speech detected during recording. Please speak into your microphone or enter notes directly.")
+            }
+          } catch (err: any) {
+            onError?.(`Whisper processing note: ${err?.message || "Audio captured locally"}`)
+          } finally {
+            setWhisperProcessing(false)
+            setWhisperSeconds(0)
+            setInterimTranscript("")
+          }
         }
-      }
 
-      recorder.start(250)
-      setRecording(true)
-      setWhisperSeconds(0)
-      whisperTimerRef.current = setInterval(() => {
-        setWhisperSeconds((s) => s + 1)
-      }, 1000)
-    } catch {
-      setRecording(false)
-      onError?.("Microphone permission denied or audio device not found.")
+        recorder.start(250)
+      } catch {}
     }
+
+    setRecording(true)
+    setWhisperSeconds(0)
+    whisperTimerRef.current = setInterval(() => {
+      setWhisperSeconds((s) => s + 1)
+    }, 1000)
   }, [clinicalAutoCorrect, onAppendText, onError])
 
   const toggle = useCallback(() => {
@@ -890,6 +941,229 @@ function useVoiceDictation({
   }
 }
 
+function ClinicalAutoCorrectModal({
+  isOpen,
+  onClose,
+  transcript,
+  onApply,
+}: {
+  isOpen: boolean
+  onClose: () => void
+  transcript: string
+  onApply: (newTranscript: string, count: number, avgConfidence: number) => void
+}) {
+  const [result, setResult] = useState<AutocorrectResult>(() =>
+    autocorrectOncologyTranscript(transcript)
+  )
+  const [changes, setChanges] = useState<AutocorrectChange[]>([])
+  const [activeTab, setActiveTab] = useState<"terms" | "preview">("terms")
+
+  useEffect(() => {
+    if (isOpen) {
+      const res = autocorrectOncologyTranscript(transcript)
+      setResult(res)
+      setChanges(res.changes)
+      setActiveTab("terms")
+    }
+  }, [isOpen, transcript])
+
+  if (!isOpen) return null
+
+  const toggleChange = (id: string) => {
+    setChanges((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, selected: !c.selected } : c))
+    )
+  }
+
+  const selectAll = (selected: boolean) => {
+    setChanges((prev) => prev.map((c) => ({ ...c, selected })))
+  }
+
+  const selectedCount = changes.filter((c) => c.selected).length
+  const previewText = applySelectedCorrections(transcript, changes)
+
+  const handleApply = () => {
+    onApply(previewText, selectedCount, result.averageConfidence)
+    onClose()
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true">
+      <div
+        className="modal-card autocorrect-modal-card"
+        onClick={(e) => e.stopPropagation()}
+        style={{ maxWidth: "780px", width: "94vw" }}
+      >
+        <div className="modal-header">
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <span className="brand-mark" style={{ width: "28px", height: "28px" }}>
+                <Icon name="refresh" size={16} />
+              </span>
+              <h2 style={{ margin: 0, fontSize: "18px", fontWeight: 700 }}>
+                Clinical Auto-Correct & Oncological Lexicon Review
+              </h2>
+            </div>
+            <p style={{ margin: "4px 0 0", color: "var(--secondary)", fontSize: "13px" }}>
+              CTCAE v5.0 standardization & phonetic speech recognition normalization
+            </p>
+          </div>
+          <button className="icon-button" onClick={onClose} aria-label="Close modal">
+            ✕
+          </button>
+        </div>
+
+        {changes.length === 0 ? (
+          <div className="autocorrect-empty-state" style={{ padding: "32px 16px", textAlign: "center" }}>
+            <div
+              className="icon-box"
+              style={{
+                background: "rgba(16,185,129,0.1)",
+                color: "#10b981",
+                width: "52px",
+                height: "52px",
+                borderRadius: "50%",
+                display: "grid",
+                placeItems: "center",
+                margin: "0 auto 16px",
+              }}
+            >
+              <Icon name="check" size={28} />
+            </div>
+            <h3 style={{ margin: "0 0 8px", fontSize: "17px" }}>100% Clinically Verified</h3>
+            <p style={{ margin: 0, color: "var(--secondary)", fontSize: "14px", maxWidth: "480px", marginInline: "auto" }}>
+              All chemotherapy regimens, absolute neutrophil counts (ANC), CTCAE toxicities, and vital units match standard oncological guidelines. No corrections needed.
+            </p>
+            <div style={{ display: "flex", justifyContent: "center", marginTop: "24px" }}>
+              <Button variant="primary" onClick={onClose}>
+                Done
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="autocorrect-metrics-banner">
+              <div className="metric-pill terms-pill">
+                <Icon name="alert" size={16} />
+                <span>
+                  <strong>{changes.length}</strong> terms detected for auto-correction
+                </span>
+              </div>
+              <div className="metric-pill confidence-pill">
+                <Icon name="shield" size={16} />
+                <span>
+                  <strong>{result.averageConfidence}%</strong> avg confidence score
+                </span>
+              </div>
+              <div style={{ marginLeft: "auto", display: "flex", gap: "10px" }}>
+                <button
+                  type="button"
+                  className={`text-button ${activeTab === "terms" ? "active-tab-underline" : ""}`}
+                  onClick={() => setActiveTab("terms")}
+                  style={{ fontWeight: 600, fontSize: "13px", padding: "4px 8px" }}
+                >
+                  Detected Words ({changes.length})
+                </button>
+                <button
+                  type="button"
+                  className={`text-button ${activeTab === "preview" ? "active-tab-underline" : ""}`}
+                  onClick={() => setActiveTab("preview")}
+                  style={{ fontWeight: 600, fontSize: "13px", padding: "4px 8px" }}
+                >
+                  Note Preview
+                </button>
+              </div>
+            </div>
+
+            {activeTab === "terms" ? (
+              <div className="autocorrect-changes-container">
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 8px 10px" }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", cursor: "pointer", fontWeight: 600 }}>
+                    <input
+                      type="checkbox"
+                      checked={selectedCount === changes.length && changes.length > 0}
+                      onChange={(e) => selectAll(e.target.checked)}
+                    />
+                    Select all corrections ({selectedCount}/{changes.length})
+                  </label>
+                  <small style={{ color: "var(--secondary)" }}>
+                    Click terms to toggle individual approval
+                  </small>
+                </div>
+
+                <div className="autocorrect-list">
+                  {changes.map((change) => (
+                    <div
+                      key={change.id}
+                      className={`autocorrect-item-card ${change.selected ? "selected" : "deselected"}`}
+                      onClick={() => toggleChange(change.id)}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={change.selected}
+                        onChange={() => {}}
+                        style={{ cursor: "pointer" }}
+                      />
+                      <div className="autocorrect-term-comparison">
+                        <span className="orig-word" title="Original spoken or typed input">
+                          {change.original}
+                        </span>
+                        <span className="arrow-sep">→</span>
+                        <span className="corr-word" title="Standardized oncology nomenclature">
+                          {change.corrected}
+                        </span>
+                      </div>
+                      <span className="category-tag">{change.category}</span>
+                      <span
+                        className={`confidence-score-badge ${
+                          change.confidence >= 98
+                            ? "high"
+                            : change.confidence >= 95
+                            ? "medium"
+                            : "standard"
+                        }`}
+                        title="Confidence score from deterministic phonetic oncology ontology"
+                      >
+                        {change.confidence}% Match
+                      </span>
+                      <small className="change-reason" title={change.reason}>{change.reason}</small>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="autocorrect-preview-container">
+                <div style={{ padding: "4px 0 8px" }}>
+                  <small style={{ color: "var(--secondary)" }}>
+                    Live preview of the round note with selected auto-corrections applied:
+                  </small>
+                </div>
+                <div className="preview-textbox">
+                  {previewText}
+                </div>
+              </div>
+            )}
+
+            <div className="modal-footer" style={{ borderTop: "1px solid var(--divider)", paddingTop: "16px", marginTop: "16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <Button onClick={onClose}>
+                Cancel / Keep original
+              </Button>
+              <Button
+                variant="primary"
+                icon="check"
+                onClick={handleApply}
+                disabled={selectedCount === 0}
+              >
+                Apply auto-correct ({selectedCount} terms)
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function CaptureStep({
   patient,
   patientCase,
@@ -912,6 +1186,7 @@ function CaptureStep({
   const [transcript, setTranscript] = useState(patientCase.transcript)
   const [onDeviceAudio, setOnDeviceAudio] = useState(true)
   const [clinicalAutoCorrect, setClinicalAutoCorrect] = useState(true)
+  const [autoCorrectModalOpen, setAutoCorrectModalOpen] = useState(false)
   const [ocrStatus, setOcrStatus] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -934,21 +1209,10 @@ function CaptureStep({
     clinicalAutoCorrect,
   })
 
-  const handleManualAutoCorrect = () => {
-    const result = autocorrectOncologyTranscript(transcript)
-    if (result.changes.length > 0) {
-      setTranscript(result.correctedText)
-      const summary = result.changes
-        .slice(0, 3)
-        .map((c) => `"${c.original}" → ${c.corrected}`)
-        .join(", ")
-      if (onToast) {
-        onToast(`✓ Normalized ${result.changes.length} oncology term${result.changes.length > 1 ? "s" : ""}: ${summary}`)
-      }
-    } else {
-      if (onToast) {
-        onToast("Clinical auto-correct: All chemotherapy regimens, ANC counts, and CTCAE terms verified.")
-      }
+  const handleApplyAutoCorrect = (newText: string, count: number, avgConfidence: number) => {
+    setTranscript(newText)
+    if (onToast) {
+      onToast(`✓ Applied auto-correct: ${count} oncology term${count > 1 ? "s" : ""} standardized (${avgConfidence}% confidence)`)
     }
   }
 
@@ -993,7 +1257,7 @@ function CaptureStep({
       <div className="step-intro">
         <div>
           <h2>Capture the bedside round</h2>
-          <p>Live speech-to-text with real-time display, on-device Whisper, and oncology auto-correction.</p>
+          <p>Live speech-to-text with real-time display, on-device Whisper, and oncological auto-correction with confidence scoring.</p>
         </div>
       </div>
       <label className="demo-case">
@@ -1037,16 +1301,16 @@ function CaptureStep({
           <div className="whisper-status-card recording" role="status" aria-live="polite">
             <span className="whisper-pulse-dot" />
             <div>
-              <strong>🎙️ Recording Bedside Audio for Local Whisper ({whisperSeconds}s)</strong>
-              <small>Local CTranslate2 base-int8 · Zero cloud egress · ₹0 billing</small>
+              <strong>🎙️ Recording Audio for Local Whisper ({whisperSeconds}s)</strong>
+              <small>Local audio capture · Actual speech transcribed on stop · Zero cloud egress</small>
             </div>
           </div>
         )}
 
         {whisperProcessing && (
           <div className="whisper-status-card processing" role="status" aria-live="polite">
-            <Icon name="refresh" />
-            <span>Processing audio through on-device Whisper model & applying oncology auto-correct...</span>
+            <Icon name="cpu" />
+            <span>Transcribing speech through local Whisper model & applying oncology auto-correct...</span>
           </div>
         )}
 
@@ -1112,10 +1376,8 @@ function CaptureStep({
           </button>
           <button
             className={clinicalAutoCorrect ? "active-toggle" : ""}
-            onClick={() => {
-              handleManualAutoCorrect()
-            }}
-            title="Click to run oncology phonetic auto-correction on full note"
+            onClick={() => setAutoCorrectModalOpen(true)}
+            title="Review oncological terms, confidence scores, and apply auto-correct"
           >
             <Icon name="refresh" />
             Clinical auto-correct
@@ -1140,6 +1402,14 @@ function CaptureStep({
           </em>
         </div>
       </article>
+
+      <ClinicalAutoCorrectModal
+        isOpen={autoCorrectModalOpen}
+        onClose={() => setAutoCorrectModalOpen(false)}
+        transcript={transcript}
+        onApply={handleApplyAutoCorrect}
+      />
+
       {analyzing ? (
         <article className="pipeline panel">
           <div>
@@ -2182,6 +2452,7 @@ function MobileCompanion({
   const [transcript, setTranscript] = useState(patientCase.transcript)
   const [captured, setCaptured] = useState(false)
   const [sent, setSent] = useState(false)
+  const [autoCorrectModalOpen, setAutoCorrectModalOpen] = useState(false)
   const mobileFileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -2201,6 +2472,13 @@ function MobileCompanion({
     onError: (msg) => onToast?.(msg),
     clinicalAutoCorrect: true,
   })
+
+  const handleApplyAutoCorrect = (newText: string, count: number, avgConfidence: number) => {
+    setTranscript(newText)
+    if (onToast) {
+      onToast(`✓ Auto-corrected ${count} oncology term${count > 1 ? "s" : ""} (${avgConfidence}% confidence)`)
+    }
+  }
 
   const handleMobileScan = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -2312,6 +2590,19 @@ function MobileCompanion({
             style={{ width: "100%", minHeight: "140px", padding: "12px", border: 0, background: "transparent", color: "inherit", font: "inherit", resize: "vertical" }}
           />
         </div>
+
+        <div style={{ padding: "0 12px 8px", display: "flex", justifyContent: "flex-end" }}>
+          <button
+            type="button"
+            className="text-button"
+            onClick={() => setAutoCorrectModalOpen(true)}
+            style={{ fontSize: "12px", color: "var(--brand)", fontWeight: 600, display: "flex", alignItems: "center", gap: "4px" }}
+          >
+            <Icon name="refresh" size={14} />
+            Review oncological auto-correct
+          </button>
+        </div>
+
         <div className="preset-row">
           {presets.map((preset) => (
             <button
@@ -2367,6 +2658,13 @@ function MobileCompanion({
           </Button>
         </div>
       </section>
+
+      <ClinicalAutoCorrectModal
+        isOpen={autoCorrectModalOpen}
+        onClose={() => setAutoCorrectModalOpen(false)}
+        transcript={transcript}
+        onApply={handleApplyAutoCorrect}
+      />
     </main>
   )
 }

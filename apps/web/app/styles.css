@@ -506,3 +506,193 @@ input:disabled,select:disabled,textarea:disabled { background:var(--subtle);colo
   font-size: 13px;
   font-weight: 600;
 }
+
+/* Clinical Auto-Correct Modal & Lexicon Review */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(5px);
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.autocorrect-modal-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.25);
+  padding: 24px;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.autocorrect-metrics-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--subtle);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin: 16px 0 12px;
+  flex-wrap: wrap;
+}
+
+.metric-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--secondary);
+}
+
+.metric-pill strong {
+  color: var(--text);
+}
+
+.metric-pill.confidence-pill strong {
+  color: var(--brand);
+}
+
+.active-tab-underline {
+  color: var(--brand) !important;
+  border-bottom: 2px solid var(--brand) !important;
+  border-radius: 0 !important;
+}
+
+.autocorrect-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 340px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.autocorrect-item-card {
+  display: grid;
+  grid-template-columns: 24px minmax(200px, 1.2fr) auto auto 1.4fr;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.autocorrect-item-card:hover {
+  border-color: var(--brand);
+  background: rgba(0, 102, 102, 0.02);
+}
+
+.autocorrect-item-card.deselected {
+  opacity: 0.5;
+  background: var(--subtle);
+}
+
+.autocorrect-term-comparison {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: inherit;
+}
+
+.orig-word {
+  color: var(--g4);
+  text-decoration: line-through;
+  background: var(--g4-bg);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.arrow-sep {
+  color: var(--secondary);
+  font-weight: 700;
+}
+
+.corr-word {
+  color: var(--brand);
+  font-weight: 700;
+  background: rgba(0, 102, 102, 0.08);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.category-tag {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: var(--subtle);
+  color: var(--secondary);
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.confidence-score-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 12px;
+  white-space: nowrap;
+}
+
+.confidence-score-badge.high {
+  background: rgba(16, 185, 129, 0.12);
+  color: #059669;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.confidence-score-badge.medium {
+  background: rgba(245, 158, 11, 0.12);
+  color: #d97706;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.confidence-score-badge.standard {
+  background: var(--subtle);
+  color: var(--secondary);
+  border: 1px solid var(--border);
+}
+
+.change-reason {
+  color: var(--secondary);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-textbox {
+  background: var(--subtle);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text);
+  max-height: 280px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 768px) {
+  .autocorrect-item-card {
+    grid-template-columns: 24px 1fr auto;
+    gap: 8px;
+  }
+  .autocorrect-item-card .change-reason,
+  .autocorrect-item-card .category-tag {
+    display: none;
+  }
+}
