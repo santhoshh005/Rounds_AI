@@ -335,3 +335,32 @@ input:disabled,select:disabled,textarea:disabled { background:var(--subtle);colo
   font-weight: 600;
   margin-top: 8px;
 }
+
+.ocr-banner {
+  margin: 10px 16px;
+  padding: 10px 14px;
+  background: rgba(0, 102, 102, 0.08);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  animation: fadeIn 0.25s ease-out;
+}
+
+.live-mobile-textarea {
+  width: 100%;
+  min-height: 140px;
+  padding: 14px;
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+}
+.live-mobile-textarea:focus {
+  background: rgba(0, 102, 102, 0.03);
+}
