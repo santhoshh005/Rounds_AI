@@ -4,6 +4,8 @@
 
 [build.environment]
   NODE_VERSION = "20"
+  NPM_CONFIG_CACHE_DIR = ""
+  npm_config_cache_dir = ""
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
