@@ -3383,7 +3383,7 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
         </div>
       )}
       {globalToast && (
-        <div className="toast" style={{ position: "fixed", bottom: "24px", right: "24px", zIndex: 120 }}>
+        <div className="toast" style={{ zIndex: 120 }}>
           <Icon name="check" />
           {globalToast}
           <button onClick={() => setGlobalToast("")}>Dismiss</button>
