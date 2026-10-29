@@ -7,6 +7,7 @@ export type CtcaeGrade = 1 | 2 | 3 | 4 | 5;
 
 export interface CtcaeBadgeStyle {
   label: string;
+  className: string;
   bg: string;
   text: string;
   border: string;
@@ -39,6 +40,7 @@ export function getCtcaeBadgeStyle(grade: number | string | undefined | null): C
     case 1:
       return {
         label: "Grade 1 (Mild)",
+        className: "severity severity-1",
         bg: "#fef9c3",
         text: "#854d0e",
         border: "#fde047",
@@ -46,6 +48,7 @@ export function getCtcaeBadgeStyle(grade: number | string | undefined | null): C
     case 2:
       return {
         label: "Grade 2 (Moderate)",
+        className: "severity severity-2",
         bg: "#ffedd5",
         text: "#9a3412",
         border: "#fdba74",
@@ -53,6 +56,7 @@ export function getCtcaeBadgeStyle(grade: number | string | undefined | null): C
     case 3:
       return {
         label: "Grade 3 (Severe)",
+        className: "severity severity-3",
         bg: "#fee2e2",
         text: "#991b1b",
         border: "#fca5a5",
@@ -60,6 +64,7 @@ export function getCtcaeBadgeStyle(grade: number | string | undefined | null): C
     case 4:
       return {
         label: "Grade 4 (Life-threatening)",
+        className: "severity severity-4",
         bg: "#7f1d1d",
         text: "#ffffff",
         border: "#991b1b",
@@ -67,6 +72,7 @@ export function getCtcaeBadgeStyle(grade: number | string | undefined | null): C
     case 5:
       return {
         label: "Grade 5 (Fatal)",
+        className: "severity severity-4",
         bg: "#0f172a",
         text: "#ffffff",
         border: "#334155",
@@ -74,6 +80,7 @@ export function getCtcaeBadgeStyle(grade: number | string | undefined | null): C
     default:
       return {
         label: "Normal / Ungraded",
+        className: "severity severity-0",
         bg: "#f1f5f9",
         text: "#475569",
         border: "#cbd5e1",
@@ -325,7 +332,31 @@ export interface EmrClipboardParams {
 /**
  * Standardizes SOAP note text for seamless 1-click clipboard paste into Epic / Cerner / Meditech EMRs.
  */
-export function formatEmrClipboardNote(params: EmrClipboardParams): string {
+export function formatEmrClipboardNote(
+  paramsOrNote: EmrClipboardParams | string,
+  roundId?: string,
+  patientId?: string,
+  approvedBy?: string
+): string {
+  if (typeof paramsOrNote === "string") {
+    const timestamp = new Date().toISOString();
+    const attestationLine = approvedBy
+      ? `Attested by: ${approvedBy} (${timestamp})`
+      : `Status: Pending Clinician Attestation (Exported at ${timestamp})`;
+
+    const header = [
+      `================================================================================`,
+      `[ROUNDS-AI EMR CLINICAL DOCUMENTATION]`,
+      `PATIENT: ${patientId || "Unassigned"} | ROUND: ${roundId || "N/A"}`,
+      attestationLine,
+      `================================================================================`,
+    ].join("\n");
+
+    const cleanNote = paramsOrNote.trim();
+    return `${header}\n\n${cleanNote}\n\n[End of RoundsAI Note]`;
+  }
+
+  const params = paramsOrNote;
   const timestamp = params.attestedAt || new Date().toISOString();
   const attestationLine = params.attestedBy
     ? `Attested by: ${params.attestedBy} (${timestamp})`

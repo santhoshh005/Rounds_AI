@@ -1,278 +1,180 @@
-import React from "react";
+import type { SVGProps } from "react"
 
-interface IconProps {
-  className?: string;
-  size?: number;
-  color?: string;
-  style?: React.CSSProperties;
-}
+export type IconProps = SVGProps<SVGSVGElement> & { size?: number }
 
-export function StethoscopeIcon({ size = 16, color = "currentColor", style, className }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
-      <path d="M4.8 2.3A.3.3 0 1 0 5 2H4a2 2 0 0 0-2 2v5a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6V4a2 2 0 0 0-2-2h-1a.2.2 0 1 0 .3.3" />
-      <path d="M8 15v1a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6v-4" />
-      <circle cx="20" cy="10" r="2" />
-    </svg>
-  );
-}
-
-export function ActivityIcon({ size = 16, color = "currentColor", style, className }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
-      <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-    </svg>
-  );
-}
-
-export function BarChartIcon({ size = 16, color = "currentColor", style, className }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
-      <line x1="12" x2="12" y1="20" y2="10" />
-      <line x1="18" x2="18" y1="20" y2="4" />
-      <line x1="6" x2="6" y1="20" y2="16" />
-    </svg>
-  );
-}
-
-export function UsersIcon({ size = 16, color = "currentColor", style, className }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
-      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-      <circle cx="9" cy="7" r="4" />
-      <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
-      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-    </svg>
-  );
-}
-
-export function UserPlusIcon({ size = 16, color = "currentColor", style, className }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
-      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-      <circle cx="9" cy="7" r="4" />
-      <line x1="19" x2="19" y1="8" y2="14" />
-      <line x1="22" x2="16" y1="11" y2="11" />
-    </svg>
-  );
-}
-
-export function SmartphoneIcon({ size = 16, color = "currentColor", style, className }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
-      <rect width="14" height="20" x="5" y="2" rx="2" ry="2" />
-      <path d="M12 18h.01" />
-    </svg>
-  );
-}
-
-export function BedIcon({ size = 16, color = "currentColor", style, className }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
-      <path d="M2 4v16" />
-      <path d="M2 8h18a2 2 0 0 1 2 2v10" />
-      <path d="M2 17h20" />
-      <path d="M6 8v9" />
-    </svg>
-  );
-}
-
-export function MicrophoneIcon({ size = 16, color = "currentColor", style, className }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
-      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
-      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-      <line x1="12" x2="12" y1="19" y2="22" />
-    </svg>
-  );
-}
-
-export function SparklesIcon({ size = 16, color = "currentColor", style, className }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
-      <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
-      <path d="M5 3v4" />
-      <path d="M19 17v4" />
-      <path d="M3 5h4" />
-      <path d="M17 19h4" />
-    </svg>
-  );
-}
-
-export function CameraIcon({ size = 16, color = "currentColor", style, className }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
-      <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
+const paths: Record<string, React.ReactNode> = {
+  activity: (
+    <>
+      <path d="M3 12h4l2-7 4 14 2-7h6" />
+    </>
+  ),
+  alert: (
+    <>
+      <path d="M10.3 2.9 1.8 17a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 2.9a2 2 0 0 0-3.4 0Z" />
+      <path d="M12 9v4M12 17h.01" />
+    </>
+  ),
+  bed: (
+    <>
+      <path d="M2 18v-7h20v7M2 14h20M6 11V6h6a3 3 0 0 1 3 3v2M5 18v2M19 18v2" />
+    </>
+  ),
+  bell: (
+    <>
+      <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" />
+    </>
+  ),
+  building: (
+    <>
+      <path d="M3 21h18M6 21V4h12v17M9 8h2M13 8h2M9 12h2M13 12h2M11 21v-5h2v5" />
+    </>
+  ),
+  camera: (
+    <>
+      <path d="M14.5 4 16 7h4a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h4l1.5-3h5Z" />
       <circle cx="12" cy="13" r="3" />
-    </svg>
-  );
-}
-
-export function UndoIcon({ size = 16, color = "currentColor", style, className }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
-      <path d="M3 7v6h6" />
-      <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" />
-    </svg>
-  );
-}
-
-export function CheckIcon({ size = 16, color = "currentColor", style, className }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
-      <path d="M20 6 9 17l-5-5" />
-    </svg>
-  );
-}
-
-export function AlertCircleIcon({ size = 16, color = "currentColor", style, className }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
-      <circle cx="12" cy="12" r="10" />
-      <line x1="12" x2="12" y1="8" y2="12" />
-      <line x1="12" x2="12.01" y1="16" y2="16" />
-    </svg>
-  );
-}
-
-export function ShieldIcon({ size = 16, color = "currentColor", style, className }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
-      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-    </svg>
-  );
-}
-
-export function FileTextIcon({ size = 16, color = "currentColor", style, className }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
-      <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
-      <polyline points="14 2 14 8 20 8" />
-      <line x1="16" x2="8" y1="13" y2="13" />
-      <line x1="16" x2="8" y1="17" y2="17" />
-      <line x1="10" x2="8" y1="9" y2="9" />
-    </svg>
-  );
-}
-
-export function LogOutIcon({ size = 16, color = "currentColor", style, className }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
-      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-      <polyline points="16 17 21 12 16 7" />
-      <line x1="21" x2="9" y1="12" y2="12" />
-    </svg>
-  );
-}
-
-export function ChevronRightIcon({ size = 16, color = "currentColor", style, className }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
+    </>
+  ),
+  check: (
+    <>
+      <path d="m5 12 4 4L19 6" />
+    </>
+  ),
+  chevron: (
+    <>
       <path d="m9 18 6-6-6-6" />
-    </svg>
-  );
+    </>
+  ),
+  clipboard: (
+    <>
+      <rect x="5" y="4" width="14" height="17" rx="2" />
+      <path d="M9 4.5V3h6v1.5M9 9h6M9 13h6M9 17h4" />
+    </>
+  ),
+  cpu: (
+    <>
+      <rect x="7" y="7" width="10" height="10" rx="1" />
+      <path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3M10 10h4v4h-4z" />
+    </>
+  ),
+  download: (
+    <>
+      <path d="M12 3v12m0 0 5-5m-5 5-5-5M5 21h14" />
+    </>
+  ),
+  file: (
+    <>
+      <path d="M6 2h8l4 4v16H6zM14 2v5h5M9 13h6M9 17h6" />
+    </>
+  ),
+  lock: (
+    <>
+      <rect x="4" y="10" width="16" height="11" rx="2" />
+      <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+    </>
+  ),
+  mic: (
+    <>
+      <rect x="9" y="2" width="6" height="13" rx="3" />
+      <path d="M5 11a7 7 0 0 0 14 0M12 18v4M8 22h8" />
+    </>
+  ),
+  menu: (
+    <>
+      <path d="M4 7h16M4 12h16M4 17h16" />
+    </>
+  ),
+  moon: (
+    <>
+      <path d="M20.5 14.1A8.5 8.5 0 0 1 9.9 3.5 8.5 8.5 0 1 0 20.5 14Z" />
+    </>
+  ),
+  pencil: (
+    <>
+      <path d="m4 16-1 5 5-1L19 9l-4-4L4 16ZM13.5 6.5l4 4" />
+    </>
+  ),
+  refresh: (
+    <>
+      <path d="M20 6v5h-5M4 18v-5h5M18.5 9A7 7 0 0 0 6 6M5.5 15A7 7 0 0 0 18 18" />
+    </>
+  ),
+  search: (
+    <>
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-4-4" />
+    </>
+  ),
+  shield: (
+    <>
+      <path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z" />
+      <path d="m9 12 2 2 4-4" />
+    </>
+  ),
+  stethoscope: (
+    <>
+      <path d="M6 3v6a4 4 0 0 0 8 0V3M4 3h4M12 3h4M10 16a5 5 0 0 0 10 0v-2" />
+      <circle cx="20" cy="12" r="2" />
+    </>
+  ),
+  sun: (
+    <>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+    </>
+  ),
+  undo: (
+    <>
+      <path d="M9 7 4 12l5 5M4 12h10a6 6 0 0 1 6 6" />
+    </>
+  ),
+  wifi: (
+    <>
+      <path d="M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M12 20h.01M2 9a15 15 0 0 1 20 0" />
+    </>
+  ),
+  zap: (
+    <>
+      <path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z" />
+    </>
+  ),
 }
 
-export function ChevronDownIcon({ size = 16, color = "currentColor", style, className }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
-      <path d="m6 9 6 6 6-6" />
-    </svg>
-  );
-}
-
-export function TrendingDownIcon({ size = 16, color = "currentColor", style, className }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
-      <polyline points="23 18 13.5 8.5 8.5 13.5 1 6" />
-      <polyline points="17 18 23 18 23 12" />
-    </svg>
-  );
-}
-
-export function TrendingUpIcon({ size = 16, color = "currentColor", style, className }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
-      <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
-      <polyline points="17 6 23 6 23 12" />
-    </svg>
-  );
-}
-
-export function MinusIcon({ size = 16, color = "currentColor", style, className }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
-      <line x1="5" x2="19" y1="12" y2="12" />
-    </svg>
-  );
-}
-
-export function RefreshIcon({ size = 16, color = "currentColor", style, className }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
-      <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
-      <path d="M21 3v5h-5" />
-      <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
-      <path d="M8 16H3v5" />
-    </svg>
-  );
-}
-
-export function SquareIcon({ size = 16, color = "currentColor", style, className }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill={color} stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
-      <rect width="16" height="16" x="4" y="4" rx="2" />
-    </svg>
-  );
-}
-
-export function ClipboardIcon({ size = 16, color = "currentColor", style, className }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
-      <rect width="8" height="4" x="8" y="2" rx="1" ry="1" />
-      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
-    </svg>
-  );
-}
-
-export function XIcon({ size = 16, color = "currentColor", style, className }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
-      <path d="M18 6 6 18" />
-      <path d="m6 6 12 12" />
-    </svg>
-  );
-}
-
-
-export function RoundsAiLogo({ size = 28, className, style }: IconProps) {
+export function Icon({
+  name,
+  size = 20,
+  ...props
+}: IconProps & { name: keyof typeof paths }) {
   return (
     <svg
+      viewBox="0 0 24 24"
       width={size}
       height={size}
-      viewBox="0 0 32 32"
       fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      className={className}
-      style={style}
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      {...props}
     >
-      <rect width="32" height="32" rx="8" fill="#0f172a" />
-      <path d="M16 6v20M6 16h20" stroke="#1e293b" strokeWidth="3" strokeLinecap="round" />
-      <path
-        d="M6 16h4.5l2-4.5 3.5 9.5 3-6.5 2 3h7"
-        stroke="url(#roundsai-logo-grad)"
-        strokeWidth="2.2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <circle cx="27.5" cy="16" r="1.8" fill="#38bdf8" />
-      <defs>
-        <linearGradient id="roundsai-logo-grad" x1="6" y1="16" x2="28" y2="16" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#38bdf8" />
-          <stop offset="0.55" stopColor="#0284c7" />
-          <stop offset="1" stopColor="#10b981" />
-        </linearGradient>
-      </defs>
+      {paths[name]}
     </svg>
-  );
-}
+  )
+}
+
+// Named helper exports
+export const StethoscopeIcon = (props: IconProps) => <Icon name="stethoscope" {...props} />
+export const ActivityIcon = (props: IconProps) => <Icon name="activity" {...props} />
+export const BedIcon = (props: IconProps) => <Icon name="bed" {...props} />
+export const MicrophoneIcon = (props: IconProps) => <Icon name="mic" {...props} />
+export const CameraIcon = (props: IconProps) => <Icon name="camera" {...props} />
+export const CheckIcon = (props: IconProps) => <Icon name="check" {...props} />
+export const AlertCircleIcon = (props: IconProps) => <Icon name="alert" {...props} />
+export const ShieldIcon = (props: IconProps) => <Icon name="shield" {...props} />
+export const FileTextIcon = (props: IconProps) => <Icon name="file" {...props} />
+export const RefreshIcon = (props: IconProps) => <Icon name="refresh" {...props} />
+export const UndoIcon = (props: IconProps) => <Icon name="undo" {...props} />
+export const ClipboardIcon = (props: IconProps) => <Icon name="clipboard" {...props} />
+export const ChevronRightIcon = (props: IconProps) => <Icon name="chevron" {...props} />
+export const ChevronDownIcon = (props: IconProps) => <Icon name="chevron" style={{ transform: "rotate(90deg)" }} {...props} />
