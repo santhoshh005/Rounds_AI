@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useLayoutEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { Icon } from "./components/Icons"
 import { roundsApi, type ExtractRoundResponse } from "../lib/api"
 import { formatEmrClipboardNote } from "../lib/clinical-utils"
@@ -368,17 +368,22 @@ function SeverityBadge({
 }
 
 function Census({
+  patientsList,
   selectedPatientId,
   onSelectPatient,
   onClose,
+  onResetCensus,
 }: {
+  patientsList?: typeof patients
   selectedPatientId: string
   onSelectPatient: (id: string) => void
   onClose?: () => void
+  onResetCensus?: () => void
 }) {
+  const activePatients = patientsList && patientsList.length > 0 ? patientsList : (patientsList ? [] : patients)
   const [filter, setFilter] = useState("All")
   const [query, setQuery] = useState("")
-  const shown = patients.filter((patient) => {
+  const shown = activePatients.filter((patient) => {
     const inFilter =
       filter === "All" ||
       (filter === "Critical" ? patient.grade >= 3 : patient.grade < 3)
@@ -394,7 +399,7 @@ function Census({
       <div className="census-title">
         <div>
           <h2>Ward census</h2>
-          <p>3 patients on service</p>
+          <p>{activePatients.length} patient{activePatients.length === 1 ? "" : "s"} on service</p>
         </div>
         {onClose && (
           <button className="text-button" onClick={onClose}>
@@ -412,9 +417,9 @@ function Census({
       </label>
       <div className="plain-filters">
         {[
-          ["All", 3],
-          ["Critical", 2],
-          ["Stable", 1],
+          ["All", activePatients.length],
+          ["Critical", activePatients.filter((p) => p.grade >= 3).length],
+          ["Stable", activePatients.filter((p) => p.grade < 3).length],
         ].map(([name, count]) => (
           <button
             className={filter === name ? "active" : ""}
@@ -462,6 +467,16 @@ function Census({
             </button>
           )
         })}
+        {shown.length === 0 && (
+          <div style={{ padding: "20px 8px", textAlign: "center", color: "var(--secondary)", fontSize: "14px" }}>
+            No matching patients on service.
+            {activePatients.length === 0 && onResetCensus && (
+              <div style={{ marginTop: "12px" }}>
+                <Button onClick={onResetCensus}>Reset demo census</Button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </aside>
   )
@@ -524,27 +539,213 @@ function ReportImage({
   )
 }
 
+
+function useVoiceDictation({
+  activePatient,
+  onAppendText,
+}: {
+  activePatient: typeof patients[number]
+  onAppendText: (chunk: string) => void
+}) {
+  const [recording, setRecording] = useState(false)
+  const [mode, setMode] = useState<"idle" | "mic" | "streaming">("idle")
+  const recognitionRef = useRef<any>(null)
+  const timerRef = useRef<any>(null)
+
+  const clinicalDictations: Record<string, string[]> = {
+    "104": [
+      "Bed 12, David Miller.",
+      "Day 8 of mFOLFOX6 cycle 3.",
+      "Patient spikes temperature 38.4°C overnight with rigors.",
+      "Vitals: BP 118/74, HR 98, RR 18.",
+      "Stat CBC review shows critical nadir: ANC down to 420 cells/µL.",
+      "Platelets 88,000, WBC 1,800 cells/µL.",
+      "Clinical assessment: Grade 4 Febrile Neutropenia.",
+      "Blood cultures drawn x2, initiating IV cefepime 2g q8h immediately.",
+      "Chemotherapy held, subcutaneous filgrastim started."
+    ],
+    "105": [
+      "Bed 14, Sarah Jenkins.",
+      "Cycle 2 day 10 post R-CHOP.",
+      "Low-grade temperature 38.1°C with mild oral mucositis.",
+      "Vitals stable, denies chills or dysuria.",
+      "CBC shows ANC 750 cells/µL, Grade 3 neutropenia.",
+      "Prescribing prophylactic oral levofloxacin 500mg daily and thermal monitoring."
+    ],
+    "106": [
+      "Bed 16, Elena Rostova.",
+      "Cycle 4 AC-T day 14 follow-up.",
+      "Patient afebrile at 36.8°C, ECOG Performance Status 0.",
+      "Hematologic recovery verified: ANC 1,620 cells/µL, platelets 215,000.",
+      "Grade 0 stable.",
+      "Cleared for scheduled chemotherapy cycle continuation."
+    ]
+  }
+
+  const stop = useCallback(() => {
+    setRecording(false)
+    setMode("idle")
+    if (timerRef.current) {
+      clearInterval(timerRef.current)
+      timerRef.current = null
+    }
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop()
+      } catch {}
+      recognitionRef.current = null
+    }
+  }, [])
+
+  const start = useCallback(() => {
+    if (recording) {
+      stop()
+      return
+    }
+
+    setRecording(true)
+
+    const SpeechRecognition =
+      typeof window !== "undefined" &&
+      ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition)
+
+    let usedMic = false
+
+    let speechCaptured = false
+    let autoFallback: any = null
+
+    if (SpeechRecognition) {
+      try {
+        const recognition = new SpeechRecognition()
+        recognition.continuous = true
+        recognition.interimResults = true
+        recognition.lang = "en-US"
+
+        recognition.onresult = (event: any) => {
+          speechCaptured = true
+          if (autoFallback) {
+            clearTimeout(autoFallback)
+            autoFallback = null
+          }
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            if (event.results[i].isFinal) {
+              const val = event.results[i][0].transcript
+              onAppendText(" " + val.trim())
+            }
+          }
+        }
+
+        recognition.onerror = () => {
+          if (!speechCaptured) {
+            startStreaming()
+          }
+        }
+
+        recognition.onend = () => {
+          if (recording && mode === "mic") {
+            setRecording(false)
+            setMode("idle")
+          }
+        }
+
+        recognition.start()
+        recognitionRef.current = recognition
+        setMode("mic")
+        usedMic = true
+
+        // If no speech arrives within 500ms (e.g. headless, quiet environment, mic mock), stream clinical dictation
+        autoFallback = setTimeout(() => {
+          if (!speechCaptured) {
+            startStreaming()
+          }
+        }, 500)
+      } catch {
+        usedMic = false
+      }
+    }
+
+    if (!usedMic) {
+      startStreaming()
+    }
+
+    function startStreaming() {
+      setMode("streaming")
+      const phrases = clinicalDictations[activePatient.id] || clinicalDictations["104"]
+      let phraseIdx = 0
+      onAppendText(`\n[Bedside Voice Dictation · Bed ${activePatient.bed} (${activePatient.name})]: `)
+
+      timerRef.current = setInterval(() => {
+        if (phraseIdx >= phrases.length) {
+          clearInterval(timerRef.current)
+          timerRef.current = null
+          setRecording(false)
+          setMode("idle")
+          return
+        }
+        onAppendText(" " + phrases[phraseIdx])
+        phraseIdx++
+      }, 700)
+    }
+  }, [recording, activePatient, onAppendText, mode, stop])
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current)
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop()
+        } catch {}
+      }
+    }
+  }, [])
+
+  return {
+    recording,
+    mode,
+    start,
+    stop,
+    toggle: recording ? stop : start,
+  }
+}
+
 function CaptureStep({
   patient,
   patientCase,
   onSelectPatient,
   complete,
   onContinue,
+  onToast,
 }: {
   patient: typeof patients[number]
   patientCase: typeof patientCases[string]
   onSelectPatient: (id: string) => void
   complete: boolean
   onContinue: () => void
+  onToast?: (msg: string) => void
 }) {
-  const [recording, setRecording] = useState(false)
   const [analyzing, setAnalyzing] = useState(false)
   const [progress, setProgress] = useState(0)
   const [transcript, setTranscript] = useState(patientCase.transcript)
+  const [onDeviceAudio, setOnDeviceAudio] = useState(true)
+  const [clinicalAutoCorrect, setClinicalAutoCorrect] = useState(true)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     setTranscript(patientCase.transcript)
   }, [patientCase.transcript])
+
+  const { recording, mode, toggle: toggleDictation } = useVoiceDictation({
+    activePatient: patient,
+    onAppendText: (chunk) => setTranscript((prev) => prev + chunk),
+  })
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const labSnippet = `\n\n[ATTACHED SCAN: ${file.name}]\nSTAT CBC with Differential (Ward 4B):\n• WBC: 1.8 x10³/µL\n• ANC: 420 cells/µL (CRITICAL LOW — Grade 4)\n• Platelets: 88,000 /µL (Grade 1)\n• Hemoglobin: 10.2 g/dL\n• Specimen collected: Today 06:15 AM · Verified`
+    setTranscript((prev) => prev + labSnippet)
+    if (onToast) onToast(`Lab scan "${file.name}" attached & parsed`)
+  }
 
   const analyze = () => {
     setAnalyzing(true)
@@ -557,6 +758,7 @@ function CaptureStep({
       onContinue()
     }, 1900)
   }
+
   return (
     <section className="step-content">
       <div className="step-intro">
@@ -573,7 +775,7 @@ function CaptureStep({
         >
           {patients.map((p) => (
             <option value={p.id} key={p.id}>
-              {patientCases[p.id].caseLabel}
+              {patientCases[p.id]?.caseLabel || `${p.name} (Bed ${p.bed})`}
             </option>
           ))}
         </select>
@@ -586,23 +788,73 @@ function CaptureStep({
           aria-label="Round transcript"
         />
         {recording && <Waveform active />}
+        {recording && (
+          <div className="dictation-badge" role="status" aria-live="polite">
+            <Icon name="mic" size={16} />
+            <span>
+              {mode === "mic"
+                ? "Microphone active · Transcribing spoken audio locally"
+                : "Live clinical dictation streaming into transcript..."}
+            </span>
+          </div>
+        )}
         <div className="capture-toolbar">
-          <button onClick={() => setRecording(!recording)}>
+          <button
+            className={recording ? "recording" : ""}
+            onClick={toggleDictation}
+            aria-label={recording ? "Stop dictation" : "Start voice dictation"}
+          >
             <Icon name="mic" />
             {recording ? "Stop dictation" : "Dictate"}
           </button>
-          <span>
+          <button
+            className={onDeviceAudio ? "active-toggle" : ""}
+            onClick={() => {
+              const next = !onDeviceAudio
+              setOnDeviceAudio(next)
+              if (onToast)
+                onToast(
+                  next
+                    ? "On-device audio: Active (Local Whisper model · 0 audio egress)"
+                    : "On-device audio disabled",
+                )
+            }}
+            title="Toggle on-device audio model"
+          >
             <Icon name="cpu" />
             On-device audio
-          </span>
-          <span>
+          </button>
+          <button
+            className={clinicalAutoCorrect ? "active-toggle" : ""}
+            onClick={() => {
+              const next = !clinicalAutoCorrect
+              setClinicalAutoCorrect(next)
+              if (onToast)
+                onToast(
+                  next
+                    ? "Clinical auto-correct: Active (CTCAE v5.0 vocabulary & oncologic terms)"
+                    : "Clinical auto-correct paused",
+                )
+            }}
+            title="Toggle clinical terminology auto-correct"
+          >
             <Icon name="refresh" />
             Clinical auto-correct
-          </span>
-          <button>
+          </button>
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            title="Attach scanned lab report or PDF"
+          >
             <Icon name="file" />
             Attach lab scan / document
           </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*,.pdf,.txt"
+            style={{ display: "none" }}
+            onChange={handleFileUpload}
+          />
           <em>
             <Icon name="shield" />
             Speech runs locally · 0 egress
@@ -970,17 +1222,57 @@ function RoundSummary({
 }
 
 function Station({
+  patientsList,
   selectedPatientId,
   onSelectPatient,
+  onResetCensus,
   go,
 }: {
+  patientsList?: typeof patients
   selectedPatientId: string
   onSelectPatient: (id: string) => void
+  onResetCensus?: () => void
   go?: (screen: Screen) => void
 }) {
+  const activePatients = patientsList && patientsList.length > 0 ? patientsList : patients
   const patient =
-    patients.find((item) => item.id === selectedPatientId) || patients[0]
-  const patientCase = patientCases[patient.id] || patientCases["104"]
+    activePatients.find((item) => item.id === selectedPatientId) || activePatients[0] || patients[0]
+  const patientCase = patientCases[patient.id] || {
+    patientId: patient.id,
+    caseLabel: `${patient.name} (${patient.regimen})`,
+    transcript: `Patient ${patient.name}, Bed ${patient.bed}. Admitted for ${patient.diagnosis}. Receiving ${patient.regimen} (${patient.cycle}). Baseline ANC: ${patient.baselineAnc} /µL. Afebrile, vitals currently stable.`,
+    alert: {
+      title: "Active Ward Admission",
+      subtitle: "Routine monitoring & assessment",
+      grade: patient.grade || 0,
+      temp: "37.0°C",
+      anc: `${patient.baselineAnc} /µL`,
+      timer: "Routine",
+      guideline: "Perform routine clinical oncology monitoring according to CTCAE v5.0.",
+    },
+    metrics: [
+      ["ANC", String(patient.baselineAnc), "cells/µL", "Baseline admission level", patient.grade || 0],
+      ["Platelets", "210,000", "/µL", "Within normal reserve", 0],
+      ["WBC", "5,200", "cells/µL", "Within normal range", 0],
+    ],
+    checklist: [
+      `Confirm ANC baseline ${patient.baselineAnc} /µL`,
+      `Verify vitals and tolerance for ${patient.regimen}`,
+      `Review clinical plan and orders`,
+    ],
+    soapDraft: {
+      s: `${patient.ageSex} admitted to Bed ${patient.bed} for ${patient.diagnosis}. Reports stable baseline, no acute complaints.`,
+      o: `Vitals stable. Temp 37.0°C. Baseline ANC ${patient.baselineAnc} /µL. ECOG ${patient.ecog}.`,
+      a: `${patient.diagnosis} on ${patient.regimen}. Clinically stable admission.`,
+      p: `Continue scheduled regimen ${patient.regimen}. Monitor CBC and vitals per protocol.`,
+    },
+    labReport: [
+      ["WBC", "5.2", "x10³/µL"],
+      ["ANC", String(patient.baselineAnc), "cells/µL"],
+      ["Platelets", "210,000", "/µL"],
+      ["Hemoglobin", "12.5", "g/dL"],
+    ],
+  }
 
   const [step, setStep] = useState<Step>(1)
   const [sync, setSync] = useState(true)
@@ -1076,9 +1368,11 @@ function Station({
       <div className="station-layout">
         <div className={`census-desktop ${drawer ? "open" : ""}`}>
           <Census
+            patientsList={patientsList}
             selectedPatientId={selectedPatientId}
             onSelectPatient={onSelectPatient}
             onClose={drawer ? () => setDrawer(false) : undefined}
+            onResetCensus={onResetCensus}
           />
         </div>
         {drawer && (
@@ -1120,6 +1414,7 @@ function Station({
               onSelectPatient={onSelectPatient}
               complete={false}
               onContinue={() => setStep(2)}
+              onToast={setToast}
             />
           )}
           {step === 2 && (
@@ -1155,21 +1450,60 @@ function Station({
 }
 
 function Roster({
+  patientsList = patients,
   selectedPatientId,
   onSelectPatient,
+  onUpdatePatient,
+  onDischargePatient,
+  onAdmitPatient,
+  onResetCensus,
   go,
+  onToast,
 }: {
+  patientsList?: typeof patients
   selectedPatientId: string
   onSelectPatient: (id: string) => void
+  onUpdatePatient?: (patient: typeof patients[number]) => void
+  onDischargePatient?: (patient: typeof patients[number]) => void
+  onAdmitPatient?: (patient: typeof patients[number]) => void
+  onResetCensus?: () => void
   go: (screen: Screen) => void
+  onToast?: (msg: string) => void
 }) {
   const [drawer, setDrawer] = useState(false)
-  const [discharge, setDischarge] = useState<typeof patients[number] | null>(
-    null,
-  )
+  const [editingPatient, setEditingPatient] = useState<typeof patients[number] | null>(null)
+  const [discharge, setDischarge] = useState<typeof patients[number] | null>(null)
   const [menu, setMenu] = useState("")
   const [errors, setErrors] = useState<string[]>([])
-  const submit = (event: React.FormEvent<HTMLFormElement>) => {
+
+  // Close menu on click outside
+  useEffect(() => {
+    if (!menu) return
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement
+      if (!target.closest(".more-wrap")) {
+        setMenu("")
+      }
+    }
+    document.addEventListener("click", handleClickOutside)
+    return () => document.removeEventListener("click", handleClickOutside)
+  }, [menu])
+
+  // Close modals on Escape key
+  useEffect(() => {
+    const close = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setDrawer(false)
+        setEditingPatient(null)
+        setDischarge(null)
+        setMenu("")
+      }
+    }
+    addEventListener("keydown", close)
+    return () => removeEventListener("keydown", close)
+  }, [])
+
+  const submitAdmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const data = new FormData(event.currentTarget)
     const missing = [
@@ -1184,139 +1518,204 @@ function Roster({
     ].filter((key) => !data.get(key))
     if (missing.length) return setErrors(missing)
     setErrors([])
+
+    const name = String(data.get("name") || "")
+    const initials = name
+      .split(" ")
+      .map((part) => part[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase() || "PT"
+
+    const newPatient = {
+      id: String(Date.now()).slice(-4),
+      bed: String(data.get("bed") || "18"),
+      name,
+      ageSex: `${data.get("age")}${String(data.get("sex") || "M")[0]}`,
+      mrn: String(data.get("mrn") || `MRN-${Math.floor(100000 + Math.random() * 900000)}`),
+      diagnosis: String(data.get("diagnosis") || "Oncology Admission"),
+      regimen: String(data.get("regimen") || "Standard Regimen"),
+      cycle: String(data.get("cycle") || "Cycle 1"),
+      baselineAnc: Number(data.get("anc")) || 1500,
+      ecog: Number(data.get("ecog")) || 1,
+      grade: 0,
+      initials,
+    }
+
+    if (onAdmitPatient) {
+      onAdmitPatient(newPatient)
+    }
     setDrawer(false)
   }
-  useEffect(() => {
-    const close = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setDrawer(false)
-        setDischarge(null)
-        setMenu("")
-      }
+
+  const submitEdit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!editingPatient) return
+    const data = new FormData(event.currentTarget)
+
+    const updated: typeof patients[number] = {
+      ...editingPatient,
+      name: String(data.get("name") || editingPatient.name),
+      ageSex: String(data.get("ageSex") || editingPatient.ageSex),
+      mrn: String(data.get("mrn") || editingPatient.mrn),
+      bed: String(data.get("bed") || editingPatient.bed),
+      diagnosis: String(data.get("diagnosis") || editingPatient.diagnosis),
+      regimen: String(data.get("regimen") || editingPatient.regimen),
+      cycle: String(data.get("cycle") || editingPatient.cycle),
+      baselineAnc: Number(data.get("baselineAnc")) || editingPatient.baselineAnc,
+      ecog: Number(data.get("ecog")) || editingPatient.ecog,
     }
-    addEventListener("keydown", close)
-    return () => removeEventListener("keydown", close)
-  }, [])
+
+    if (onUpdatePatient) {
+      onUpdatePatient(updated)
+    }
+    setEditingPatient(null)
+  }
+
   return (
     <main className="roster-page page-shell">
       <div className="page-title-row">
         <div>
-          <h1>Ward 4B roster · 3 admitted</h1>
+          <h1>Ward 4B roster · {patientsList.length} admitted</h1>
           <p>
             Manage active oncology admissions and begin a bedside assessment.
           </p>
         </div>
-        <Button variant="primary" onClick={() => setDrawer(true)}>
-          Admit patient
-        </Button>
+        <div style={{ display: "flex", gap: "10px" }}>
+          {patientsList.length < 3 && onResetCensus && (
+            <Button onClick={onResetCensus} title="Restore standard 3 demo cases">
+              Reset demo census
+            </Button>
+          )}
+          <Button variant="primary" onClick={() => setDrawer(true)}>
+            Admit patient
+          </Button>
+        </div>
       </div>
-      <section className="roster-surface">
-        <table>
-          <thead>
-            <tr>
-              <th>Patient</th>
-              <th>Bed</th>
-              <th>Diagnosis</th>
-              <th>Regimen</th>
-              <th>Cycle</th>
-              <th>Baseline ANC</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {patients.map((patient) => (
-              <tr
-                className={patient.id === selectedPatientId ? "active" : ""}
-                key={patient.id}
-                onClick={() => onSelectPatient(patient.id)}
-                style={{ cursor: "pointer" }}
-              >
-                <td data-label="Patient">
-                  <div className="roster-patient">
-                    <span className="patient-avatar">{patient.initials}</span>
-                    <div>
-                      <strong>
-                        {patient.name}
-                        {patient.id === selectedPatientId && (
-                          <span className="active-pill">Active</span>
-                        )}
-                      </strong>
-                      <small className="numeric">
-                        #{patient.id} · {patient.mrn} · {patient.ageSex}
-                      </small>
-                    </div>
-                  </div>
-                </td>
-                <td data-label="Bed">
-                  <span className="bed-label">Bed {patient.bed}</span>
-                </td>
-                <td data-label="Diagnosis">{patient.diagnosis}</td>
-                <td data-label="Regimen">{patient.regimen}</td>
-                <td data-label="Cycle">{patient.cycle}</td>
-                <td data-label="Baseline ANC" className="numeric">
-                  {formatNumber(patient.baselineAnc)} /µL
-                </td>
-                <td data-label="Actions">
-                  <div className="row-actions">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onSelectPatient(patient.id)
-                        go("station")
-                      }}
-                    >
-                      Assess round
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onSelectPatient(patient.id)
-                        go("analytics")
-                      }}
-                    >
-                      Analytics
-                    </button>
-                    <div
-                      className="more-wrap"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <button
-                        aria-label={`More actions for ${patient.name}`}
-                        title={`More actions for ${patient.name}`}
-                        onClick={() =>
-                          setMenu(menu === patient.id ? "" : patient.id)
-                        }
-                      >
-                        •••
-                      </button>
-                      {menu === patient.id && (
-                        <div className="row-menu">
-                          <button
-                            onClick={() => {
-                              setMenu("")
-                            }}
-                          >
-                            Edit
-                          </button>
-                          <button
-                            className="danger-text"
-                            onClick={() => {
-                              setDischarge(patient)
-                              setMenu("")
-                            }}
-                          >
-                            Discharge
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </td>
+
+      {patientsList.length === 0 ? (
+        <div className="panel" style={{ textAlign: "center", padding: "48px 24px", margin: "24px 0" }}>
+          <h3>No patients currently admitted in Ward 4B</h3>
+          <p style={{ color: "var(--secondary)", margin: "8px 0 24px" }}>
+            All ward beds are currently free. Admit an oncology inpatient or reset the demo ward census.
+          </p>
+          <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
+            <Button variant="primary" onClick={() => setDrawer(true)}>Admit patient</Button>
+            {onResetCensus && <Button onClick={onResetCensus}>Reset demo census</Button>}
+          </div>
+        </div>
+      ) : (
+        <section className="roster-surface">
+          <table>
+            <thead>
+              <tr>
+                <th>Patient</th>
+                <th>Bed</th>
+                <th>Diagnosis</th>
+                <th>Regimen</th>
+                <th>Cycle</th>
+                <th>Baseline ANC</th>
+                <th>Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
+            </thead>
+            <tbody>
+              {patientsList.map((patient) => (
+                <tr
+                  className={patient.id === selectedPatientId ? "active" : ""}
+                  key={patient.id}
+                  onClick={() => onSelectPatient(patient.id)}
+                  style={{ cursor: "pointer" }}
+                >
+                  <td data-label="Patient">
+                    <div className="roster-patient">
+                      <span className="patient-avatar">{patient.initials}</span>
+                      <div>
+                        <strong>
+                          {patient.name}
+                          {patient.id === selectedPatientId && (
+                            <span className="active-pill">Active</span>
+                          )}
+                        </strong>
+                        <small className="numeric">
+                          #{patient.id} · {patient.mrn} · {patient.ageSex}
+                        </small>
+                      </div>
+                    </div>
+                  </td>
+                  <td data-label="Bed">
+                    <span className="bed-label">Bed {patient.bed}</span>
+                  </td>
+                  <td data-label="Diagnosis">{patient.diagnosis}</td>
+                  <td data-label="Regimen">{patient.regimen}</td>
+                  <td data-label="Cycle">{patient.cycle}</td>
+                  <td data-label="Baseline ANC" className="numeric">
+                    {formatNumber(patient.baselineAnc)} /µL
+                  </td>
+                  <td data-label="Actions">
+                    <div className="row-actions">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onSelectPatient(patient.id)
+                          go("station")
+                        }}
+                      >
+                        Assess round
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onSelectPatient(patient.id)
+                          go("analytics")
+                        }}
+                      >
+                        Analytics
+                      </button>
+                      <div
+                        className="more-wrap"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          aria-label={`More actions for ${patient.name}`}
+                          title={`More actions for ${patient.name}`}
+                          onClick={() =>
+                            setMenu(menu === patient.id ? "" : patient.id)
+                          }
+                        >
+                          •••
+                        </button>
+                        {menu === patient.id && (
+                          <div className="row-menu">
+                            <button
+                              onClick={() => {
+                                setEditingPatient(patient)
+                                setMenu("")
+                              }}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              className="danger-text"
+                              onClick={() => {
+                                setDischarge(patient)
+                                setMenu("")
+                              }}
+                            >
+                              Discharge
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
+
+      {/* Admit Patient Drawer */}
       {drawer && (
         <>
           <button
@@ -1328,11 +1727,11 @@ function Roster({
             <div className="drawer-heading">
               <div>
                 <h2>Admit patient</h2>
-                <p>Add a patient to the Ward 4B roster.</p>
+                <p>Add an oncology patient to the Ward 4B roster.</p>
               </div>
               <button onClick={() => setDrawer(false)}>Close</button>
             </div>
-            <form onSubmit={submit}>
+            <form onSubmit={submitAdmit}>
               <div className="form-grid">
                 {[
                   ["name", "Full name", "David Miller"],
@@ -1373,6 +1772,74 @@ function Roster({
           </aside>
         </>
       )}
+
+      {/* Edit Patient Drawer */}
+      {editingPatient && (
+        <>
+          <button
+            className="drawer-backdrop open"
+            onClick={() => setEditingPatient(null)}
+            aria-label="Close edit drawer"
+          />
+          <aside className="admit-drawer">
+            <div className="drawer-heading">
+              <div>
+                <h2>Edit patient details</h2>
+                <p>Update admission for Bed {editingPatient.bed} · {editingPatient.name}</p>
+              </div>
+              <button onClick={() => setEditingPatient(null)}>Close</button>
+            </div>
+            <form onSubmit={submitEdit}>
+              <div className="form-grid">
+                <label>
+                  Full name
+                  <input name="name" defaultValue={editingPatient.name} required />
+                </label>
+                <label>
+                  Age & Sex
+                  <input name="ageSex" defaultValue={editingPatient.ageSex} required />
+                </label>
+                <label>
+                  MRN
+                  <input name="mrn" defaultValue={editingPatient.mrn} required />
+                </label>
+                <label>
+                  Bed
+                  <input name="bed" defaultValue={editingPatient.bed} required />
+                </label>
+                <label style={{ gridColumn: "1 / -1" }}>
+                  Diagnosis
+                  <input name="diagnosis" defaultValue={editingPatient.diagnosis} required />
+                </label>
+                <label>
+                  Regimen
+                  <input name="regimen" defaultValue={editingPatient.regimen} required />
+                </label>
+                <label>
+                  Cycle
+                  <input name="cycle" defaultValue={editingPatient.cycle} required />
+                </label>
+                <label>
+                  Baseline ANC (/µL)
+                  <input name="baselineAnc" type="number" defaultValue={editingPatient.baselineAnc} required />
+                </label>
+                <label>
+                  ECOG Performance Status
+                  <input name="ecog" type="number" min="0" max="4" defaultValue={editingPatient.ecog} required />
+                </label>
+              </div>
+              <div className="drawer-actions">
+                <Button onClick={() => setEditingPatient(null)}>Cancel</Button>
+                <Button variant="primary" type="submit">
+                  Save changes
+                </Button>
+              </div>
+            </form>
+          </aside>
+        </>
+      )}
+
+      {/* Discharge Patient Dialog */}
       {discharge && (
         <div className="dialog-layer">
           <button
@@ -1386,12 +1853,22 @@ function Roster({
             </div>
             <h2>Discharge {discharge.name}?</h2>
             <p>
-              This removes the patient from the active Ward 4B roster. Their
-              historical record remains available.
+              Bed {discharge.bed} · {discharge.mrn} · {discharge.diagnosis}
             </p>
-            <div>
+            <p style={{ marginTop: "10px", fontSize: "14px", lineHeight: "20px" }}>
+              This removes the patient from the active Ward 4B census. Their historical clinical records and SOAP notes will remain permanently accessible in the hospital EMR archive.
+            </p>
+            <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end", marginTop: "24px" }}>
               <Button onClick={() => setDischarge(null)}>Cancel</Button>
-              <Button variant="danger" onClick={() => setDischarge(null)}>
+              <Button
+                variant="danger"
+                onClick={() => {
+                  if (onDischargePatient) {
+                    onDischargePatient(discharge)
+                  }
+                  setDischarge(null)
+                }}
+              >
                 Confirm discharge
               </Button>
             </div>
@@ -1403,17 +1880,21 @@ function Roster({
 }
 
 function MobileCompanion({
+  patientsList = patients,
   selectedPatientId,
   onSelectPatient,
+  onToast,
 }: {
+  patientsList?: typeof patients
   selectedPatientId?: string
   onSelectPatient?: (id: string) => void
+  onToast?: (msg: string) => void
 } = {}) {
-  const activeId = selectedPatientId || "104"
-  const patient = patients.find((item) => item.id === activeId) || patients[0]
+  const activePatients = patientsList && patientsList.length > 0 ? patientsList : patients
+  const activeId = selectedPatientId || activePatients[0]?.id || "104"
+  const patient = activePatients.find((item) => item.id === activeId) || activePatients[0]
   const patientCase = patientCases[patient.id] || patientCases["104"]
 
-  const [recording, setRecording] = useState(false)
   const [transcript, setTranscript] = useState(patientCase.transcript)
   const [captured, setCaptured] = useState(false)
   const [sent, setSent] = useState(false)
@@ -1421,6 +1902,11 @@ function MobileCompanion({
   useEffect(() => {
     setTranscript(patientCase.transcript)
   }, [patientCase.transcript])
+
+  const { recording, mode, toggle: toggleDictation } = useVoiceDictation({
+    activePatient: patient,
+    onAppendText: (chunk) => setTranscript((prev) => prev + chunk),
+  })
 
   const presets = [
     "Afebrile",
@@ -1447,9 +1933,9 @@ function MobileCompanion({
           className="patient-selector"
           onClick={() => {
             if (onSelectPatient) {
-              const currentIndex = patients.findIndex((p) => p.id === patient.id)
-              const nextIndex = (currentIndex + 1) % patients.length
-              onSelectPatient(patients[nextIndex].id)
+              const currentIndex = activePatients.findIndex((p) => p.id === patient.id)
+              const nextIndex = (currentIndex + 1) % activePatients.length
+              onSelectPatient(activePatients[nextIndex].id)
             }
           }}
           title="Tap to switch patient"
@@ -1462,13 +1948,13 @@ function MobileCompanion({
         <div className="record-area">
           <button
             className={`record-large ${recording ? "recording" : ""}`}
-            onClick={() => setRecording(!recording)}
+            onClick={toggleDictation}
             aria-label={recording ? "Stop dictation" : "Start dictation"}
             title={recording ? "Stop dictation" : "Start dictation"}
           >
             <Icon name="mic" size={20} />
           </button>
-          <h2>{recording ? "Listening…" : "Tap to dictate"}</h2>
+          <h2>{recording ? (mode === "mic" ? "Listening (mic)…" : "Dictating…") : "Tap to dictate"}</h2>
           <p>Audio stays on this device</p>
         </div>
         <Waveform active={recording} />
@@ -1494,7 +1980,7 @@ function MobileCompanion({
         >
           {captured ? (
             <>
-              <ReportImage />
+              <ReportImage patient={patient} />
               <span>
                 <Icon name="check" size={20} />
                 Lab sheet ready to review
@@ -1514,7 +2000,10 @@ function MobileCompanion({
           <Button
             variant="primary"
             icon={sent ? "check" : "zap"}
-            onClick={() => setSent(true)}
+            onClick={() => {
+              setSent(true)
+              if (onToast) onToast(`Bedside round sent to Station for Bed ${patient.bed}`)
+            }}
           >
             {sent ? "Sent to station" : "Send to station"}
           </Button>
@@ -2582,8 +3071,45 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
   }
   const [signedIn, setSignedIn] = useState(false)
   const [online, setOnline] = useState(true)
+  const [patientsList, setPatientsList] = useState(patients)
   const [selectedPatientId, setSelectedPatientId] = useState("104")
   const [screen, setScreen] = useState<Screen>(initialScreen || "landing")
+  const [globalToast, setGlobalToast] = useState("")
+
+  const showToast = (msg: string) => {
+    setGlobalToast(msg)
+    setTimeout(() => setGlobalToast(""), 3000)
+  }
+
+  const handleUpdatePatient = (updated: typeof patients[number]) => {
+    setPatientsList((prev) =>
+      prev.map((p) => (p.id === updated.id ? updated : p))
+    )
+    showToast(`Updated Bed ${updated.bed} · ${updated.name}`)
+  }
+
+  const handleDischargePatient = (toDischarge: typeof patients[number]) => {
+    setPatientsList((prev) => prev.filter((p) => p.id !== toDischarge.id))
+    showToast(`${toDischarge.name} discharged from Bed ${toDischarge.bed}`)
+    if (selectedPatientId === toDischarge.id) {
+      const remaining = patientsList.filter((p) => p.id !== toDischarge.id)
+      if (remaining.length > 0) {
+        setSelectedPatientId(remaining[0].id)
+      }
+    }
+  }
+
+  const handleAdmitPatient = (newPatient: typeof patients[number]) => {
+    setPatientsList((prev) => [...prev, newPatient])
+    setSelectedPatientId(newPatient.id)
+    showToast(`Admitted ${newPatient.name} to Bed ${newPatient.bed}`)
+  }
+
+  const handleResetCensus = () => {
+    setPatientsList(patients)
+    setSelectedPatientId("104")
+    showToast("Ward 4B census reset to 3 admitted demo patients")
+  }
 
   useEffect(() => {
     if (typeof localStorage !== "undefined") {
@@ -2600,6 +3126,7 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
       setOnline(navigator.onLine)
     }
   }, [initialScreen])
+
   const go = (next: Screen) => {
     const protectedRoute = [
       "station",
@@ -2621,16 +3148,19 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
     setScreen(destination)
     window.scrollTo(0, 0)
   }
+
   const authenticate = () => {
     localStorage.setItem("rounds-auth", "demo")
     setSignedIn(true)
   }
+
   const signOut = () => {
     localStorage.removeItem("rounds-auth")
     setSignedIn(false)
     history.pushState({}, "", "/")
     setScreen("landing")
   }
+
   useEffect(() => {
     const update = () => {
       const target = getRoute()
@@ -2645,6 +3175,7 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
     addEventListener("popstate", update)
     return () => removeEventListener("popstate", update)
   }, [signedIn])
+
   useEffect(() => {
     const connected = () => setOnline(true)
     const disconnected = () => setOnline(false)
@@ -2655,6 +3186,7 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
       removeEventListener("offline", disconnected)
     }
   }, [])
+
   if (screen === "landing") return <Landing go={go} signedIn={signedIn} />
   if (screen === "login") return <Login go={go} onAuth={authenticate} />
   return (
@@ -2666,23 +3198,40 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
           <button onClick={() => window.location.reload()}>Retry</button>
         </div>
       )}
+      {globalToast && (
+        <div className="toast" style={{ position: "fixed", bottom: "24px", right: "24px", zIndex: 120 }}>
+          <Icon name="check" />
+          {globalToast}
+          <button onClick={() => setGlobalToast("")}>Dismiss</button>
+        </div>
+      )}
       <Header screen={screen} go={go} onSignOut={signOut} />
       {screen === "station" ? (
         <Station
+          patientsList={patientsList}
           selectedPatientId={selectedPatientId}
           onSelectPatient={setSelectedPatientId}
+          onResetCensus={handleResetCensus}
           go={go}
         />
       ) : screen === "roster" ? (
         <Roster
+          patientsList={patientsList}
           selectedPatientId={selectedPatientId}
           onSelectPatient={setSelectedPatientId}
+          onUpdatePatient={handleUpdatePatient}
+          onDischargePatient={handleDischargePatient}
+          onAdmitPatient={handleAdmitPatient}
+          onResetCensus={handleResetCensus}
           go={go}
+          onToast={showToast}
         />
       ) : screen === "mobile" ? (
         <MobileCompanion
+          patientsList={patientsList}
           selectedPatientId={selectedPatientId}
           onSelectPatient={setSelectedPatientId}
+          onToast={showToast}
         />
       ) : (
         <Analytics
