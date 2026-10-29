@@ -10,7 +10,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "node --test --experimental-strip-types lib/clinical-utils.test.ts",
+    "test": "node --test --experimental-strip-types lib/clinical-utils.test.ts lib/oncology-autocorrect.test.ts",
     "test:e2e": "node e2e_button_test.mjs"
   },
   "dependencies": {
