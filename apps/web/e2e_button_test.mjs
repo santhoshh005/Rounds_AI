@@ -2,7 +2,7 @@ import { chromium } from "playwright";
 import fs from "fs";
 import path from "path";
 
-const ARTIFACT_DIR = "C:\\Users\\saisa\\.gemini\antigravity\\brain\\c68413c6-d89d-4149-9a5c-5c229ff3649c";
+const ARTIFACT_DIR = "C:\\Users\\saisa\\.gemini\\antigravity\\brain\\c68413c6-d89d-4149-9a5c-5c229ff3649c";
 const BASE_URL = "http://localhost:3000";
 
 async function main() {
