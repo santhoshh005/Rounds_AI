@@ -48,7 +48,8 @@ def _transcribe_with_gemini(audio_bytes: bytes, mime_type: str) -> Optional[str]
     if not api_key:
         return None
 
-    model_name = os.getenv("GEMINI_MODEL_DRAFT", "gemini-3.5-flash")
+    model_name = os.getenv("GEMINI_MODEL_DRAFT", "gemini-2.5-flash")
+    candidate_models = [m for m in (model_name, "gemini-2.5-pro", "gemini-1.5-flash", "gemini-1.5-pro") if m]
 
     try:
         from google import genai
@@ -66,18 +67,22 @@ def _transcribe_with_gemini(audio_bytes: bytes, mime_type: str) -> Optional[str]
             "Return ONLY the clean, verbatim clinical transcript without conversational commentary."
         )
 
-        response = client.models.generate_content(
-            model=model_name,
-            contents=[audio_part, prompt],
-            config=types.GenerateContentConfig(
-                temperature=0.0,
-                max_output_tokens=800,
-            ),
-        )
-
-        if response.text and response.text.strip():
-            logger.info("Transcribed audio using Gemini Multimodal Audio (%s).", model_name)
-            return response.text.strip()
+        for candidate in candidate_models:
+            try:
+                response = client.models.generate_content(
+                    model=candidate,
+                    contents=[audio_part, prompt],
+                    config=types.GenerateContentConfig(
+                        temperature=0.0,
+                        max_output_tokens=800,
+                    ),
+                )
+                if response.text and response.text.strip():
+                    logger.info("Transcribed audio using Gemini Multimodal Audio (%s).", candidate)
+                    return response.text.strip()
+            except Exception as call_exc:
+                logger.warning("Gemini model %s failed: %s, checking next fallback...", candidate, call_exc)
+                continue
     except Exception as exc:
         err_msg = str(exc)
         if "404" in err_msg or "not found" in err_msg.lower():

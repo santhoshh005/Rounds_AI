@@ -1,3 +1,5 @@
+import { autocorrectOncologyTranscript } from "./oncology-autocorrect"
+
 export type ExtractRoundResponse = {
   round_id: string
   patient_id?: string
@@ -74,16 +76,28 @@ export const roundsApi = {
       method: "POST",
       body: JSON.stringify(body),
     }),
-  autocorrect: (text: string) =>
-    request<{
-      original_text: string
-      corrected_text: string
-      changes: { original: string; replacement: string }[]
-      engine: string
-    }>("/api/v1/clinical/autocorrect", {
-      method: "POST",
-      body: JSON.stringify({ text, use_gemini: true }),
-    }),
+  autocorrect: async (text: string) => {
+    try {
+      return await request<{
+        original_text: string
+        corrected_text: string
+        changes: { original: string; replacement: string }[]
+        engine: string
+      }>("/api/v1/clinical/autocorrect", {
+        method: "POST",
+        body: JSON.stringify({ text, use_gemini: true }),
+      })
+    } catch {
+      // Deterministic rule-based fallback when offline or backend unavailable
+      const local = autocorrectOncologyTranscript(text)
+      return {
+        original_text: text,
+        corrected_text: local.correctedText,
+        changes: local.changes.map((c) => ({ original: c.original, replacement: c.corrected })),
+        engine: "rule_based_oncology (offline deterministic CPU)",
+      }
+    }
+  },
   approve: (roundId: string, body: { note_id?: string; approved_by: string }) =>
     request<{ status: "approved"; round_id: string; approved_at: string }>(
       `/api/v1/rounds/${roundId}/approve`,

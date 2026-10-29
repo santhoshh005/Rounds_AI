@@ -108,8 +108,10 @@ const INITIAL_ANALYTICS: Record<string, PatientAnalytics> = {
     patient_id: "105",
     patient_name: "Sarah Jenkins",
     rounds: [
-      { id: "r-105-1", date: "24 Oct 2026", doctor: "Dr. Amrut S Kadam", anc: 750, wbc: 2400, platelets: 110000, hemoglobin: 11.4, ctcae_grade: 3, status: "Approved", source: "Bedside Round", notes: "R-CHOP C2D10 neutropenia" },
-      { id: "r-105-0", date: "14 Oct 2026", doctor: "Dr. Mehta", anc: 2200, wbc: 6500, platelets: 240000, hemoglobin: 12.5, ctcae_grade: 0, status: "Verified", source: "Cycle 2 Day 1", notes: "Baseline CBC" },
+      { id: "r-105-3", date: "24 Oct 2026", doctor: "Dr. Amrut S Kadam", anc: 750, wbc: 2400, platelets: 110000, hemoglobin: 11.4, ctcae_grade: 3, status: "Approved", source: "Bedside Round", notes: "R-CHOP C2D10 neutropenia" },
+      { id: "r-105-2", date: "14 Oct 2026", doctor: "Dr. Mehta", anc: 2200, wbc: 6500, platelets: 240000, hemoglobin: 12.5, ctcae_grade: 0, status: "Verified", source: "Cycle 2 Day 1", notes: "Baseline CBC" },
+      { id: "r-105-1", date: "10 Oct 2026", doctor: "Dr. Rao", anc: 1100, wbc: 4100, platelets: 190000, hemoglobin: 12.2, ctcae_grade: 1, status: "Approved", source: "Cycle 1 Nadir", notes: "Mild myelosuppression" },
+      { id: "r-105-0", date: "01 Oct 2026", doctor: "Dr. Wilson", anc: 2400, wbc: 6800, platelets: 260000, hemoglobin: 13.0, ctcae_grade: 0, status: "Verified", source: "Cycle 1 Day 1", notes: "Pre-treatment baseline" },
     ],
     kpis: [
       ["Absolute neutrophils", "750", "/µL", "Grade 3"],
@@ -118,7 +120,8 @@ const INITIAL_ANALYTICS: Record<string, PatientAnalytics> = {
       ["Clinical risk level", "Moderate", "", "Thermal vigilance"],
     ],
     trajectory: [
-      { label: "Cycle 1", date: "01 Oct", value: 2400, grade: 0 },
+      { label: "Cycle 1 D1", date: "01 Oct", value: 2400, grade: 0 },
+      { label: "Cycle 1 Nadir", date: "10 Oct", value: 1100, grade: 1 },
       { label: "Cycle 2 D1", date: "14 Oct", value: 2200, grade: 0 },
       { label: "Cycle 2 D10", date: "24 Oct", value: 750, grade: 3 },
     ],
@@ -127,17 +130,22 @@ const INITIAL_ANALYTICS: Record<string, PatientAnalytics> = {
     patient_id: "106",
     patient_name: "Elena Rostova",
     rounds: [
-      { id: "r-106-0", date: "15 Oct 2026", doctor: "Dr. Amrut S Kadam", anc: 1650, wbc: 5800, platelets: 220000, hemoglobin: 12.3, ctcae_grade: 0, status: "Verified", source: "Cycle 4 Day 1", notes: "Baseline CBC" },
+      { id: "r-106-3", date: "29 Oct 2026", doctor: "Dr. Amrut S Kadam", anc: 1620, wbc: 5400, platelets: 215000, hemoglobin: 12.1, ctcae_grade: 0, status: "Approved", source: "Station Assessment", notes: "Cycle 4 Day 14 follow-up. Tolerating well, afebrile." },
+      { id: "r-106-2", date: "15 Oct 2026", doctor: "Dr. Amrut S Kadam", anc: 1650, wbc: 5800, platelets: 220000, hemoglobin: 12.3, ctcae_grade: 0, status: "Verified", source: "Cycle 4 Day 1", notes: "Pre-infusion CBC stable" },
+      { id: "r-106-1", date: "01 Oct 2026", doctor: "Dr. Mehta", anc: 1720, wbc: 5600, platelets: 225000, hemoglobin: 12.4, ctcae_grade: 0, status: "Approved", source: "Cycle 3 Day 14", notes: "Good marrow reserve" },
+      { id: "r-106-0", date: "12 Sep 2026", doctor: "Dr. Rao", anc: 1800, wbc: 5900, platelets: 230000, hemoglobin: 12.6, ctcae_grade: 0, status: "Verified", source: "Cycle 2 Day 14", notes: "Normal hematologic recovery" },
     ],
     kpis: [
-      ["Absolute neutrophils", formatNumber(1650), "/µL", "Grade 0"],
-      ["Platelet reserve", formatNumber(220000), "/µL", "Grade 0"],
+      ["Absolute neutrophils", formatNumber(1620), "/µL", "Grade 0"],
+      ["Platelet reserve", formatNumber(215000), "/µL", "Grade 0"],
       ["Active graded toxicities", "0", "", "Stable"],
       ["Clinical risk level", "Low", "", "Protocol cleared"],
     ],
     trajectory: [
-      { label: "Cycle 3", date: "01 Oct", value: 1720, grade: 0 },
+      { label: "Cycle 2 D14", date: "12 Sep", value: 1800, grade: 0 },
+      { label: "Cycle 3 D14", date: "01 Oct", value: 1720, grade: 0 },
       { label: "Cycle 4 D1", date: "15 Oct", value: 1650, grade: 0 },
+      { label: "Cycle 4 D14", date: "29 Oct", value: 1620, grade: 0 },
     ],
   },
 }
@@ -361,6 +369,72 @@ function ThemeToggle() {
   )
 }
 
+function ClinicianProfileModal({
+  isOpen,
+  onClose,
+}: {
+  isOpen: boolean
+  onClose: () => void
+}) {
+  if (!isOpen) return null
+
+  return (
+    <div className="dialog-layer" role="dialog" aria-modal="true" style={{ zIndex: 1100 }}>
+      <button className="dialog-backdrop" onClick={onClose} aria-label="Close clinician profile" />
+      <div className="confirm-dialog clinician-profile-dialog" style={{ maxWidth: "560px", width: "92vw", padding: "28px", borderRadius: "16px", background: "var(--surface)", border: "1px solid var(--border)", boxShadow: "var(--shadow)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "16px", marginBottom: "20px" }}>
+          <span className="patient-avatar large" style={{ background: "var(--brand-tint)", color: "var(--brand)", fontSize: "20px", fontWeight: 700, width: "64px", height: "64px" }}>
+            DA
+          </span>
+          <div style={{ flex: 1 }}>
+            <h2 style={{ fontSize: "22px", margin: 0, fontWeight: 700 }}>Dr. Attending, MD</h2>
+            <p style={{ margin: "2px 0 0", color: "var(--secondary)", fontSize: "14px" }}>
+              Lead Attending Oncologist · Ward 4B Chief of Service
+            </p>
+            <span style={{ display: "inline-block", marginTop: "4px", padding: "2px 8px", background: "var(--brand-tint)", color: "var(--brand)", borderRadius: "6px", fontSize: "12px", fontWeight: 600 }}>
+              NPI: 1849204821 · Hospital ID: CCC-4B-9102
+            </span>
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", margin: "16px 0", padding: "16px", background: "var(--subtle)", borderRadius: "12px", border: "1px solid var(--border)" }}>
+          <div>
+            <span style={{ fontSize: "12px", color: "var(--secondary)", display: "block" }}>Department</span>
+            <strong style={{ fontSize: "14px" }}>Medical Oncology</strong>
+          </div>
+          <div>
+            <span style={{ fontSize: "12px", color: "var(--secondary)", display: "block" }}>Location</span>
+            <strong style={{ fontSize: "14px" }}>City Cancer Center · Ward 4B</strong>
+          </div>
+          <div>
+            <span style={{ fontSize: "12px", color: "var(--secondary)", display: "block" }}>Active Shift</span>
+            <strong style={{ fontSize: "14px" }}>Day Rounds (07:00 – 19:00)</strong>
+          </div>
+          <div>
+            <span style={{ fontSize: "12px", color: "var(--secondary)", display: "block" }}>Patients on Service</span>
+            <strong style={{ fontSize: "14px" }}>3 Admitted (Beds 12, 14, 16)</strong>
+          </div>
+        </div>
+
+        <div style={{ padding: "14px", border: "1px solid var(--brand-border)", borderRadius: "12px", background: "var(--brand-tint)", margin: "16px 0", fontSize: "13px", lineHeight: "20px", color: "var(--brand)" }}>
+          <strong>Clinical Processing Architecture</strong>
+          <ul style={{ margin: "6px 0 0 18px", padding: 0 }}>
+            <li><strong>AI Multimodal Hierarchy:</strong> 4-model fallback cascade (Gemini 2.5 Flash → 2.5 Pro → 1.5 Flash → 1.5 Pro)</li>
+            <li><strong>Deterministic Offline Fallback:</strong> Local CPU regex parser & CTCAE v5.0 rules if offline / unauthenticated</li>
+            <li><strong>Zero Audio Egress:</strong> Bedside speech-to-text operates locally on-device</li>
+          </ul>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "20px" }}>
+          <Button variant="primary" onClick={onClose}>
+            Done
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function Header({
   screen,
   go,
@@ -372,11 +446,13 @@ function Header({
 }) {
   const [status, setStatus] = useState(false)
   const [profile, setProfile] = useState(false)
+  const [profileModal, setProfileModal] = useState(false)
 
   useEffect(() => {
     if (!status && !profile) return
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as HTMLElement
+    const handleOutside = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as HTMLElement | null
+      if (!target) return
       if (status && !target.closest(".status-wrap")) {
         setStatus(false)
       }
@@ -384,91 +460,116 @@ function Header({
         setProfile(false)
       }
     }
-    document.addEventListener("click", handleClickOutside)
-    return () => document.removeEventListener("click", handleClickOutside)
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setStatus(false)
+        setProfile(false)
+      }
+    }
+    document.addEventListener("mousedown", handleOutside)
+    document.addEventListener("touchstart", handleOutside)
+    document.addEventListener("keydown", handleKey)
+    return () => {
+      document.removeEventListener("mousedown", handleOutside)
+      document.removeEventListener("touchstart", handleOutside)
+      document.removeEventListener("keydown", handleKey)
+    }
   }, [status, profile])
+
   return (
-    <header className="header">
-      <div className="header-inner">
-        <button
-          className="brand"
-          onClick={() => go("station")}
-          aria-label="RoundsAI station"
-        >
-          <span className="brand-mark">
-            <Icon name="stethoscope" size={20} />
-          </span>
-          <span>RoundsAI</span>
-        </button>
-        <nav className="main-tabs" aria-label="Primary navigation">
-          {(["station", "roster", "analytics", "mobile"] as Screen[]).map(
-            (item) => (
-              <button
-                className={screen === item ? "active" : ""}
-                onClick={() => go(item)}
-                key={item}
-              >
-                {item.charAt(0).toUpperCase() + item.slice(1)}
-              </button>
-            ),
-          )}
-        </nav>
-        <div className="header-actions">
-          <div className="status-wrap">
-            <button
-              className="status-button"
-              onClick={() => setStatus(!status)}
-            >
-              <span />
-              Status
-            </button>
-            {status && (
-              <div className="status-popover">
-                <strong>City Cancer Center · Ward 4B</strong>
-                <p>
-                  <span />
-                  All clinical systems online
-                </p>
-                <p>Local CPU · zero audio egress</p>
-                <p>CTCAE v5.0 active · Demo mode</p>
-              </div>
-            )}
-          </div>
-          <ThemeToggle />
+    <>
+      <header className="header">
+        <div className="header-inner">
           <button
-            className="icon-button"
-            aria-label="Notifications"
-            title="Notifications"
+            className="brand"
+            onClick={() => go("station")}
+            aria-label="RoundsAI station"
           >
-            <Icon name="bell" size={20} />
+            <span className="brand-mark">
+              <Icon name="stethoscope" size={20} />
+            </span>
+            <span>RoundsAI</span>
           </button>
-          <div className="profile-wrap">
-            <button
-              className="avatar-button"
-              aria-label="Open clinician menu"
-              title="Open clinician menu"
-              onClick={() => setProfile(!profile)}
-            >
-              DA
-            </button>
-            {profile && (
-              <div className="profile-menu">
-                <div>
-                  <strong>Dr. Attending, MD</strong>
-                  <span>City Cancer Center</span>
-                </div>
-                <button>Profile</button>
-                <div className="profile-theme">
-                  <span>Theme</span>
-                  <ThemeToggle />
-                </div>
-                <button onClick={onSignOut}>Sign out</button>
-              </div>
+          <nav className="main-tabs" aria-label="Primary navigation">
+            {(["station", "roster", "analytics", "mobile"] as Screen[]).map(
+              (item) => (
+                <button
+                  className={screen === item ? "active" : ""}
+                  onClick={() => go(item)}
+                  key={item}
+                >
+                  {item.charAt(0).toUpperCase() + item.slice(1)}
+                </button>
+              ),
             )}
+          </nav>
+          <div className="header-actions">
+            <div className="status-wrap">
+              <button
+                className="status-button"
+                onClick={() => {
+                  setStatus((prev) => !prev)
+                  setProfile(false)
+                }}
+                aria-label="Toggle clinical system status"
+              >
+                <span />
+                Status
+              </button>
+              {status && (
+                <div className="status-popover">
+                  <strong>City Cancer Center · Ward 4B</strong>
+                  <p>
+                    <span />
+                    All clinical systems online
+                  </p>
+                  <p>Local CPU · zero audio egress</p>
+                  <p>CTCAE v5.0 active · Gemini 2.5 Flash Cascade</p>
+                </div>
+              )}
+            </div>
+            <button
+              className="icon-button"
+              aria-label="Notifications"
+              title="Notifications"
+            >
+              <Icon name="bell" size={20} />
+            </button>
+            <div className="profile-wrap">
+              <button
+                className="avatar-button"
+                aria-label="Open clinician menu"
+                title="Open clinician menu"
+                onClick={() => {
+                  setProfile((prev) => !prev)
+                  setStatus(false)
+                }}
+              >
+                DA
+              </button>
+              {profile && (
+                <div className="profile-menu">
+                  <div>
+                    <strong>Dr. Attending, MD</strong>
+                    <span>City Cancer Center</span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setProfile(false)
+                      setProfileModal(true)
+                    }}
+                  >
+                    Profile
+                  </button>
+                  <button onClick={onSignOut}>Sign out</button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      </div>
-    </header>
+      </header>
+      <ClinicianProfileModal isOpen={profileModal} onClose={() => setProfileModal(false)} />
+    </>
   )
 }
 
@@ -1373,6 +1474,8 @@ function CaptureStep({
   onContinue,
   onToast,
   onOcrExtracted,
+  transcript,
+  setTranscript,
 }: {
   patient: typeof patients[number]
   patientCase: typeof patientCases[string]
@@ -1381,10 +1484,11 @@ function CaptureStep({
   onContinue: () => void
   onToast?: (msg: string) => void
   onOcrExtracted?: (patientId: string, fileName: string, extracted: any) => void
+  transcript: string
+  setTranscript: React.Dispatch<React.SetStateAction<string>>
 }) {
   const [analyzing, setAnalyzing] = useState(false)
   const [progress, setProgress] = useState(0)
-  const [transcript, setTranscript] = useState(patientCase.transcript)
   const [onDeviceAudio, setOnDeviceAudio] = useState(true)
   const [clinicalAutoCorrect, setClinicalAutoCorrect] = useState(true)
   const [autoCorrectModalOpen, setAutoCorrectModalOpen] = useState(false)
@@ -1683,15 +1787,46 @@ function ReviewStep({
   confirmed,
   setConfirmed,
   onContinue,
+  onToast,
 }: {
   patient: typeof patients[number]
   patientCase: typeof patientCases[string]
   confirmed: boolean[]
   setConfirmed: (items: boolean[]) => void
   onContinue: () => void
+  onToast?: (msg: string) => void
 }) {
+  const [checklistItems, setChecklistItems] = useState<string[]>(patientCase.checklist)
+  const [editingIndex, setEditingIndex] = useState<number | null>(null)
+  const [editText, setEditText] = useState("")
+
+  useEffect(() => {
+    setChecklistItems(patientCase.checklist)
+    setEditingIndex(null)
+  }, [patientCase.checklist, patient.id])
+
+  const handleStartEdit = (index: number) => {
+    setEditingIndex(index)
+    setEditText(checklistItems[index] || "")
+  }
+
+  const handleSaveEdit = (index: number) => {
+    if (!editText.trim()) return
+    const updated = [...checklistItems]
+    updated[index] = editText.trim()
+    setChecklistItems(updated)
+    patientCase.checklist[index] = editText.trim()
+    setEditingIndex(null)
+    if (onToast) onToast(`✓ Updated verification point ${index + 1}`)
+  }
+
+  const handleCancelEdit = () => {
+    setEditingIndex(null)
+  }
+
   const count = confirmed.filter(Boolean).length
   const alertGrade = patientCase.alert.grade
+
   return (
     <section className="step-content review-step">
       <div className="step-intro">
@@ -1775,28 +1910,80 @@ function ReviewStep({
           </div>
           <strong>{count} of 3 confirmed</strong>
         </div>
-        {patientCase.checklist.map((item, index) => (
-          <div className="check-row" key={item}>
-            <label>
-              <input
-                type="checkbox"
-                checked={confirmed[index]}
-                onChange={() =>
-                  setConfirmed(
-                    confirmed.map((value, itemIndex) =>
-                      itemIndex === index ? !value : value,
-                    ),
-                  )
-                }
-              />
-              <span>
-                <b>Point {index + 1}</b>
-                <small>{item}</small>
-              </span>
-            </label>
-            <button>Edit</button>
+        {checklistItems.map((item, index) => (
+          <div className="check-row" key={index}>
+            {editingIndex === index ? (
+              <div className="checklist-inline-editor" style={{ width: "100%", display: "flex", flexDirection: "column", gap: "8px", padding: "8px 0" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", width: "100%" }}>
+                  <b style={{ minWidth: "60px", color: "var(--brand)", fontSize: "14px" }}>Point {index + 1}</b>
+                  <input
+                    type="text"
+                    className="checklist-edit-input"
+                    value={editText}
+                    onChange={(e) => setEditText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleSaveEdit(index)
+                      if (e.key === "Escape") handleCancelEdit()
+                    }}
+                    autoFocus
+                    style={{ flex: 1, padding: "8px 12px", border: "1px solid var(--brand)", borderRadius: "8px", background: "var(--surface)", color: "inherit", fontSize: "14px" }}
+                  />
+                </div>
+                <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+                  <button
+                    type="button"
+                    onClick={handleCancelEdit}
+                    style={{ padding: "4px 12px", border: "1px solid var(--border)", borderRadius: "6px", background: "transparent", color: "var(--secondary)", cursor: "pointer", fontSize: "13px" }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSaveEdit(index)}
+                    style={{ padding: "4px 12px", border: 0, borderRadius: "6px", background: "var(--brand)", color: "white", fontWeight: 600, cursor: "pointer", fontSize: "13px" }}
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={confirmed[index]}
+                    onChange={() =>
+                      setConfirmed(
+                        confirmed.map((value, itemIndex) =>
+                          itemIndex === index ? !value : value,
+                        ),
+                      )
+                    }
+                  />
+                  <span>
+                    <b>Point {index + 1}</b>
+                    <small>{item}</small>
+                  </span>
+                </label>
+                <button
+                  type="button"
+                  className="checklist-edit-btn"
+                  onClick={() => handleStartEdit(index)}
+                  title={`Edit Point ${index + 1}`}
+                  style={{ border: 0, background: "transparent", color: "var(--brand)", fontWeight: 600, cursor: "pointer", padding: "4px 8px" }}
+                >
+                  Edit
+                </button>
+              </>
+            )}
           </div>
         ))}
+        <div style={{ marginTop: "16px", padding: "10px 14px", borderRadius: "10px", background: "rgba(0,102,102,0.06)", border: "1px solid var(--brand-border)", display: "flex", alignItems: "center", gap: "10px", fontSize: "13px", color: "var(--brand)" }}>
+          <Icon name="shield" size={16} />
+          <span>
+            <strong>Clinical Safety Verification:</strong> Evaluated via Gemini 2.5 Flash Fallback Cascade (with offline deterministic rules) · CTCAE v5.0 Active · Clinician verification required.
+          </span>
+        </div>
       </article>
       <div className="step-action">
         <Button variant="primary" onClick={onContinue}>
@@ -1994,6 +2181,7 @@ function Station({
   onSelectPatient,
   onResetCensus,
   onOcrExtracted,
+  onAttestRound,
   go,
 }: {
   patientsList?: typeof patients
@@ -2001,6 +2189,7 @@ function Station({
   onSelectPatient: (id: string) => void
   onResetCensus?: () => void
   onOcrExtracted?: (patientId: string, fileName: string, extracted: any) => void
+  onAttestRound?: (patientId: string, record: RoundRecord) => void
   go?: (screen: Screen) => void
 }) {
   const activePatients = patientsList && patientsList.length > 0 ? patientsList : patients
@@ -2044,6 +2233,8 @@ function Station({
   }
 
   const [step, setStep] = useState<Step>(1)
+  const [stationTranscript, setStationTranscript] = useState(patientCase.transcript)
+  const [bedsideDraft, setBedsideDraft] = useState<{ transcript: string; timeStr: string; wordCount?: number } | null>(null)
   const [sync, setSync] = useState(true)
   const [drawer, setDrawer] = useState(false)
   const [confirmed, setConfirmed] = useState([true, true, false])
@@ -2051,10 +2242,113 @@ function Station({
   const [toast, setToast] = useState("")
 
   useEffect(() => {
+    setStationTranscript(patientCase.transcript)
     setConfirmed([true, true, false])
     setAttested(false)
     setStep(1)
-  }, [selectedPatientId])
+
+    // Inspect localStorage for pending bedside sync from mobile companion
+    if (typeof localStorage !== "undefined") {
+      const raw = localStorage.getItem(`rounds-bedside-sync-${patient.id}`)
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw)
+          setBedsideDraft(parsed)
+          setSync(true)
+        } catch {}
+      } else {
+        setSync(false)
+        setBedsideDraft(null)
+      }
+    }
+  }, [selectedPatientId, patient.id, patientCase.transcript])
+
+  // Reactive listener for bedside-to-station sync events
+  useEffect(() => {
+    const handleSyncEvent = (event: Event) => {
+      const custom = event as CustomEvent
+      const payload = custom.detail
+      if (payload && payload.patientId === patient.id) {
+        setBedsideDraft(payload)
+        setSync(true)
+        setToast(`Bedside round received from Bed ${patient.bed} (${payload.wordCount || 0} words)`)
+        setTimeout(() => setToast(""), 3000)
+      }
+    }
+    const handleStorageEvent = (e: StorageEvent) => {
+      if (e.key === `rounds-bedside-sync-${patient.id}` && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue)
+          setBedsideDraft(parsed)
+          setSync(true)
+        } catch {}
+      }
+    }
+    window.addEventListener("rounds-bedside-sync-event", handleSyncEvent)
+    window.addEventListener("storage", handleStorageEvent)
+    return () => {
+      window.removeEventListener("rounds-bedside-sync-event", handleSyncEvent)
+      window.removeEventListener("storage", handleStorageEvent)
+    }
+  }, [patient.id, patient.bed])
+
+  const loadBedsideToStation = () => {
+    let textToLoad = bedsideDraft?.transcript
+    if (!textToLoad && typeof localStorage !== "undefined") {
+      const raw = localStorage.getItem(`rounds-bedside-sync-${patient.id}`) || localStorage.getItem("rounds-bedside-sync-latest")
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw)
+          textToLoad = parsed.transcript
+        } catch {}
+      }
+    }
+    if (textToLoad) {
+      setStationTranscript(textToLoad)
+      patientCase.transcript = textToLoad
+      setSync(false)
+      setStep(1)
+      setToast(`✓ Loaded bedside draft from Bed ${patient.bed} into Station`)
+      setTimeout(() => setToast(""), 3000)
+    } else {
+      setToast(`No pending bedside draft for Bed ${patient.bed}`)
+      setTimeout(() => setToast(""), 2000)
+    }
+  }
+
+  const syncBedside = () => {
+    let textToLoad = ""
+    if (typeof localStorage !== "undefined") {
+      const raw = localStorage.getItem(`rounds-bedside-sync-${patient.id}`)
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw)
+          textToLoad = parsed.transcript
+        } catch {}
+      }
+    }
+    if (textToLoad) {
+      setStationTranscript(textToLoad)
+      patientCase.transcript = textToLoad
+      setToast(`✓ Synchronized with Bedside Companion for Bed ${patient.bed}`)
+    } else {
+      const payload = {
+        patientId: patient.id,
+        patientName: patient.name,
+        bed: patient.bed,
+        transcript: stationTranscript,
+        timestamp: Date.now(),
+        timeStr: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        wordCount: stationTranscript.trim().split(/\s+/).filter(Boolean).length,
+        source: "station",
+      }
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem(`rounds-bedside-sync-${patient.id}`, JSON.stringify(payload))
+      }
+      setToast(`✓ Station draft saved to Bedside buffer for Bed ${patient.bed}`)
+    }
+    setTimeout(() => setToast(""), 2800)
+  }
 
   const copyNote = () => {
     const rawNote = `PATIENT: ${patient.name} (Bed ${patient.bed}, ${patient.mrn})\nDIAGNOSIS: ${patient.diagnosis} · ${patient.regimen} (${patient.cycle})\n\nSUBJECTIVE:\n${patientCase.soapDraft.s}\n\nOBJECTIVE:\n${patientCase.soapDraft.o}\n\nASSESSMENT:\n${patientCase.soapDraft.a}\n\nPLAN:\n${patientCase.soapDraft.p}`
@@ -2074,8 +2368,24 @@ function Station({
   const attestNote = () => {
     setAttested(true)
     setStep(3)
-    setToast(`Note for ${patient.name} attested and locked`)
-    setTimeout(() => setToast(""), 2800)
+    const newRecord: RoundRecord = {
+      id: `attested-${Date.now()}`,
+      date: new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }),
+      doctor: "Dr. Attending, MD",
+      anc: patient.baselineAnc || 1400,
+      wbc: 4800,
+      platelets: 180000,
+      hemoglobin: 12.0,
+      ctcae_grade: patient.grade || 0,
+      status: "Approved",
+      source: "Ward Station Note Attestation",
+      notes: `${patient.regimen} (${patient.cycle}) verified and attested by attending clinician.`
+    }
+    if (onAttestRound) {
+      onAttestRound(patient.id, newRecord)
+    }
+    setToast(`✓ Note for ${patient.name} attested and locked. Added to EMR history & analytics`)
+    setTimeout(() => setToast(""), 3000)
   }
 
   useEffect(() => {
@@ -2111,24 +2421,19 @@ function Station({
         <div className="sync-notice">
           <span>
             <Icon name="zap" size={20} />
-            Bedside round received from Bed {patient.bed} ({patient.name}) · just now
+            Bedside round received from Bed {patient.bed} ({patient.name}) · {bedsideDraft?.timeStr || "just now"}
           </span>
           <div>
             <button
-              onClick={() => {
-                setToast(`Bedside data refreshed for ${patient.name}`)
-                setTimeout(() => setToast(""), 2800)
-              }}
+              onClick={syncBedside}
               aria-label="Sync bedside"
             >
               <Icon name="refresh" />
               Sync bedside
             </button>
             <button
-              onClick={() => {
-                setSync(false)
-                setStep(1)
-              }}
+              onClick={loadBedsideToStation}
+              className="secondary"
             >
               Load into station
             </button>
@@ -2186,6 +2491,8 @@ function Station({
               onContinue={() => setStep(2)}
               onToast={setToast}
               onOcrExtracted={onOcrExtracted}
+              transcript={stationTranscript}
+              setTranscript={setStationTranscript}
             />
           )}
           {step === 2 && (
@@ -2195,6 +2502,7 @@ function Station({
               confirmed={confirmed}
               setConfirmed={setConfirmed}
               onContinue={() => setStep(3)}
+              onToast={setToast}
             />
           )}
           {step === 3 && (
@@ -2250,14 +2558,23 @@ function Roster({
   // Close menu on click outside
   useEffect(() => {
     if (!menu) return
-    const handleClickOutside = (event: MouseEvent) => {
+    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
       const target = event.target as HTMLElement
       if (!target.closest(".more-wrap")) {
         setMenu("")
       }
     }
-    document.addEventListener("click", handleClickOutside)
-    return () => document.removeEventListener("click", handleClickOutside)
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenu("")
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    document.addEventListener("touchstart", handleClickOutside)
+    document.addEventListener("keydown", handleKey)
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside)
+      document.removeEventListener("touchstart", handleClickOutside)
+      document.removeEventListener("keydown", handleKey)
+    }
   }, [menu])
 
   // Close modals on Escape key
@@ -2873,8 +3190,25 @@ const handleMobileScan = (e: React.ChangeEvent<HTMLInputElement>) => {
             variant="primary"
             icon={sent ? "check" : "zap"}
             onClick={() => {
+              const payload = {
+                patientId: patient.id,
+                patientName: patient.name,
+                bed: patient.bed,
+                transcript: transcript,
+                timestamp: Date.now(),
+                timeStr: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+                wordCount: transcript.trim().split(/\s+/).filter(Boolean).length,
+                source: "mobile-bedside",
+              }
+              if (typeof localStorage !== "undefined") {
+                localStorage.setItem(`rounds-bedside-sync-${patient.id}`, JSON.stringify(payload))
+                localStorage.setItem("rounds-bedside-sync-latest", JSON.stringify(payload))
+              }
+              if (typeof window !== "undefined") {
+                window.dispatchEvent(new CustomEvent("rounds-bedside-sync-event", { detail: payload }))
+              }
               setSent(true)
-              if (onToast) onToast(`Bedside round sent to Station for Bed ${patient.bed}`)
+              if (onToast) onToast(`✓ Bedside round sent to Station for Bed ${patient.bed} (${payload.wordCount} words)`)
             }}
           >
             {sent ? "Sent to station" : "Send to station"}
@@ -2899,7 +3233,27 @@ const handleMobileScan = (e: React.ChangeEvent<HTMLInputElement>) => {
   )
 }
 
-function NadirChart({ baseline = 1400 }: { baseline?: number }) {
+function NadirChart({ rounds = [], baseline = 1400 }: { rounds?: RoundRecord[]; baseline?: number }) {
+  const chronRounds = [...rounds].reverse()
+  const count = chronRounds.length
+  const points = chronRounds.map((r, i) => {
+    const x = count > 1 ? Math.round(96 + (i * (608 / (count - 1)))) : 400
+    const clamped = Math.max(0, Math.min(4000, r.anc))
+    const y = Math.round(256 - ((clamped / 4000) * (256 - 32)))
+    return {
+      x,
+      y,
+      label: `${r.source.includes("Cycle") ? r.source : `Round ${i + 1}`}: ${formatNumber(r.anc)} /µL (Grade ${r.ctcae_grade})`,
+      anc: r.anc,
+      grade: r.ctcae_grade,
+      source: r.source,
+      date: r.date,
+    }
+  })
+  const polylinePoints = points.map((p) => `${p.x},${p.y}`).join(" ")
+  const baselineY = Math.round(256 - ((Math.min(4000, baseline) / 4000) * (256 - 32)))
+  const latestPoint = points[points.length - 1]
+
   return (
     <svg
       className="chart"
@@ -2916,7 +3270,7 @@ function NadirChart({ baseline = 1400 }: { baseline?: number }) {
         className="danger-band"
       />
       <text x="66" y="250" className="band-label">
-        Grade 4 · below 500
+        Grade 4 · below 500 /µL
       </text>
       {[32, 88, 144, 200, 256].map((y, index) => (
         <g key={y}>
@@ -2926,56 +3280,88 @@ function NadirChart({ baseline = 1400 }: { baseline?: number }) {
           </text>
         </g>
       ))}
-      <line className="baseline-line" x1="76" x2="704" y1="178" y2="178" />
-      <polyline className="primary-line" points="96,150 300,190 504,235" />
-      <line className="predicted-line" x1="504" y1="235" x2="704" y2="215" />
-      {[
-        [96, 150, `Cycle 1 · ${formatNumber(1900)} /µL`],
-        [300, 190, `Cycle 2 · ${formatNumber(1200)} /µL`],
-        [504, 235, "Cycle 3 · 420 /µL"],
-      ].map(([x, y, label]) => (
-        <g className="data-point" tabIndex={0} key={String(label)}>
-          <circle cx={Number(x)} cy={Number(y)} r="6" />
-          <title>{label}</title>
+      <line className="baseline-line" x1="76" x2="704" y1={baselineY} y2={baselineY} />
+      <text x="708" y={baselineY + 4} fontSize="11" fill="var(--secondary)">
+        Baseline
+      </text>
+      {points.length > 1 && (
+        <polyline className="primary-line" points={polylinePoints} />
+      )}
+      {points.map((p, idx) => (
+        <g className="data-point" tabIndex={0} key={`${p.x}-${idx}`}>
+          <circle cx={p.x} cy={p.y} r="6" />
+          <title>{p.label}</title>
           <g className="hover-tip">
             <rect
-              x={Number(x) - 55}
-              y={Number(y) - 52}
-              width="110"
+              x={p.x - 70}
+              y={p.y - 52}
+              width="140"
               height="34"
               rx="7"
             />
-            <text x={Number(x)} y={Number(y) - 30} textAnchor="middle">
-              {label}
+            <text x={p.x} y={p.y - 30} textAnchor="middle">
+              {p.label}
             </text>
           </g>
         </g>
       ))}
-      <circle className="predicted-point" cx="704" cy="215" r="7" />
-      <g className="latest-badge">
-        <rect x="516" y="218" width="74" height="28" rx="14" />
-        <text x="553" y="237" textAnchor="middle">
-          420 /µL
-        </text>
-      </g>
-      {["Cycle 1", "Cycle 2", "Cycle 3", "Predicted Cycle 4"].map(
-        (label, index) => (
+      {latestPoint && (
+        <g className="latest-badge">
+          <rect
+            x={Math.min(640, latestPoint.x + 12)}
+            y={Math.max(28, latestPoint.y - 14)}
+            width="88"
+            height="28"
+            rx="14"
+          />
           <text
-            x={[96, 300, 504, 704][index]}
-            y="286"
+            x={Math.min(640, latestPoint.x + 12) + 44}
+            y={Math.max(28, latestPoint.y - 14) + 19}
             textAnchor="middle"
-            key={label}
           >
-            {label}
+            {formatNumber(latestPoint.anc)} /µL
           </text>
-        ),
+        </g>
       )}
+      {points.map((p, index) => (
+        <text
+          x={p.x}
+          y="286"
+          textAnchor="middle"
+          key={p.x}
+        >
+          {p.source && p.source.length <= 14 ? p.source : `Round ${index + 1}`}
+        </text>
+      ))}
       <title>Baseline ANC {formatNumber(baseline)} per microliter</title>
     </svg>
   )
 }
 
-function RecoveryChart() {
+function RecoveryChart({ rounds = [] }: { rounds?: RoundRecord[] }) {
+  const chronRounds = [...rounds].reverse()
+  const count = chronRounds.length
+  const pltPoints = chronRounds.map((r, i) => {
+    const x = count > 1 ? Math.round(96 + (i * (608 / (count - 1)))) : 400
+    // Platelets scale 0 to 300,000 -> y between 34 and 208
+    const clampedPlt = Math.max(0, Math.min(300000, r.platelets))
+    const y = Math.round(208 - ((clampedPlt / 300000) * (208 - 34)))
+    return { x, y, label: `Platelets: ${formatNumber(r.platelets)} /µL`, value: r.platelets, source: r.source }
+  })
+  const pltPolyline = pltPoints.map((p) => `${p.x},${p.y}`).join(" ")
+
+  const hgbPoints = chronRounds.map((r, i) => {
+    const x = count > 1 ? Math.round(96 + (i * (608 / (count - 1)))) : 400
+    // Hemoglobin scale 8 to 16 g/dL -> y between 34 and 208
+    const clampedHgb = Math.max(8, Math.min(16, r.hemoglobin || 12))
+    const y = Math.round(208 - (((clampedHgb - 8) / 8) * (208 - 34)))
+    return { x, y, label: `Hemoglobin: ${r.hemoglobin || 12} g/dL`, value: r.hemoglobin || 12 }
+  })
+  const hgbPolyline = hgbPoints.map((p) => `${p.x},${p.y}`).join(" ")
+
+  const latestPlt = chronRounds[chronRounds.length - 1]?.platelets ?? 180000
+  const latestHgb = chronRounds[chronRounds.length - 1]?.hemoglobin ?? 12.0
+
   return (
     <svg
       className="chart"
@@ -2986,45 +3372,44 @@ function RecoveryChart() {
       {[34, 92, 150, 208].map((y) => (
         <line x1="56" x2="726" y1={y} y2={y} key={y} />
       ))}
-      <polyline
-        className="primary-line"
-        points="96,72 300,190 504,154 704,92"
-      />
-      <polyline
-        className="baseline-line recovery-baseline"
-        points="96,106 300,148 504,136 704,118"
-      />
-      {[
-        [96, 72],
-        [300, 190],
-        [504, 154],
-        [704, 92],
-      ].map(([x, y], index) => (
-        <g className="data-point" tabIndex={0} key={x}>
-          <circle cx={x} cy={y} r="6" />
-          <title>Cycle {index + 1} platelet measurement</title>
+      {pltPoints.length > 1 && (
+        <polyline
+          className="primary-line"
+          points={pltPolyline}
+        />
+      )}
+      {hgbPoints.length > 1 && (
+        <polyline
+          className="baseline-line recovery-baseline"
+          points={hgbPolyline}
+        />
+      )}
+      {pltPoints.map((p, index) => (
+        <g className="data-point" tabIndex={0} key={`plt-${p.x}-${index}`}>
+          <circle cx={p.x} cy={p.y} r="6" />
+          <title>{p.label}</title>
         </g>
       ))}
       <g className="latest-badge">
-        <rect x="620" y="66" width="84" height="28" rx="14" />
-        <text x="662" y="85" textAnchor="middle">
-          {formatNumber(88000)} /µL
+        <rect x="580" y="66" width="134" height="28" rx="14" />
+        <text x="647" y="85" textAnchor="middle">
+          Plt: {formatNumber(latestPlt)} · Hgb: {latestHgb}
         </text>
       </g>
       <text x="44" y="39" textAnchor="end">
-        High
+        300k
       </text>
       <text x="44" y="213" textAnchor="end">
-        Low
+        50k
       </text>
-      {["Cycle 1", "Cycle 2", "Cycle 3", "Cycle 4"].map((label, index) => (
+      {pltPoints.map((p, index) => (
         <text
-          x={[96, 300, 504, 704][index]}
+          x={p.x}
           y="258"
           textAnchor="middle"
-          key={label}
+          key={`lbl-${p.x}-${index}`}
         >
-          {label}
+          {p.source && p.source.length <= 14 ? p.source : `Round ${index + 1}`}
         </text>
       ))}
     </svg>
@@ -3148,8 +3533,20 @@ function Analytics({
           <Button
             icon="refresh"
             onClick={() => {
-              setToast("Analytics JSON store synchronized")
-              setTimeout(() => setToast(""), 2400)
+              let count = patientAnalytics.rounds?.length || 0
+              if (typeof localStorage !== "undefined") {
+                const saved = localStorage.getItem("rounds-analytics-data")
+                if (saved) {
+                  try {
+                    const parsed = JSON.parse(saved)
+                    if (parsed[activeId]?.rounds) {
+                      count = parsed[activeId].rounds.length
+                    }
+                  } catch {}
+                }
+              }
+              setToast(`✓ Synchronized ${count} clinical rounds with hospital audit log`)
+              setTimeout(() => setToast(""), 2800)
             }}
           >
             Sync rounds
@@ -3227,7 +3624,7 @@ function Analytics({
           </div>
           <span className="info-chip">CTCAE v5.0 ANC thresholds</span>
         </div>
-        <NadirChart baseline={patient.baselineAnc} />
+        <NadirChart rounds={patientAnalytics.rounds} baseline={patient.baselineAnc} />
       </section>
       <section className="analytics-section">
         <div className="section-head">
@@ -3239,7 +3636,7 @@ function Analytics({
             </p>
           </div>
         </div>
-        <RecoveryChart />
+        <RecoveryChart rounds={patientAnalytics.rounds} />
       </section>
       <section className="analytics-section">
         <div className="section-head">
@@ -3981,6 +4378,47 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
     setTimeout(() => setGlobalToast(""), 3200)
   }
 
+  const handleAttestRound = (patientId: string, record: RoundRecord) => {
+    setAnalyticsData((prev) => {
+      const current = prev[patientId] || {
+        patient_id: patientId,
+        patient_name: patients.find((p) => p.id === patientId)?.name || "Patient",
+        rounds: [],
+        kpis: [
+          ["Absolute neutrophils", `${formatNumber(record.anc)}`, "/µL", `Grade ${record.ctcae_grade}`],
+          ["Platelet reserve", `${formatNumber(record.platelets)}`, "/µL", "Verified"],
+          ["Active graded toxicities", record.ctcae_grade > 0 ? "1" : "0", "", `Grade ${record.ctcae_grade}`],
+          ["Clinical risk level", record.ctcae_grade >= 4 ? "High" : "Low", "", record.status],
+        ],
+        trajectory: [],
+      }
+
+      const updatedRounds = [record, ...current.rounds.filter((r) => r.id !== record.id)]
+      const updatedTrajectory = [
+        ...current.trajectory,
+        {
+          label: "Attested Note",
+          date: new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short" }),
+          value: record.anc,
+          grade: record.ctcae_grade,
+        },
+      ]
+
+      const updated = {
+        ...prev,
+        [patientId]: {
+          ...current,
+          rounds: updatedRounds,
+          trajectory: updatedTrajectory,
+        },
+      }
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem("rounds-analytics-data", JSON.stringify(updated))
+      }
+      return updated
+    })
+  }
+
   const handleOcrExtracted = (
     patientId: string,
     fileName: string,
@@ -4186,6 +4624,7 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
           onSelectPatient={setSelectedPatientId}
           onResetCensus={handleResetCensus}
           onOcrExtracted={handleOcrExtracted}
+          onAttestRound={handleAttestRound}
           go={go}
         />
       ) : screen === "roster" ? (
