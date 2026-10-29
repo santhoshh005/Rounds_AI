@@ -58,6 +58,142 @@ const patients = [
 const formatNumber = (value: number) =>
   new Intl.NumberFormat("en-US").format(value)
 
+const patientCases: Record<
+  string,
+  {
+    patientId: string
+    caseLabel: string
+    transcript: string
+    alert: {
+      title: string
+      subtitle: string
+      grade: number
+      temp: string
+      anc: string
+      timer: string
+      guideline: string
+    }
+    metrics: [string, string, string, string, number][]
+    checklist: string[]
+    soapDraft: {
+      s: string
+      o: string
+      a: string
+      p: string
+    }
+    labReport: [string, string, string][]
+  }
+> = {
+  "104": {
+    patientId: "104",
+    caseLabel: "Case 1: #104 David Miller, ANC 420 + fever 38.4°C → Grade 4 Febrile Neutropenia",
+    transcript: `Patient on mFOLFOX6 cycle 3, day 8. Febrile overnight to 38.4°C with chills and fatigue. ANC 420 cells/µL, platelets ${formatNumber(88000)}/µL, WBC ${formatNumber(1800)} cells/µL. Denies cough, dysuria, or focal pain.`,
+    alert: {
+      title: "Possible febrile neutropenia",
+      subtitle: "Immediate clinical review recommended",
+      grade: 4,
+      temp: "38.4°C",
+      anc: "420 /µL",
+      timer: "58:12",
+      guideline: "IDSA/ASCO recommends blood cultures and broad-spectrum IV antibiotics within 60 minutes.",
+    },
+    metrics: [
+      ["ANC", "420", "cells/µL", `Down 68% from ${formatNumber(1400)}`, 4],
+      ["Platelets", formatNumber(88000), "/µL", `Down from ${formatNumber(180000)}`, 1],
+      ["WBC", formatNumber(1800), "cells/µL", `Down from ${formatNumber(4800)}`, 3],
+    ],
+    checklist: [
+      "Confirm ANC is 420 /µL (Grade 4 life-threatening neutropenia)",
+      "Confirm temp 38.4°C meets febrile criteria (>38.3°C single reading)",
+      "Verify blood cultures drawn before starting IV piperacillin-tazobactam",
+    ],
+    soapDraft: {
+      s: "Patient on mFOLFOX6 cycle 3 day 8. Reported fever spikes overnight to 38.4°C with rigor and mild lethargy. Denies shortness of breath, abdominal pain, or urinary symptoms.",
+      o: `T 38.4°C, BP 118/74, HR 98, RR 18. Labs: ANC 420/µL (Grade 4), WBC 1.8 K/µL (Grade 3), Plt ${formatNumber(88000)}/µL (Grade 1), Hgb 10.2 g/dL.`,
+      a: "58M with Stage III colon cancer on mFOLFOX6 presenting with Febrile Neutropenia (CTCAE v5.0 Grade 4).",
+      p: "Immediate blood cultures x2. Start IV Cefepime 2g q8h. Hold oxaliplatin/5-FU. Sub-Q G-CSF (Filgrastim 300mcg) daily until ANC > 1,500.",
+    },
+    labReport: [
+      ["WBC", "1.8", "x10³/µL"],
+      ["ANC", "420", "cells/µL"],
+      ["Platelets", formatNumber(88000), "/µL"],
+      ["Hemoglobin", "10.2", "g/dL"],
+    ],
+  },
+  "105": {
+    patientId: "105",
+    caseLabel: "Case 2: #105 Sarah Jenkins, ANC 750 + low-grade temp 38.1°C → Grade 3 Neutropenia",
+    transcript: `Sarah Jenkins, Bed 14. Day 10 post Cycle 2 R-CHOP. Low-grade temperature 38.1°C this morning. Reports mild mucositis Grade 1, mild nausea, no rigors. ANC 750 cells/µL, Platelets ${formatNumber(110000)}/µL, WBC ${formatNumber(2400)} cells/µL.`,
+    alert: {
+      title: "Severe Neutropenia with Low-Grade Fever",
+      subtitle: "Secondary clinical review & monitoring recommended",
+      grade: 3,
+      temp: "38.1°C",
+      anc: "750 /µL",
+      timer: "01:45:00",
+      guideline: "NCCN/ASCO recommends close thermal monitoring, repeat CBC diff, and early infectious workup.",
+    },
+    metrics: [
+      ["ANC", "750", "cells/µL", `Down 66% from ${formatNumber(2200)}`, 3],
+      ["Platelets", formatNumber(110000), "/µL", `Down from ${formatNumber(240000)}`, 1],
+      ["WBC", formatNumber(2400), "cells/µL", `Down from ${formatNumber(6500)}`, 2],
+    ],
+    checklist: [
+      "Confirm ANC is 750 /µL (Grade 3 severe neutropenia)",
+      "Monitor temp 38.1°C — re-check in 2 hours for febrile spike",
+      "Assess oral mucositis and evaluate secondary infection prophylaxis",
+    ],
+    soapDraft: {
+      s: "46F with DLBCL post R-CHOP C2D10. Complains of mild sore mouth (Grade 1 oral mucositis) and low-grade warmth. Appetite fair.",
+      o: `T 38.1°C, BP 124/80, HR 86, RR 16. ANC 750/µL (Grade 3), WBC 2.4 K/µL, Plt ${formatNumber(110000)}/µL, Hgb 11.4 g/dL.`,
+      a: "DLBCL on R-CHOP with CTCAE Grade 3 Neutropenia and low-grade fever.",
+      p: "Repeat CBC and temperature q4h. Initiate oral Levofloxacin 500mg daily prophylaxis. Magic mouthwash for oral comfort.",
+    },
+    labReport: [
+      ["WBC", "2.4", "x10³/µL"],
+      ["ANC", "750", "cells/µL"],
+      ["Platelets", formatNumber(110000), "/µL"],
+      ["Hemoglobin", "11.4", "g/dL"],
+    ],
+  },
+  "106": {
+    patientId: "106",
+    caseLabel: "Case 3: #106 Elena Rostova, ANC 1,620 + afebrile 36.8°C → Grade 0 Stable",
+    transcript: `Elena Rostova, Bed 16. Cycle 4 AC-T day 14. Patient is afebrile at 36.8°C. Tolerating diet well, ECOG PS 0. Labs show ANC ${formatNumber(1620)} cells/µL, Platelets ${formatNumber(215000)}/µL, WBC ${formatNumber(5400)} cells/µL. No active complaints.`,
+    alert: {
+      title: "Clinically Stable — No Acute CTCAE Toxicities",
+      subtitle: "Routine inpatient chemotherapy monitoring",
+      grade: 0,
+      temp: "36.8°C",
+      anc: "1,620 /µL",
+      timer: "Routine",
+      guideline: "All hematologic parameters within safe tolerance bounds for continued scheduled therapy.",
+    },
+    metrics: [
+      ["ANC", formatNumber(1620), "cells/µL", `Stable near baseline ${formatNumber(1650)}`, 0],
+      ["Platelets", formatNumber(215000), "/µL", `Normal reserve (Baseline ${formatNumber(220000)})`, 0],
+      ["WBC", formatNumber(5400), "cells/µL", `Normal range (Baseline ${formatNumber(5800)})`, 0],
+    ],
+    checklist: [
+      "Confirm ANC is 1,620 /µL (Adequate bone marrow reserve for therapy)",
+      "Confirm patient is afebrile (36.8°C) with no focal toxicity",
+      "Verify readiness for planned chemotherapy cycle continuation",
+    ],
+    soapDraft: {
+      s: "62F receiving adjuvant AC-T for invasive ductal breast cancer. Reports good appetite, minimal fatigue, no nausea or neuropathy.",
+      o: `T 36.8°C, BP 120/76, HR 72, RR 14. ANC 1,620/µL (Grade 0), WBC 5.4 K/µL, Plt ${formatNumber(215000)}/µL, Hgb 12.1 g/dL.`,
+      a: "Stage II Breast Cancer post Cycle 4 AC-T, bone marrow recovery verified, clinically stable.",
+      p: "Cleared for cycle continuation as scheduled. Routine hydration and discharge readiness evaluation.",
+    },
+    labReport: [
+      ["WBC", "5.4", "x10³/µL"],
+      ["ANC", formatNumber(1620), "cells/µL"],
+      ["Platelets", formatNumber(215000), "/µL"],
+      ["Hemoglobin", "12.1", "g/dL"],
+    ],
+  },
+}
+
 const Button = ({
   children,
   variant = "secondary",
@@ -231,7 +367,15 @@ function SeverityBadge({
   )
 }
 
-function Census({ onClose }: { onClose?: () => void }) {
+function Census({
+  selectedPatientId,
+  onSelectPatient,
+  onClose,
+}: {
+  selectedPatientId: string
+  onSelectPatient: (id: string) => void
+  onClose?: () => void
+}) {
   const [filter, setFilter] = useState("All")
   const [query, setQuery] = useState("")
   const shown = patients.filter((patient) => {
@@ -282,36 +426,42 @@ function Census({ onClose }: { onClose?: () => void }) {
         ))}
       </div>
       <div className="patient-rows">
-        {shown.map((patient, index) => (
-          <button
-            className={`patient-row ${
-              index === 0 && filter === "All" && !query ? "active" : ""
-            }`}
-            key={patient.bed}
-          >
-            <span className="patient-avatar">{patient.initials}</span>
-            <span className="patient-info">
-              <strong>
-                Bed {patient.bed} · {patient.name}
-              </strong>
-              <small>
-                {patient.regimen} · {patient.cycle}
-              </small>
-            </span>
-            {patient.grade >= 3 ? (
-              <SeverityBadge grade={patient.grade}>
-                G{patient.grade}
-              </SeverityBadge>
-            ) : (
-              <i
-                className="stable-dot"
-                role="img"
-                aria-label="Stable patient"
-                title="Stable patient"
-              />
-            )}
-          </button>
-        ))}
+        {shown.map((patient) => {
+          const isSelected = patient.id === selectedPatientId
+          return (
+            <button
+              className={`patient-row ${isSelected ? "active" : ""}`}
+              onClick={() => {
+                onSelectPatient(patient.id)
+                if (onClose) onClose()
+              }}
+              key={patient.bed}
+              aria-current={isSelected ? "true" : undefined}
+            >
+              <span className="patient-avatar">{patient.initials}</span>
+              <span className="patient-info">
+                <strong>
+                  Bed {patient.bed} · {patient.name}
+                </strong>
+                <small>
+                  {patient.regimen} · {patient.cycle}
+                </small>
+              </span>
+              {patient.grade >= 3 ? (
+                <SeverityBadge grade={patient.grade}>
+                  G{patient.grade}
+                </SeverityBadge>
+              ) : (
+                <i
+                  className="stable-dot"
+                  role="img"
+                  aria-label="Stable patient"
+                  title="Stable patient"
+                />
+              )}
+            </button>
+          )
+        })}
       </div>
     </aside>
   )
@@ -335,7 +485,18 @@ function Waveform({ active = false }: { active?: boolean }) {
   )
 }
 
-function ReportImage() {
+function ReportImage({
+  patient = patients[0],
+  labReport = [
+    ["WBC", "1.8", "x10³/µL"],
+    ["ANC", "420", "cells/µL"],
+    ["Platelets", formatNumber(88000), "/µL"],
+    ["Hemoglobin", "10.2", "g/dL"],
+  ],
+}: {
+  patient?: typeof patients[number]
+  labReport?: [string, string, string][]
+} = {}) {
   return (
     <div
       className="report-image"
@@ -348,13 +509,10 @@ function ReportImage() {
           <small>LABORATORY SERVICES</small>
         </div>
         <p>Complete Blood Count</p>
-        <small>David Miller · MRN-009184 · 07:42</small>
-        {[
-          ["WBC", "1.8", "x10³/µL"],
-          ["ANC", "420", "cells/µL"],
-          ["Platelets", formatNumber(88000), "/µL"],
-          ["Hemoglobin", "10.2", "g/dL"],
-        ].map((lab, index) => (
+        <small>
+          {patient.name} · {patient.mrn} · 07:42
+        </small>
+        {labReport.map((lab, index) => (
           <div className={index === 1 ? "detected" : ""} key={lab[0]}>
             <span>{lab[0]}</span>
             <b>{lab[1]}</b>
@@ -367,15 +525,27 @@ function ReportImage() {
 }
 
 function CaptureStep({
+  patient,
+  patientCase,
+  onSelectPatient,
   complete,
   onContinue,
 }: {
+  patient: typeof patients[number]
+  patientCase: typeof patientCases[string]
+  onSelectPatient: (id: string) => void
   complete: boolean
   onContinue: () => void
 }) {
   const [recording, setRecording] = useState(false)
   const [analyzing, setAnalyzing] = useState(false)
   const [progress, setProgress] = useState(0)
+  const [transcript, setTranscript] = useState(patientCase.transcript)
+
+  useEffect(() => {
+    setTranscript(patientCase.transcript)
+  }, [patientCase.transcript])
+
   const analyze = () => {
     setAnalyzing(true)
     setProgress(1)
@@ -397,19 +567,22 @@ function CaptureStep({
       </div>
       <label className="demo-case">
         <span>Demo case</span>
-        <select>
-          <option>
-            Case 1: #104, ANC 900 + fever 38.4°C → secondary alert
-          </option>
-          <option>
-            Case 2: #105, ANC 450 + fever 38.5°C → primary sentinel
-          </option>
+        <select
+          value={patient.id}
+          onChange={(event) => onSelectPatient?.(event.target.value)}
+        >
+          {patients.map((p) => (
+            <option value={p.id} key={p.id}>
+              {patientCases[p.id].caseLabel}
+            </option>
+          ))}
         </select>
       </label>
       <article className="panel capture-composer">
         <textarea
           className="capture-textarea"
-          defaultValue={`Patient on mFOLFOX6 cycle 3, day 8. Febrile overnight to 38.4°C with chills and fatigue. ANC 420 cells/µL, platelets ${formatNumber(88000)}/µL, WBC ${formatNumber(1800)} cells/µL. Denies cough, dysuria, or focal pain.`}
+          value={transcript}
+          onChange={(event) => setTranscript(event.target.value)}
           aria-label="Round transcript"
         />
         {recording && <Waveform active />}
@@ -486,15 +659,20 @@ const Sparkline = ({ gray = false }: { gray?: boolean }) => (
 )
 
 function ReviewStep({
+  patient,
+  patientCase,
   confirmed,
   setConfirmed,
   onContinue,
 }: {
+  patient: typeof patients[number]
+  patientCase: typeof patientCases[string]
   confirmed: boolean[]
   setConfirmed: (items: boolean[]) => void
   onContinue: () => void
 }) {
   const count = confirmed.filter(Boolean).length
+  const alertGrade = patientCase.alert.grade
   return (
     <section className="step-content review-step">
       <div className="step-intro">
@@ -503,67 +681,69 @@ function ReviewStep({
           <p>Validate the safety alert and extracted values before signing.</p>
         </div>
       </div>
-      <article className="critical-alert" aria-live="assertive">
+      <article
+        className={`critical-alert ${
+          alertGrade === 0
+            ? "stable-alert"
+            : alertGrade === 3
+              ? "grade-3-alert"
+              : ""
+        }`}
+        aria-live="assertive"
+      >
         <div className="alert-heading">
-          <div className="icon-box danger">
-            <Icon name="alert" />
+          <div className={`icon-box ${alertGrade >= 3 ? "danger" : ""}`}>
+            <Icon name={alertGrade >= 3 ? "alert" : "check"} />
           </div>
           <div>
-            <h3>Possible febrile neutropenia</h3>
-            <p>Immediate clinical review recommended</p>
+            <h3>{patientCase.alert.title}</h3>
+            <p>{patientCase.alert.subtitle}</p>
           </div>
-          <SeverityBadge grade={4}>Grade 4 · Life-threatening</SeverityBadge>
+          <SeverityBadge grade={alertGrade}>
+            {alertGrade === 0
+              ? "Grade 0 · Stable"
+              : alertGrade === 4
+                ? "Grade 4 · Life-threatening"
+                : `Grade ${alertGrade} · Severe`}
+          </SeverityBadge>
         </div>
         <div className="alert-values">
           <div>
             <span>Temperature</span>
-            <strong className="numeric">38.4°C</strong>
+            <strong className="numeric">{patientCase.alert.temp}</strong>
           </div>
           <div>
             <span>Absolute neutrophil count</span>
-            <strong className="numeric">420 /µL</strong>
+            <strong className="numeric">{patientCase.alert.anc}</strong>
           </div>
           <div>
-            <span>Antibiotics due</span>
-            <strong className="numeric timer">58:12</strong>
+            <span>Status / Antibiotics</span>
+            <strong
+              className={`numeric ${alertGrade >= 3 ? "timer" : ""}`}
+            >
+              {patientCase.alert.timer}
+            </strong>
           </div>
         </div>
         <div className="guideline-line">
-          <p>
-            IDSA/ASCO recommends blood cultures and broad-spectrum IV
-            antibiotics within 60 minutes.
-          </p>
+          <p>{patientCase.alert.guideline}</p>
           <button>View guideline</button>
         </div>
       </article>
       <div className="metric-grid">
-        {[
-          ["ANC", "420", "cells/µL", `Down 68% from ${formatNumber(1400)}`, 4],
-          [
-            "Platelets",
-            formatNumber(88000),
-            "/µL",
-            `Down from ${formatNumber(180000)}`,
-            1,
-          ],
-          [
-            "WBC",
-            formatNumber(1800),
-            "cells/µL",
-            `Down from ${formatNumber(3100)}`,
-            2,
-          ],
-        ].map(([name, value, unit, delta, grade]) => (
+        {patientCase.metrics.map(([name, value, unit, delta, grade]) => (
           <article className="metric-card" key={String(name)}>
             <div className="metric-title">
               <h3>{name}</h3>
-              <SeverityBadge grade={Number(grade)}>Grade {grade}</SeverityBadge>
+              <SeverityBadge grade={Number(grade)}>
+                {Number(grade) === 0 ? "Stable" : `Grade ${grade}`}
+              </SeverityBadge>
             </div>
             <div className="metric-value">
               <strong className="numeric">{value}</strong>
               <span>{unit}</span>
             </div>
-            <Sparkline gray={Number(grade) !== 4} />
+            <Sparkline gray={Number(grade) < 3} />
             <p>{delta}</p>
           </article>
         ))}
@@ -576,12 +756,8 @@ function ReviewStep({
           </div>
           <strong>{count} of 3 confirmed</strong>
         </div>
-        {[
-          ["ANC critical nadir", "420 cells/µL"],
-          ["Peak temperature", "38.4°C"],
-          ["Platelet count", `${formatNumber(88000)} /µL`],
-        ].map((item, index) => (
-          <div className="check-row" key={item[0]}>
+        {patientCase.checklist.map((item, index) => (
+          <div className="check-row" key={item}>
             <label>
               <input
                 type="checkbox"
@@ -595,8 +771,8 @@ function ReviewStep({
                 }
               />
               <span>
-                <b>{item[0]}</b>
-                <small>{item[1]}</small>
+                <b>Point {index + 1}</b>
+                <small>{item}</small>
               </span>
             </label>
             <button>Edit</button>
@@ -613,33 +789,25 @@ function ReviewStep({
 }
 
 function SignStep({
+  patient,
+  patientCase,
   allConfirmed,
   locked,
   onCopy,
   onAttest,
 }: {
+  patient: typeof patients[number]
+  patientCase: typeof patientCases[string]
   allConfirmed: boolean
   locked: boolean
   onCopy: () => void
   onAttest: () => void
 }) {
   const sections = [
-    [
-      "Subjective",
-      "Reports chills and fatigue overnight. Denies cough, dysuria or new focal pain.",
-    ],
-    [
-      "Objective",
-      `T 38.4°C · BP 104/68 · HR 102 · ANC 420/µL · Platelets ${formatNumber(88000)}/µL.`,
-    ],
-    [
-      "Assessment",
-      "Grade 4 febrile neutropenia, post mFOLFOX6 Cycle 3 Day 8. Hemodynamically stable.",
-    ],
-    [
-      "Plan",
-      "Stat blood cultures x2, IV Cefepime 2g q8h, hold oxaliplatin. Neutropenic precautions.",
-    ],
+    ["Subjective", patientCase.soapDraft.s],
+    ["Objective", patientCase.soapDraft.o],
+    ["Assessment", patientCase.soapDraft.a],
+    ["Plan", patientCase.soapDraft.p],
   ]
   return (
     <section className="step-content sign-step">
@@ -656,12 +824,22 @@ function SignStep({
         )}
       </div>
       <article className="panel soap-note">
+        <div className="soap-header" style={{ padding: "16px 20px", borderBottom: "1px solid var(--divider)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <strong>Inpatient Oncology Round Note</strong>
+            <small className="numeric" style={{ display: "block", color: "var(--secondary)" }}>
+              {patient.name} · {patient.mrn} · Bed {patient.bed} · {patient.regimen}
+            </small>
+          </div>
+          <span style={{ fontSize: "13px", color: "var(--brand)", fontWeight: 600 }}>Attending: Dr. Amrut S Kadam, MD</span>
+        </div>
         {sections.map(([title, text]) => (
           <div className="soap-section" key={title}>
             <h3>{title}</h3>
             <textarea
               aria-label={`${title} note`}
               defaultValue={text}
+              key={`${patient.id}-${title}`}
               readOnly={locked}
             />
           </div>
@@ -791,32 +969,53 @@ function RoundSummary({
   )
 }
 
-function Station() {
+function Station({
+  selectedPatientId,
+  onSelectPatient,
+  go,
+}: {
+  selectedPatientId: string
+  onSelectPatient: (id: string) => void
+  go?: (screen: Screen) => void
+}) {
+  const patient =
+    patients.find((item) => item.id === selectedPatientId) || patients[0]
+  const patientCase = patientCases[patient.id] || patientCases["104"]
+
   const [step, setStep] = useState<Step>(1)
   const [sync, setSync] = useState(true)
   const [drawer, setDrawer] = useState(false)
   const [confirmed, setConfirmed] = useState([true, true, false])
   const [attested, setAttested] = useState(false)
   const [toast, setToast] = useState("")
+
+  useEffect(() => {
+    setConfirmed([true, true, false])
+    setAttested(false)
+  }, [selectedPatientId])
+
   const copyNote = () => {
+    const rawNote = `PATIENT: ${patient.name} (Bed ${patient.bed}, ${patient.mrn})\nDIAGNOSIS: ${patient.diagnosis} · ${patient.regimen} (${patient.cycle})\n\nSUBJECTIVE:\n${patientCase.soapDraft.s}\n\nOBJECTIVE:\n${patientCase.soapDraft.o}\n\nASSESSMENT:\n${patientCase.soapDraft.a}\n\nPLAN:\n${patientCase.soapDraft.p}`
     const noteText = formatEmrClipboardNote(
-      "Patient on mFOLFOX6 cycle 3, day 8. Febrile overnight to 38.4°C with chills and fatigue. Absolute neutrophil count 420 cells/µL (CTCAE Grade 4 Life-threatening), Platelets 88,000 /µL (Grade 1), WBC 1,800 cells/µL (Grade 2).\n\nASSESSMENT & PLAN:\n1. Post-chemotherapy Febrile Neutropenia secondary to mFOLFOX6 (Cycle 3).\n2. IDSA/ASCO 2018 Protocol: Stat blood cultures x2 (peripheral + central line).\n3. Urgent broad-spectrum empiric IV antibiotic administration within 60 minutes: Cefepime 2g IV q8h.\n4. Hold Oxaliplatin/5-FU until complete ANC recovery (>1,500/µL); recommend 20% dose reduction for Cycle 4 per NCCN guidelines.\n5. Consider prophylactic G-CSF (Filgrastim 5 mcg/kg/day) upon afebrile stabilization.",
-      "round-104-active",
-      "104",
-      "Dr. Attending, MD"
+      rawNote,
+      `round-${patient.id}-active`,
+      patient.id,
+      "Dr. Amrut S Kadam, MD"
     )
     if (typeof navigator !== "undefined" && navigator.clipboard) {
       navigator.clipboard.writeText(noteText)
     }
-    setToast("Verified EMR note copied to clipboard")
+    setToast(`Verified EMR note for ${patient.name} copied`)
     setTimeout(() => setToast(""), 2800)
   }
+
   const attestNote = () => {
     setAttested(true)
     setStep(3)
-    setToast("Note attested and locked")
+    setToast(`Note for ${patient.name} attested and locked`)
     setTimeout(() => setToast(""), 2800)
   }
+
   useEffect(() => {
     const keys = (event: KeyboardEvent) => {
       if (
@@ -836,6 +1035,7 @@ function Station() {
     addEventListener("keydown", keys)
     return () => removeEventListener("keydown", keys)
   }, [])
+
   return (
     <main className="station-page page-shell">
       {toast && (
@@ -849,12 +1049,12 @@ function Station() {
         <div className="sync-notice">
           <span>
             <Icon name="zap" size={20} />
-            Bedside round received from Bed 12 · just now
+            Bedside round received from Bed {patient.bed} ({patient.name}) · just now
           </span>
           <div>
             <button
               onClick={() => {
-                setToast("Bedside data refreshed")
+                setToast(`Bedside data refreshed for ${patient.name}`)
                 setTimeout(() => setToast(""), 2800)
               }}
               aria-label="Sync bedside"
@@ -875,7 +1075,11 @@ function Station() {
       )}
       <div className="station-layout">
         <div className={`census-desktop ${drawer ? "open" : ""}`}>
-          <Census onClose={drawer ? () => setDrawer(false) : undefined} />
+          <Census
+            selectedPatientId={selectedPatientId}
+            onSelectPatient={onSelectPatient}
+            onClose={drawer ? () => setDrawer(false) : undefined}
+          />
         </div>
         {drawer && (
           <button
@@ -894,20 +1098,34 @@ function Station() {
               Patients
             </Button>
             <div>
-              <h1>Bed 12 · David Miller</h1>
+              <h1>
+                Bed {patient.bed} · {patient.name}
+              </h1>
               <p>
-                <span className="numeric">58M · MRN-009184</span> · mFOLFOX6 ·
-                Cycle 3 of 6 · Day 8
+                <span className="numeric">
+                  {patient.ageSex} · {patient.mrn}
+                </span>{" "}
+                · {patient.regimen} · {patient.cycle}
               </p>
             </div>
-            <SeverityBadge grade={4}>Grade 4</SeverityBadge>
+            <SeverityBadge grade={patient.grade}>
+              {patient.grade === 0 ? "Stable" : `Grade ${patient.grade}`}
+            </SeverityBadge>
           </div>
           <Stepper step={step} setStep={setStep} />
           {step === 1 && (
-            <CaptureStep complete={false} onContinue={() => setStep(2)} />
+            <CaptureStep
+              patient={patient}
+              patientCase={patientCase}
+              onSelectPatient={onSelectPatient}
+              complete={false}
+              onContinue={() => setStep(2)}
+            />
           )}
           {step === 2 && (
             <ReviewStep
+              patient={patient}
+              patientCase={patientCase}
               confirmed={confirmed}
               setConfirmed={setConfirmed}
               onContinue={() => setStep(3)}
@@ -915,6 +1133,8 @@ function Station() {
           )}
           {step === 3 && (
             <SignStep
+              patient={patient}
+              patientCase={patientCase}
               allConfirmed={confirmed.every(Boolean)}
               locked={attested}
               onCopy={copyNote}
@@ -934,7 +1154,15 @@ function Station() {
   )
 }
 
-function Roster({ go }: { go: (screen: Screen) => void }) {
+function Roster({
+  selectedPatientId,
+  onSelectPatient,
+  go,
+}: {
+  selectedPatientId: string
+  onSelectPatient: (id: string) => void
+  go: (screen: Screen) => void
+}) {
   const [drawer, setDrawer] = useState(false)
   const [discharge, setDischarge] = useState<typeof patients[number] | null>(
     null,
@@ -996,15 +1224,20 @@ function Roster({ go }: { go: (screen: Screen) => void }) {
             </tr>
           </thead>
           <tbody>
-            {patients.map((patient, index) => (
-              <tr className={index === 0 ? "active" : ""} key={patient.id}>
+            {patients.map((patient) => (
+              <tr
+                className={patient.id === selectedPatientId ? "active" : ""}
+                key={patient.id}
+                onClick={() => onSelectPatient(patient.id)}
+                style={{ cursor: "pointer" }}
+              >
                 <td data-label="Patient">
                   <div className="roster-patient">
                     <span className="patient-avatar">{patient.initials}</span>
                     <div>
                       <strong>
                         {patient.name}
-                        {index === 0 && (
+                        {patient.id === selectedPatientId && (
                           <span className="active-pill">Active</span>
                         )}
                       </strong>
@@ -1025,9 +1258,28 @@ function Roster({ go }: { go: (screen: Screen) => void }) {
                 </td>
                 <td data-label="Actions">
                   <div className="row-actions">
-                    <button onClick={() => go("station")}>Assess round</button>
-                    <button onClick={() => go("analytics")}>Analytics</button>
-                    <div className="more-wrap">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onSelectPatient(patient.id)
+                        go("station")
+                      }}
+                    >
+                      Assess round
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onSelectPatient(patient.id)
+                        go("analytics")
+                      }}
+                    >
+                      Analytics
+                    </button>
+                    <div
+                      className="more-wrap"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <button
                         aria-label={`More actions for ${patient.name}`}
                         title={`More actions for ${patient.name}`}
@@ -1039,10 +1291,19 @@ function Roster({ go }: { go: (screen: Screen) => void }) {
                       </button>
                       {menu === patient.id && (
                         <div className="row-menu">
-                          <button>Edit</button>
+                          <button
+                            onClick={() => {
+                              setMenu("")
+                            }}
+                          >
+                            Edit
+                          </button>
                           <button
                             className="danger-text"
-                            onClick={() => setDischarge(patient)}
+                            onClick={() => {
+                              setDischarge(patient)
+                              setMenu("")
+                            }}
                           >
                             Discharge
                           </button>
@@ -1141,13 +1402,26 @@ function Roster({ go }: { go: (screen: Screen) => void }) {
   )
 }
 
-function MobileCompanion() {
+function MobileCompanion({
+  selectedPatientId,
+  onSelectPatient,
+}: {
+  selectedPatientId?: string
+  onSelectPatient?: (id: string) => void
+} = {}) {
+  const activeId = selectedPatientId || "104"
+  const patient = patients.find((item) => item.id === activeId) || patients[0]
+  const patientCase = patientCases[patient.id] || patientCases["104"]
+
   const [recording, setRecording] = useState(false)
-  const [transcript, setTranscript] = useState(
-    "Patient feels improved this morning. No fever overnight.",
-  )
+  const [transcript, setTranscript] = useState(patientCase.transcript)
   const [captured, setCaptured] = useState(false)
   const [sent, setSent] = useState(false)
+
+  useEffect(() => {
+    setTranscript(patientCase.transcript)
+  }, [patientCase.transcript])
+
   const presets = [
     "Afebrile",
     "Nausea Grade 2",
@@ -1169,11 +1443,21 @@ function MobileCompanion() {
             title="Local speech system online"
           />
         </div>
-        <button className="patient-selector">
+        <button
+          className="patient-selector"
+          onClick={() => {
+            if (onSelectPatient) {
+              const currentIndex = patients.findIndex((p) => p.id === patient.id)
+              const nextIndex = (currentIndex + 1) % patients.length
+              onSelectPatient(patients[nextIndex].id)
+            }
+          }}
+          title="Tap to switch patient"
+        >
           <span>
-            <b>Bed 12</b> · David Miller
+            <b>Bed {patient.bed}</b> · {patient.name}
           </span>
-          <span>Change</span>
+          <span>Change (Tap)</span>
         </button>
         <div className="record-area">
           <button
@@ -1372,12 +1656,18 @@ function RecoveryChart() {
   )
 }
 
-function Analytics() {
+function Analytics({
+  selectedPatientId,
+  onSelectPatient,
+}: {
+  selectedPatientId?: string
+  onSelectPatient?: (id: string) => void
+} = {}) {
+  const activeId = selectedPatientId || "104"
   const [ascending, setAscending] = useState(false)
-  const [selectedId, setSelectedId] = useState("104")
   const [toast, setToast] = useState("")
-  const patient = patients.find((item) => item.id === selectedId) || patients[0]
-  const baselineOnly = selectedId !== "104"
+  const patient = patients.find((item) => item.id === activeId) || patients[0]
+  const baselineOnly = activeId !== "104"
   const kpis: Record<string, [string, string, string, string][]> = {
     "104": [
       ["Absolute neutrophils", "420", "/µL", "Grade 4"],
@@ -1431,8 +1721,8 @@ function Analytics() {
           <label>
             Patient
             <select
-              value={selectedId}
-              onChange={(event) => setSelectedId(event.target.value)}
+              value={activeId}
+              onChange={(event) => onSelectPatient?.(event.target.value)}
             >
               {patients.map((item) => (
                 <option value={item.id} key={item.id}>
@@ -1444,8 +1734,8 @@ function Analytics() {
           <div className="patient-chips">
             {patients.map((item) => (
               <button
-                className={item.id === selectedId ? "active" : ""}
-                onClick={() => setSelectedId(item.id)}
+                className={item.id === activeId ? "active" : ""}
+                onClick={() => onSelectPatient?.(item.id)}
                 key={item.id}
               >
                 #{item.id} {item.name.split(" ")[0]}
@@ -1486,7 +1776,7 @@ function Analytics() {
             <span>
               {patient.regimen} · {patient.cycle}
             </span>
-            <strong>{selectedId === "104" ? "50%" : "—"}</strong>
+            <strong>{activeId === "104" ? "50%" : "—"}</strong>
           </div>
           <div className="progress-track">
             <i />
@@ -1513,7 +1803,7 @@ function Analytics() {
         </div>
       )}
       <div className="stat-grid">
-        {kpis[selectedId].map(([label, value, unit, badge]) => (
+        {((kpis[activeId] || kpis["104"]) as [string, string, string, string][]).map(([label, value, unit, badge]) => (
           <article key={label}>
             <span>{label}</span>
             <strong
@@ -2292,6 +2582,7 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
   }
   const [signedIn, setSignedIn] = useState(false)
   const [online, setOnline] = useState(true)
+  const [selectedPatientId, setSelectedPatientId] = useState("104")
   const [screen, setScreen] = useState<Screen>(initialScreen || "landing")
 
   useEffect(() => {
@@ -2377,13 +2668,27 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
       )}
       <Header screen={screen} go={go} onSignOut={signOut} />
       {screen === "station" ? (
-        <Station />
+        <Station
+          selectedPatientId={selectedPatientId}
+          onSelectPatient={setSelectedPatientId}
+          go={go}
+        />
       ) : screen === "roster" ? (
-        <Roster go={go} />
+        <Roster
+          selectedPatientId={selectedPatientId}
+          onSelectPatient={setSelectedPatientId}
+          go={go}
+        />
       ) : screen === "mobile" ? (
-        <MobileCompanion />
+        <MobileCompanion
+          selectedPatientId={selectedPatientId}
+          onSelectPatient={setSelectedPatientId}
+        />
       ) : (
-        <Analytics />
+        <Analytics
+          selectedPatientId={selectedPatientId}
+          onSelectPatient={setSelectedPatientId}
+        />
       )}
       <footer className="quiet-footer">
         City Cancer Center · Local clinical processing · CTCAE v5.0 ·

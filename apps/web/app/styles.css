@@ -231,3 +231,55 @@ input:disabled,select:disabled,textarea:disabled { background:var(--subtle);colo
 @media (prefers-reduced-motion:reduce) {
   .panel,.metric-card,.summary-card,.stat-grid article,.analytics-section,.audit-section,.roster-surface,.feature-grid>article,.verified-label svg,.pipeline>div:not(.done)>i::after { animation:none!important; }
 }
+
+
+/* Patient selection and dropdown layout fixes */
+.station-layout { grid-template-columns: 310px minmax(0,1fr) !important; gap: 32px !important; }
+.census { width: 310px !important; }
+.patient-row { cursor: pointer !important; }
+.patient-row:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.roster-surface { overflow: visible !important; margin-bottom: 72px; }
+.roster-surface table { overflow: visible !important; }
+.roster-surface tbody tr { cursor: pointer; }
+
+.more-wrap { position: relative !important; display: inline-flex; align-items: center; }
+.row-menu {
+  position: absolute !important;
+  right: 0 !important;
+  top: calc(100% + 4px) !important;
+  z-index: 100 !important;
+  min-width: 140px !important;
+  padding: 6px !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 12px !important;
+  background: var(--surface) !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 4px !important;
+  white-space: normal !important;
+}
+.row-menu button {
+  width: 100% !important;
+  min-height: 36px !important;
+  padding: 6px 12px !important;
+  border: 0 !important;
+  border-radius: 8px !important;
+  background: transparent !important;
+  color: var(--text) !important;
+  font-weight: 500 !important;
+  font-size: 14px !important;
+  text-align: left !important;
+  display: flex !important;
+  align-items: center !important;
+  cursor: pointer !important;
+  transition: background 0.15s !important;
+}
+.row-menu button:hover { background: var(--subtle) !important; }
+.row-menu button.danger-text { color: var(--g4) !important; }
+.row-menu button.danger-text:hover { background: var(--g4-bg) !important; }
+
+.critical-alert.grade-3-alert { border-color: var(--g3-border); background: var(--g3-bg); }
+.critical-alert.grade-3-alert .icon-box { background: var(--g3); color: white; }
+.critical-alert.stable-alert { border-color: var(--stable-border); background: var(--stable-bg); }
+.critical-alert.stable-alert .icon-box { background: var(--stable); color: white; }
