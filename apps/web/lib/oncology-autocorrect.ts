@@ -98,6 +98,46 @@ export const ONCOLOGY_RULES: OncologyRule[] = [
     baseConfidence: 99,
     reason: "Fluorouracil antimetabolite chemotherapy",
   },
+  {
+    id: "RULE_CHEMO_ABVD",
+    pattern: /\b(a\s*b\s*v\s*d|abvd)\b/gi,
+    replacement: "ABVD",
+    category: "Regimen",
+    baseConfidence: 98,
+    reason: "Standard Hodgkin lymphoma regimen (Adriamycin/Bleomycin/Vinblastine/Dacarbazine)",
+  },
+  {
+    id: "RULE_CHEMO_CHOP",
+    pattern: /\b(c\s*h\s*o\s*p|chop\s+chemo|chop\s+regimen)\b/gi,
+    replacement: "CHOP",
+    category: "Regimen",
+    baseConfidence: 98,
+    reason: "Non-Hodgkin lymphoma chemotherapy protocol",
+  },
+  {
+    id: "RULE_CHEMO_FLOT",
+    pattern: /\b(f\s*l\s*o\s*t|flot\s+chemo|flot\s+regimen)\b/gi,
+    replacement: "FLOT",
+    category: "Regimen",
+    baseConfidence: 98,
+    reason: "Standard gastric / gastroesophageal adenocarcinoma perioperative regimen",
+  },
+  {
+    id: "RULE_CHEMO_BEP",
+    pattern: /\b(b\s*e\s*p|bep\s+chemo|bep\s+regimen)\b/gi,
+    replacement: "BEP",
+    category: "Regimen",
+    baseConfidence: 98,
+    reason: "Standard germ cell tumor regimen (Bleomycin/Etoposide/Cisplatin)",
+  },
+  {
+    id: "RULE_CHEMO_GEMOX",
+    pattern: /\b(gem\s*ox|gemox)\b/gi,
+    replacement: "GEMOX",
+    category: "Regimen",
+    baseConfidence: 97,
+    reason: "Gemcitabine + Oxaliplatin protocol",
+  },
 
   // ── Specific Toxicities First (Longer/Compound phrases first) ────────
   {
@@ -278,6 +318,110 @@ export const ONCOLOGY_RULES: OncologyRule[] = [
     baseConfidence: 98,
     reason: "Carbapenem antimicrobial",
   },
+  {
+    id: "RULE_DRUG_GEMCITABINE",
+    pattern: /\b(gem\s*cite\s*a\s*bean|gem\s*cita\s*bine|gemcitabine|gemzar)\b/gi,
+    replacement: "gemcitabine",
+    category: "Oncology Drug",
+    baseConfidence: 99,
+    reason: "Nucleoside metabolic inhibitor antineoplastic",
+  },
+  {
+    id: "RULE_DRUG_PACLITAXEL",
+    pattern: /\b(pack\s*lee\s*tax\s*el|pacli\s*taxel|taxol)\b/gi,
+    replacement: "paclitaxel",
+    category: "Oncology Drug",
+    baseConfidence: 99,
+    reason: "Microtubule inhibitor taxane chemotherapy",
+  },
+  {
+    id: "RULE_DRUG_DOCETAXEL",
+    pattern: /\b(doe\s*see\s*tax\s*el|doce\s*taxel|taxotere)\b/gi,
+    replacement: "docetaxel",
+    category: "Oncology Drug",
+    baseConfidence: 99,
+    reason: "Taxoid antineoplastic agent",
+  },
+  {
+    id: "RULE_DRUG_CISPLATIN",
+    pattern: /\b(sis\s*platin|cis\s*platin|platinol)\b/gi,
+    replacement: "cisplatin",
+    category: "Oncology Drug",
+    baseConfidence: 99,
+    reason: "Platinum coordination cytotoxic agent",
+  },
+  {
+    id: "RULE_DRUG_CARBOPLATIN",
+    pattern: /\b(carbo\s*platin|paraplatin)\b/gi,
+    replacement: "carboplatin",
+    category: "Oncology Drug",
+    baseConfidence: 99,
+    reason: "Second-generation platinum antineoplastic",
+  },
+  {
+    id: "RULE_DRUG_ETOPOSIDE",
+    pattern: /\b(ee\s*top\s*o\s*side|etoposide|vp\s*-?\s*16)\b/gi,
+    replacement: "etoposide",
+    category: "Oncology Drug",
+    baseConfidence: 99,
+    reason: "Topoisomerase II inhibitor cytotoxic agent",
+  },
+  {
+    id: "RULE_DRUG_LENALIDOMIDE",
+    pattern: /\b(lena\s*lidomide|revlimid)\b/gi,
+    replacement: "lenalidomide",
+    category: "Oncology Drug",
+    baseConfidence: 98,
+    reason: "Immunomodulatory agent for multiple myeloma",
+  },
+  {
+    id: "RULE_DRUG_BORTEZOMIB",
+    pattern: /\b(bor\s*tez\s*omib|velcade)\b/gi,
+    replacement: "bortezomib",
+    category: "Oncology Drug",
+    baseConfidence: 98,
+    reason: "Proteasome inhibitor for plasma cell neoplasms",
+  },
+  {
+    id: "RULE_DRUG_ATEZOLIZUMAB",
+    pattern: /\b(atezo\s*lizzie\s*mab|atezolizumab|tecentriq)\b/gi,
+    replacement: "atezolizumab",
+    category: "Oncology Drug",
+    baseConfidence: 98,
+    reason: "PD-L1 targeted monoclonal antibody",
+  },
+  {
+    id: "RULE_DRUG_LEUCOVORIN",
+    pattern: /\b(leuco\s*vorin|folinic\s+acid)\b/gi,
+    replacement: "leucovorin",
+    category: "Oncology Drug",
+    baseConfidence: 99,
+    reason: "Folinic acid 5-FU biomodulator and rescue agent",
+  },
+  {
+    id: "RULE_DRUG_METHOTREXATE",
+    pattern: /\b(metho\s*trexate|m\s*t\s*x)\b/gi,
+    replacement: "methotrexate",
+    category: "Oncology Drug",
+    baseConfidence: 98,
+    reason: "Dihydrofolate reductase inhibitor antimetabolite",
+  },
+  {
+    id: "RULE_DRUG_LEVOFLOXACIN",
+    pattern: /\b(levo\s*flox\s*acin|levaquin)\b/gi,
+    replacement: "levofloxacin",
+    category: "Oncology Drug",
+    baseConfidence: 98,
+    reason: "Fluoroquinolone prophylaxis for intermediate neutropenia",
+  },
+  {
+    id: "RULE_DRUG_VANCOMYCIN",
+    pattern: /\b(vanco\s*mycin|vancocin)\b/gi,
+    replacement: "vancomycin",
+    category: "Oncology Drug",
+    baseConfidence: 98,
+    reason: "Glycopeptide antibiotic for MRSA / gram-positive coverage",
+  },
 
   // ── Lab Tests & Blood Counts ──────────────────────────────────────────
   {
@@ -327,6 +471,86 @@ export const ONCOLOGY_RULES: OncologyRule[] = [
     category: "Biomarker / Lab",
     baseConfidence: 98,
     reason: "Estimated glomerular filtration rate",
+  },
+  {
+    id: "RULE_LAB_HCT",
+    pattern: /\b(hemato\s*crit|h\s*c\s*t|hct)\b/gi,
+    replacement: "hematocrit",
+    category: "Biomarker / Lab",
+    baseConfidence: 98,
+    reason: "Erythrocyte volume fraction",
+  },
+  {
+    id: "RULE_LAB_BUN",
+    pattern: /\b(b\s*u\s*n|blood\s+urea\s+nitrogen)\b/gi,
+    replacement: "BUN",
+    category: "Biomarker / Lab",
+    baseConfidence: 98,
+    reason: "Blood urea nitrogen renal marker",
+  },
+  {
+    id: "RULE_LAB_BILI",
+    pattern: /\b(total\s+bili(?:rubin)?|bili(?:rubin)?)\b/gi,
+    replacement: "total bilirubin",
+    category: "Biomarker / Lab",
+    baseConfidence: 97,
+    reason: "Hepatic excretion biomarker",
+  },
+  {
+    id: "RULE_LAB_ALT",
+    pattern: /\b(a\s*l\s*t|s\s*g\s*p\s*t)\b/gi,
+    replacement: "ALT",
+    category: "Biomarker / Lab",
+    baseConfidence: 98,
+    reason: "Alanine transaminase liver safety marker",
+  },
+  {
+    id: "RULE_LAB_AST",
+    pattern: /\b(a\s*s\s*t|s\s*g\s*o\s*t)\b/gi,
+    replacement: "AST",
+    category: "Biomarker / Lab",
+    baseConfidence: 98,
+    reason: "Aspartate transaminase liver marker",
+  },
+  {
+    id: "RULE_LAB_ALKPHOS",
+    pattern: /\b(alk\s*phos|alkaline\s+phosphatase|a\s*l\s*p)\b/gi,
+    replacement: "alkaline phosphatase",
+    category: "Biomarker / Lab",
+    baseConfidence: 98,
+    reason: "Biliary / bone metabolic marker",
+  },
+  {
+    id: "RULE_LAB_LDH",
+    pattern: /\b(l\s*d\s*h|lactate\s+dehydrogenase)\b/gi,
+    replacement: "LDH",
+    category: "Biomarker / Lab",
+    baseConfidence: 98,
+    reason: "Serum tumor burden and lymphoma prognostic marker",
+  },
+  {
+    id: "RULE_LAB_CEA",
+    pattern: /\b(c\s*e\s*a|carcino\s*embryonic\s+antigen)\b/gi,
+    replacement: "CEA",
+    category: "Biomarker / Lab",
+    baseConfidence: 99,
+    reason: "Colorectal carcinoma tumor marker",
+  },
+  {
+    id: "RULE_LAB_CA199",
+    pattern: /\b(ca\s*19\s*-?\s*9|c\s+a\s+19\s+9)\b/gi,
+    replacement: "CA 19-9",
+    category: "Biomarker / Lab",
+    baseConfidence: 98,
+    reason: "Pancreaticobiliary tumor marker",
+  },
+  {
+    id: "RULE_LAB_CA125",
+    pattern: /\b(ca\s*125|c\s+a\s+125)\b/gi,
+    replacement: "CA-125",
+    category: "Biomarker / Lab",
+    baseConfidence: 98,
+    reason: "Ovarian epithelial carcinoma marker",
   },
 
   // ── Spoken Clinical Numbers & Counts ──────────────────────────────
@@ -541,6 +765,25 @@ export const ONCOLOGY_RULES: OncologyRule[] = [
     reason: "Clinical terminology for pyrexia",
   },
 ]
+
+/**
+ * Formats spoken punctuation commands (period, comma, new line, colon, semicolon)
+ * into standard clinical punctuation marks and proper capitalization.
+ */
+export function formatSpokenClinicalPunctuation(spokenText: string): string {
+  if (!spokenText) return ""
+  return spokenText
+    .replace(/\s+\b(?:full\s+stop|period)\b/gi, ".")
+    .replace(/\s+\bcomma\b/gi, ",")
+    .replace(/\s+\b(?:colon)\b/gi, ":")
+    .replace(/\s+\b(?:semi\s*colon)\b/gi, ";")
+    .replace(/\s+\b(?:new\s+line|next\s+line)\b/gi, "\n")
+    .replace(/\s+\b(?:new\s+paragraph)\b/gi, "\n\n")
+    .replace(/\s+\b(?:question\s+mark)\b/gi, "?")
+    .replace(/\s+\b(?:hyphen|dash)\b/gi, "-")
+    .replace(/\s+([.,;:?!])/g, "$1")
+    .replace(/([.\n]\s+)([a-z])/g, (_, p1, p2) => p1 + p2.toUpperCase())
+}
 
 /**
  * Fast deterministic oncology speech error correction with phonetic normalizer.

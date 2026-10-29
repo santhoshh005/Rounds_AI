@@ -7,6 +7,7 @@ import {
   formatProvenanceBadge,
   extractOncologyTriad,
   formatEmrClipboardNote,
+  parseClinicalLabReport,
 } from "./clinical-utils.ts";
 
 
@@ -184,5 +185,37 @@ describe("Clinical Utilities — TDD Suite", () => {
       assert.ok(formatted.includes("Draft note for review."));
     });
   });
-});
 
+  describe("parseClinicalLabReport", () => {
+    it("extracts ANC, WBC, Platelets, and Temp from raw clinical text", () => {
+      const text = "CITY CANCER CENTER LAB REPORT WBC: 1.8 x10^3/uL Absolute Neutrophils (ANC): 420 cells/uL Platelet Count: 88,000 /uL Hemoglobin: 10.2 g/dL Vitals: Temp 38.4 C";
+      const res = parseClinicalLabReport("cbc_scan.txt", text);
+      assert.equal(res.anc, 420);
+      assert.equal(res.wbc, 1.8);
+      assert.equal(res.platelets, 88000);
+      assert.equal(res.hemoglobin, 10.2);
+      assert.equal(res.temp, 38.4);
+      assert.equal(res.grade, 4);
+      assert.equal(res.isFebrile, true);
+      assert.equal(res.confidence, 99);
+      assert.equal(res.extractedFromText, true);
+    });
+
+    it("handles decimal neutrophil counts e.g. NEUT# 0.42 x10^3", () => {
+      const text = "NEUT# 0.42 x10^3/uL, PLT 88 K/uL, Temp 101.1 F";
+      const res = parseClinicalLabReport("lab.txt", text);
+      assert.equal(res.anc, 420);
+      assert.equal(res.platelets, 88000);
+      assert.equal(res.temp, 38.4);
+      assert.equal(res.grade, 4);
+    });
+
+    it("falls back to patient baseline when text has no numerical matches", () => {
+      const res = parseClinicalLabReport("unreadable.png", "Binary stream...", { id: "105" });
+      assert.equal(res.anc, 750);
+      assert.equal(res.grade, 3);
+      assert.equal(res.extractedFromText, false);
+      assert.equal(res.confidence, 95);
+    });
+  });
+});

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   autocorrectOncologyTranscript,
   applySelectedCorrections,
+  formatSpokenClinicalPunctuation,
 } from "./oncology-autocorrect.ts";
 
 describe("Oncology Terms Auto-Correction Engine", () => {
@@ -67,5 +68,26 @@ describe("Oncology Terms Auto-Correction Engine", () => {
     const partiallyApplied = applySelectedCorrections(input, modifiedChanges);
     assert.ok(partiallyApplied.includes("R-CHOP"));
     assert.ok(partiallyApplied.includes("muc ositis")); // Kept original
+  });
+
+  it("normalizes newly added regimens, antineoplastic drugs, and tumor markers", () => {
+    const input = "patient scheduled for flot chemo, received gem cite a bean and pack lee tax el with leuco vorin rescue, followed by vanco mycin. Labs: blood urea nitrogen and ca 19-9 elevated";
+    const result = autocorrectOncologyTranscript(input);
+    assert.ok(result.correctedText.includes("FLOT"));
+    assert.ok(result.correctedText.includes("gemcitabine"));
+    assert.ok(result.correctedText.includes("paclitaxel"));
+    assert.ok(result.correctedText.includes("leucovorin"));
+    assert.ok(result.correctedText.includes("vancomycin"));
+    assert.ok(result.correctedText.includes("BUN"));
+    assert.ok(result.correctedText.includes("CA 19-9"));
+  });
+
+  it("converts spoken clinical punctuation accurately", () => {
+    const spoken = "patient on mFOLFOX6 comma afebrile period Labs show ANC 420 cells per microliter period next line start IV piperacillin tazobactam";
+    const formatted = formatSpokenClinicalPunctuation(spoken);
+    assert.ok(formatted.includes("mFOLFOX6, afebrile."));
+    assert.ok(formatted.includes("period") === false);
+    assert.ok(formatted.includes("comma") === false);
+    assert.ok(formatted.includes("\n"));
   });
 });

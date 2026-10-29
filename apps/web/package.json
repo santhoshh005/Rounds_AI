@@ -11,7 +11,7 @@
     "build": "next build",
     "start": "next start",
     "test": "node --test --experimental-strip-types lib/clinical-utils.test.ts lib/oncology-autocorrect.test.ts",
-    "test:e2e": "node e2e_button_test.mjs"
+    "test:e2e": "node regression_test.mjs"
   },
   "dependencies": {
     "firebase": "^12.18.0",

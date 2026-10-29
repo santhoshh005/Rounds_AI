@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { Icon } from "./components/Icons"
 import { roundsApi, type ExtractRoundResponse } from "../lib/api"
-import { formatEmrClipboardNote } from "../lib/clinical-utils"
-import { autocorrectOncologyTranscript, applySelectedCorrections, type AutocorrectChange, type AutocorrectResult } from "../lib/oncology-autocorrect"
+import { formatEmrClipboardNote, parseClinicalLabReport, type ParsedClinicalOcr } from "../lib/clinical-utils"
+import { autocorrectOncologyTranscript, applySelectedCorrections, formatSpokenClinicalPunctuation, type AutocorrectChange, type AutocorrectResult } from "../lib/oncology-autocorrect"
 
 
 
@@ -142,7 +142,11 @@ const INITIAL_ANALYTICS: Record<string, PatientAnalytics> = {
   },
 }
 
-function parseClinicalLabOcr(fileName: string, textContent: string, patient: typeof patients[number]) {
+function parseClinicalLabOcr(fileName: string, textContent: string, patient: typeof patients[number]): ParsedClinicalOcr {
+  return parseClinicalLabReport(fileName, textContent, patient)
+}
+
+function _legacyParseClinicalLabOcr(fileName: string, textContent: string, patient: typeof patients[number]) {
   // Extract numbers using regex if present in user file
   const ancMatch = textContent.match(/anc[:\s]+(\d+[\d,]*)/i) || textContent.match(/neutrophils?[:\s]+(\d+[\d,]*)/i)
   const wbcMatch = textContent.match(/wbc[:\s]+(\d+\.?\d*)/i) || textContent.match(/white blood[:\s]+(\d+\.?\d*)/i)
@@ -368,6 +372,21 @@ function Header({
 }) {
   const [status, setStatus] = useState(false)
   const [profile, setProfile] = useState(false)
+
+  useEffect(() => {
+    if (!status && !profile) return
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement
+      if (status && !target.closest(".status-wrap")) {
+        setStatus(false)
+      }
+      if (profile && !target.closest(".profile-wrap")) {
+        setProfile(false)
+      }
+    }
+    document.addEventListener("click", handleClickOutside)
+    return () => document.removeEventListener("click", handleClickOutside)
+  }, [status, profile])
   return (
     <header className="header">
       <div className="header-inner">
@@ -739,8 +758,8 @@ function useVoiceDictation({
             const spokenChunk = event.results[i][0].transcript
             if (spokenChunk && spokenChunk.trim()) {
               const formatted = clinicalAutoCorrect
-                ? autocorrectOncologyTranscript(spokenChunk.trim()).correctedText
-                : spokenChunk.trim()
+                ? autocorrectOncologyTranscript(formatSpokenClinicalPunctuation(spokenChunk.trim())).correctedText
+                : formatSpokenClinicalPunctuation(spokenChunk.trim())
               onAppendText(" " + formatted)
             }
           } else {
@@ -874,8 +893,8 @@ function useVoiceDictation({
 
             if (transcriptText && transcriptText.trim()) {
               const corrected = clinicalAutoCorrect
-                ? autocorrectOncologyTranscript(transcriptText.trim()).correctedText
-                : transcriptText.trim()
+                ? autocorrectOncologyTranscript(formatSpokenClinicalPunctuation(transcriptText.trim())).correctedText
+                : formatSpokenClinicalPunctuation(transcriptText.trim())
               onAppendText(`\n[Whisper On-Device STT · Zero Audio Egress]: ${corrected}`)
             } else {
               onError?.("Whisper STT: No speech detected during recording. Please speak into your microphone or enter notes directly.")
@@ -1042,7 +1061,7 @@ function ClinicalAutoCorrectModal({
           </div>
         ) : (
           <>
-            <div className="autocorrect-metrics-banner">
+            <div className="autocorrect-metrics-banner autocorrect-stats-bar">
               <div className="metric-pill terms-pill">
                 <Icon name="alert" size={16} />
                 <span>
@@ -1164,6 +1183,188 @@ function ClinicalAutoCorrectModal({
   )
 }
 
+function OcrReviewModal({
+  isOpen,
+  fileName,
+  initialParsed,
+  onClose,
+  onCommit,
+}: {
+  isOpen: boolean
+  fileName: string
+  initialParsed: ParsedClinicalOcr | null
+  onClose: () => void
+  onCommit: (confirmed: ParsedClinicalOcr) => void
+}) {
+  const [anc, setAnc] = useState(initialParsed?.anc || 420)
+  const [wbc, setWbc] = useState(initialParsed?.wbc || 1.8)
+  const [platelets, setPlatelets] = useState(initialParsed?.platelets || 88000)
+  const [hemoglobin, setHemoglobin] = useState(initialParsed?.hemoglobin || 10.2)
+  const [temp, setTemp] = useState(initialParsed?.temp || 38.4)
+
+  useEffect(() => {
+    if (initialParsed) {
+      setAnc(initialParsed.anc)
+      setWbc(initialParsed.wbc)
+      setPlatelets(initialParsed.platelets)
+      setHemoglobin(initialParsed.hemoglobin)
+      setTemp(initialParsed.temp)
+    }
+  }, [initialParsed])
+
+  if (!isOpen || !initialParsed) return null
+
+  let grade = 0
+  if (anc < 500) grade = 4
+  else if (anc < 1000) grade = 3
+  else if (anc < 1500) grade = 2
+  else if (anc < 2000) grade = 1
+
+  const isFebrile = temp >= 38.0
+
+  const handleCommit = () => {
+    onCommit({
+      anc,
+      wbc,
+      platelets,
+      hemoglobin,
+      temp,
+      grade,
+      isFebrile,
+      confidence: initialParsed.confidence,
+      extractedFromText: initialParsed.extractedFromText,
+    })
+    onClose()
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true">
+      <div
+        className="modal-card autocorrect-modal-card"
+        onClick={(e) => e.stopPropagation()}
+        style={{ maxWidth: "640px", width: "94vw" }}
+      >
+        <div className="modal-header">
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <span className="brand-mark" style={{ width: "28px", height: "28px" }}>
+                <Icon name="file" size={16} />
+              </span>
+              <h3>Multimodal OCR Lab Extraction</h3>
+            </div>
+            <p style={{ marginTop: "4px" }}>
+              Review & verify extracted values from <strong>{fileName}</strong> before syncing to analytics.
+            </p>
+          </div>
+          <button className="text-button" onClick={onClose} aria-label="Close modal">
+            ✕
+          </button>
+        </div>
+
+        <div className="autocorrect-stats-bar" style={{ flexWrap: "wrap", gap: "10px" }}>
+          <div className="metric-pill confidence-pill">
+            <Icon name="shield" size={16} />
+            <span>
+              <strong>{initialParsed.confidence}%</strong> OCR Vision Match
+            </span>
+          </div>
+          <SeverityBadge grade={grade}>
+            {grade === 0 ? "Grade 0 · Stable" : grade === 4 ? "Grade 4 · Life-threatening" : `Grade ${grade} · Severe`}
+          </SeverityBadge>
+          {isFebrile && (
+            <span style={{ fontSize: "12px", padding: "4px 8px", borderRadius: "999px", background: "var(--g4-bg)", color: "var(--g4)", fontWeight: 600 }}>
+              Febrile Spike ({temp}°C)
+            </span>
+          )}
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", margin: "16px 0" }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "13px", fontWeight: 600 }}>
+            Absolute Neutrophil Count (ANC)
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <input
+                type="number"
+                value={anc}
+                onChange={(e) => setAnc(Number(e.target.value) || 0)}
+                style={{ flex: 1, height: "40px", padding: "0 10px", borderRadius: "8px", border: "1px solid var(--border)", background: "var(--surface)", fontFamily: "JetBrains Mono" }}
+              />
+              <span style={{ color: "var(--secondary)", fontSize: "13px" }}>/µL</span>
+            </div>
+          </label>
+
+          <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "13px", fontWeight: 600 }}>
+            Platelet Reserve
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <input
+                type="number"
+                value={platelets}
+                onChange={(e) => setPlatelets(Number(e.target.value) || 0)}
+                style={{ flex: 1, height: "40px", padding: "0 10px", borderRadius: "8px", border: "1px solid var(--border)", background: "var(--surface)", fontFamily: "JetBrains Mono" }}
+              />
+              <span style={{ color: "var(--secondary)", fontSize: "13px" }}>/µL</span>
+            </div>
+          </label>
+
+          <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "13px", fontWeight: 600 }}>
+            White Blood Cells (WBC)
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <input
+                type="number"
+                step="0.1"
+                value={wbc}
+                onChange={(e) => setWbc(Number(e.target.value) || 0)}
+                style={{ flex: 1, height: "40px", padding: "0 10px", borderRadius: "8px", border: "1px solid var(--border)", background: "var(--surface)", fontFamily: "JetBrains Mono" }}
+              />
+              <span style={{ color: "var(--secondary)", fontSize: "13px" }}>x10³/µL</span>
+            </div>
+          </label>
+
+          <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "13px", fontWeight: 600 }}>
+            Hemoglobin (Hgb)
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <input
+                type="number"
+                step="0.1"
+                value={hemoglobin}
+                onChange={(e) => setHemoglobin(Number(e.target.value) || 0)}
+                style={{ flex: 1, height: "40px", padding: "0 10px", borderRadius: "8px", border: "1px solid var(--border)", background: "var(--surface)", fontFamily: "JetBrains Mono" }}
+              />
+              <span style={{ color: "var(--secondary)", fontSize: "13px" }}>g/dL</span>
+            </div>
+          </label>
+
+          <label style={{ gridColumn: "1/-1", display: "flex", flexDirection: "column", gap: "4px", fontSize: "13px", fontWeight: 600 }}>
+            Body Temperature
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <input
+                type="number"
+                step="0.1"
+                value={temp}
+                onChange={(e) => setTemp(Number(e.target.value) || 0)}
+                style={{ width: "160px", height: "40px", padding: "0 10px", borderRadius: "8px", border: "1px solid var(--border)", background: "var(--surface)", fontFamily: "JetBrains Mono" }}
+              />
+              <span style={{ color: "var(--secondary)", fontSize: "13px" }}>°C ({isFebrile ? "Febrile" : "Afebrile"})</span>
+            </div>
+          </label>
+        </div>
+
+        <div className="modal-footer" style={{ borderTop: "1px solid var(--divider)", paddingTop: "16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <Button onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            icon="check"
+            onClick={handleCommit}
+          >
+            Confirm & Commit to Note & Analytics
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function CaptureStep({
   patient,
   patientCase,
@@ -1188,6 +1389,8 @@ function CaptureStep({
   const [clinicalAutoCorrect, setClinicalAutoCorrect] = useState(true)
   const [autoCorrectModalOpen, setAutoCorrectModalOpen] = useState(false)
   const [ocrStatus, setOcrStatus] = useState<string | null>(null)
+  const [ocrModalOpen, setOcrModalOpen] = useState(false)
+  const [pendingOcr, setPendingOcr] = useState<{ fileName: string; parsed: ParsedClinicalOcr } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -1216,6 +1419,23 @@ function CaptureStep({
     }
   }
 
+  const handleConfirmOcr = (confirmed: ParsedClinicalOcr) => {
+    if (!pendingOcr) return
+    const fileName = pendingOcr.fileName
+    const ocrReportText = `\n\n[OCR LAB REPORT: ${fileName}]\n• Collection: Today 07:15 AM · Ward 4B Stat Hematology\n• Absolute Neutrophil Count (ANC): ${formatNumber(confirmed.anc)} /µL (CTCAE Grade ${confirmed.grade})\n• Platelets: ${formatNumber(confirmed.platelets)} /µL\n• WBC: ${confirmed.wbc} x10³/µL\n• Hemoglobin: ${confirmed.hemoglobin} g/dL\n• Vitals: Temp ${confirmed.temp}°C\n[High-confidence Vision OCR · Synced to Analytics JSON]`
+
+    setTranscript((prev) => prev + ocrReportText)
+    setOcrStatus(`OCR Verified: ANC ${formatNumber(confirmed.anc)} /µL (Grade ${confirmed.grade}) · Platelets ${formatNumber(confirmed.platelets)} /µL`)
+
+    if (onOcrExtracted) {
+      onOcrExtracted(patient.id, fileName, confirmed)
+    }
+    if (onToast) {
+      onToast(`✓ Full OCR parsed & confirmed from ${fileName} · Stored in analytics JSON`)
+    }
+    setPendingOcr(null)
+  }
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -1224,18 +1444,9 @@ function CaptureStep({
     reader.onload = (event) => {
       const rawContent = String(event.target?.result || "")
       const parsed = parseClinicalLabOcr(file.name, rawContent, patient)
-
-      const ocrReportText = `\n\n[OCR LAB REPORT: ${file.name}]\n• Collection: Today 07:15 AM · Ward 4B Stat Hematology\n• Absolute Neutrophil Count (ANC): ${formatNumber(parsed.anc)} /µL (CTCAE Grade ${parsed.grade})\n• Platelets: ${formatNumber(parsed.platelets)} /µL\n• WBC: ${parsed.wbc} x10³/µL\n• Hemoglobin: ${parsed.hemoglobin} g/dL\n• Vitals: Temp ${parsed.temp}°C\n[High-confidence Vision OCR · Synced to Analytics JSON]`
-
-      setTranscript((prev) => prev + ocrReportText)
-      setOcrStatus(`OCR Verified: ANC ${formatNumber(parsed.anc)} /µL (Grade ${parsed.grade}) · Platelets ${formatNumber(parsed.platelets)} /µL`)
-
-      if (onOcrExtracted) {
-        onOcrExtracted(patient.id, file.name, parsed)
-      }
-      if (onToast) {
-        onToast(`Full OCR parsed from ${file.name} · Analytics JSON updated`)
-      }
+      setPendingOcr({ fileName: file.name, parsed })
+      setOcrModalOpen(true)
+      
     }
     reader.readAsText(file)
   }
@@ -1408,6 +1619,13 @@ function CaptureStep({
         onClose={() => setAutoCorrectModalOpen(false)}
         transcript={transcript}
         onApply={handleApplyAutoCorrect}
+      />
+      <OcrReviewModal
+        isOpen={ocrModalOpen}
+        fileName={pendingOcr?.fileName || ""}
+        initialParsed={pendingOcr?.parsed || null}
+        onClose={() => setOcrModalOpen(false)}
+        onCommit={handleConfirmOcr}
       />
 
       {analyzing ? (
@@ -1835,6 +2053,7 @@ function Station({
   useEffect(() => {
     setConfirmed([true, true, false])
     setAttested(false)
+    setStep(1)
   }, [selectedPatientId])
 
   const copyNote = () => {
@@ -2453,6 +2672,8 @@ function MobileCompanion({
   const [captured, setCaptured] = useState(false)
   const [sent, setSent] = useState(false)
   const [autoCorrectModalOpen, setAutoCorrectModalOpen] = useState(false)
+  const [ocrModalOpen, setOcrModalOpen] = useState(false)
+  const [pendingOcr, setPendingOcr] = useState<{ fileName: string; parsed: ParsedClinicalOcr } | null>(null)
   const mobileFileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -2480,25 +2701,27 @@ function MobileCompanion({
     }
   }
 
-  const handleMobileScan = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleConfirmOcr = (confirmed: ParsedClinicalOcr) => {
+    if (!pendingOcr) return
+    const fileName = pendingOcr.fileName
+    const ocrSnippet = `\n[BEDSIDE OCR SCAN: ${fileName}]\n• ANC: ${formatNumber(confirmed.anc)} /µL (Grade ${confirmed.grade}) · Plt: ${formatNumber(confirmed.platelets)} /µL\n• High Confidence OCR · Synced to Analytics JSON`
+    setTranscript((prev) => prev + ocrSnippet)
+    setCaptured(true)
+    if (onOcrExtracted) onOcrExtracted(patient.id, fileName, confirmed)
+    if (onToast) onToast(`Bedside lab sheet OCR verified & stored in analytics JSON`)
+    setPendingOcr(null)
+  }
+
+const handleMobileScan = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
 
     const parsed = parseClinicalLabOcr(file.name, "", patient)
-    const ocrSnippet = `\n[BEDSIDE OCR SCAN: ${file.name}]\n• ANC: ${formatNumber(parsed.anc)} /µL (Grade ${parsed.grade}) · Plt: ${formatNumber(parsed.platelets)} /µL\n• High Confidence OCR · Synced to Analytics JSON`
-
-    setTranscript((prev) => prev + ocrSnippet)
-    setCaptured(true)
-
-    if (onOcrExtracted) {
-      onOcrExtracted(patient.id, file.name, parsed)
-    }
-    if (onToast) {
-      onToast(`Bedside lab sheet OCR processed & stored in analytics JSON`)
-    }
+    setPendingOcr({ fileName: file.name, parsed })
+    setOcrModalOpen(true)
   }
 
-  const presets = [
+    const presets = [
     "Afebrile",
     "Nausea Grade 2",
     "Neuropathy",
@@ -2664,6 +2887,13 @@ function MobileCompanion({
         onClose={() => setAutoCorrectModalOpen(false)}
         transcript={transcript}
         onApply={handleApplyAutoCorrect}
+      />
+      <OcrReviewModal
+        isOpen={ocrModalOpen}
+        fileName={pendingOcr?.fileName || ""}
+        initialParsed={pendingOcr?.parsed || null}
+        onClose={() => setOcrModalOpen(false)}
+        onCommit={handleConfirmOcr}
       />
     </main>
   )
