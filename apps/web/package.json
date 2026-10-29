@@ -7,7 +7,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "node --test --experimental-strip-types lib/clinical-utils.test.ts"
+    "test": "node --test --experimental-strip-types lib/clinical-utils.test.ts",
+    "test:e2e": "node e2e_button_test.mjs"
   },
   "dependencies": {
     "firebase": "^12.18.0",
@@ -19,6 +20,7 @@
     "@types/node": "24.3.0",
     "@types/react": "19.1.13",
     "@types/react-dom": "19.1.9",
+    "playwright": "^1.64.1",
     "typescript": "5.9.2"
   },
   "overrides": {
