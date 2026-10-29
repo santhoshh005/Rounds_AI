@@ -8,6 +8,9 @@ import {
   extractOncologyTriad,
   formatEmrClipboardNote,
   parseClinicalLabReport,
+  validateBedOccupancy,
+  normalizeBedIdentifier,
+  getDoseModificationRecommendation,
 } from "./clinical-utils.ts";
 
 
@@ -49,7 +52,8 @@ describe("Clinical Utilities — TDD Suite", () => {
     it("maps medium alerts to MEDIUM ALERT palette", () => {
       const theme = getSentinelSeverityTheme("medium");
       assert.equal(theme.label, "MEDIUM ALERT");
-      assert.equal(theme.badgeBg, "#f59e0b");
+      assert.equal(theme.badgeBg, "#fef3c7");
+      assert.equal(theme.badgeText, "#92400e");
     });
 
     it("handles whitespace and case insensitivity", () => {
@@ -149,6 +153,14 @@ describe("Clinical Utilities — TDD Suite", () => {
       assert.equal(triad.platelets?.ctcaeGrade, 4);
     });
 
+    it("normalizes platelets in K units (< 1000) to cells/uL avoiding false Grade 4", () => {
+      const triad = extractOncologyTriad([
+        { name: "Platelets", value: 88, unit: "K/µL" },
+      ]);
+      assert.equal(triad.platelets?.value, 88000);
+      assert.equal(triad.platelets?.ctcaeGrade, 1);
+    });
+
     it("returns null for absent lab markers", () => {
       const triad = extractOncologyTriad([]);
       assert.equal(triad.anc, null);
@@ -215,7 +227,113 @@ describe("Clinical Utilities — TDD Suite", () => {
       assert.equal(res.anc, 750);
       assert.equal(res.grade, 3);
       assert.equal(res.extractedFromText, false);
-      assert.equal(res.confidence, 95);
+      assert.equal(res.confidence, 0);
+    });
+
+    it("does not match HbA1c as hemoglobin and correctly extracts true hemoglobin", () => {
+      const text = "HbA1c: 5.6%, Hemoglobin: 11.2 g/dL, ANC: 1500 /uL, WBC: 4.8";
+      const res = parseClinicalLabReport("labs.txt", text);
+      assert.equal(res.hemoglobin, 11.2);
+    });
+  });
+
+  describe("normalizeBedIdentifier", () => {
+    it("strips leading zeroes and prefixes and handles null/undefined", () => {
+      assert.equal(normalizeBedIdentifier("Bed 012"), "12");
+      assert.equal(normalizeBedIdentifier("008"), "8");
+      assert.equal(normalizeBedIdentifier("bed 14"), "14");
+      assert.equal(normalizeBedIdentifier(null), "");
+      assert.equal(normalizeBedIdentifier(undefined), "");
+    });
+  });
+
+  describe("validateBedOccupancy", () => {
+    const activeWard = [
+      { id: "104", name: "David Miller", mrn: "MRN-009184", bed: "12" },
+      { id: "105", name: "Sarah Jenkins", mrn: "MRN-012720", bed: "14" },
+      { id: "106", name: "Elena Rostova", mrn: "MRN-018341", bed: "16" },
+    ];
+
+    it("identifies an occupied bed with case and prefix insensitivity", () => {
+      const res1 = validateBedOccupancy("12", activeWard);
+      assert.equal(res1.isOccupied, true);
+      assert.equal(res1.occupant?.name, "David Miller");
+      assert.match(res1.message || "", /occupied by David Miller/);
+
+      const res2 = validateBedOccupancy("Bed 14", activeWard);
+      assert.equal(res2.isOccupied, true);
+      assert.equal(res2.occupant?.name, "Sarah Jenkins");
+
+      const res3 = validateBedOccupancy(" bed 16 ", activeWard);
+      assert.equal(res3.isOccupied, true);
+      assert.equal(res3.occupant?.name, "Elena Rostova");
+    });
+
+    it("allows allocating an unoccupied bed", () => {
+      const res = validateBedOccupancy("18", activeWard);
+      assert.equal(res.isOccupied, false);
+      assert.equal(res.occupant, null);
+    });
+
+    it("allows a patient to keep their own bed during edit", () => {
+      const res = validateBedOccupancy("12", activeWard, "104");
+      assert.equal(res.isOccupied, false);
+    });
+
+    it("blocks a patient from taking another patient's bed during edit", () => {
+      const res = validateBedOccupancy("14", activeWard, "104");
+      assert.equal(res.isOccupied, true);
+      assert.equal(res.occupant?.name, "Sarah Jenkins");
+    });
+
+    it("handles empty bed inputs cleanly", () => {
+      const res = validateBedOccupancy("", activeWard);
+      assert.equal(res.isOccupied, false);
+    });
+  });
+
+  describe("getDoseModificationRecommendation", () => {
+    it("returns Grade 4 oxaliplatin reduction and G-CSF for David Miller", () => {
+      const p104 = { id: "104", name: "David Miller", regimen: "mFOLFOX6", cycle: "Cycle 3", baselineAnc: 1400, grade: 4 };
+      const rec = getDoseModificationRecommendation(p104, [{ anc: 420, ctcae_grade: 4 }]);
+      assert.equal(rec.badgeVariant, "danger");
+      assert.equal(rec.actionRequired, true);
+      assert.match(rec.doseAdjustment, /20% \(to 68 mg\/m²\)/);
+      assert.match(rec.gcsfProphylaxis, /Filgrastim 300 mcg/);
+    });
+
+    it("returns Grade 3 cycle delay and pegfilgrastim for Sarah Jenkins", () => {
+      const p105 = { id: "105", name: "Sarah Jenkins", regimen: "R-CHOP", cycle: "Cycle 2", baselineAnc: 2200, grade: 3 };
+      const rec = getDoseModificationRecommendation(p105, [{ anc: 750, ctcae_grade: 3 }]);
+      assert.equal(rec.badgeVariant, "warning");
+      assert.equal(rec.actionRequired, true);
+      assert.match(rec.doseAdjustment, /Delay initiation of Cycle 3 by 7 days/);
+      assert.match(rec.gcsfProphylaxis, /pegfilgrastim 6 mg/);
+    });
+
+    it("returns 100% full dose continuation for Elena Rostova (Grade 0 Stable)", () => {
+      const p106 = { id: "106", name: "Elena Rostova", regimen: "AC-T", cycle: "Cycle 4", baselineAnc: 1650, grade: 0 };
+      const rec = getDoseModificationRecommendation(p106, [{ anc: 1620, ctcae_grade: 0 }]);
+      assert.equal(rec.badgeVariant, "success");
+      assert.equal(rec.actionRequired, false);
+      assert.match(rec.doseAdjustment, /No dose reduction or schedule delay warranted/);
+      assert.match(rec.recommendation, /Hematologic recovery verified robust/);
+    });
+
+    it("dynamically computes recommendation for custom admitted patient with ANC < 500", () => {
+      const customPatient = { id: "3274", name: "Sung Jinwoo", regimen: "mFOLFOX6", cycle: "Cycle 4", baselineAnc: 1450 };
+      const rec = getDoseModificationRecommendation(customPatient, [{ anc: 390, ctcae_grade: 4 }]);
+      assert.equal(rec.badgeVariant, "danger");
+      assert.equal(rec.actionRequired, true);
+      assert.match(rec.doseAdjustment, /20%/);
+    });
+
+    it("prioritizes Grade 2 toxicity vigilance even when ANC >= 1500", () => {
+      const patient = { id: "201", name: "Alex Chen", regimen: "mFOLFOX6", cycle: "Cycle 2", baselineAnc: 1800, grade: 2 };
+      const rec = getDoseModificationRecommendation(patient, [{ anc: 1650, ctcae_grade: 2 }]);
+      assert.equal(rec.badgeVariant, "warning");
+      assert.match(rec.statusBadge, /Moderate Vigilance · Grade 2/);
+      assert.match(rec.title, /Close Surveillance & Pre-infusion CBC Check/);
     });
   });
 });

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { Icon } from "./components/Icons"
 import { roundsApi, type ExtractRoundResponse } from "../lib/api"
-import { formatEmrClipboardNote, parseClinicalLabReport, type ParsedClinicalOcr } from "../lib/clinical-utils"
+import { formatEmrClipboardNote, parseClinicalLabReport, validateBedOccupancy, getDoseModificationRecommendation, normalizeBedIdentifier, type ParsedClinicalOcr, type DoseModificationGuideline } from "../lib/clinical-utils"
 import { autocorrectOncologyTranscript, applySelectedCorrections, formatSpokenClinicalPunctuation, type AutocorrectChange, type AutocorrectResult } from "../lib/oncology-autocorrect"
 
 
@@ -68,7 +68,7 @@ export type RoundRecord = {
   platelets: number
   hemoglobin: number
   ctcae_grade: number
-  status: "OCR Verified" | "Approved" | "Verified" | "Draft"
+  status: "OCR Verified" | "Approved" | "Verified" | "Draft" | "Admission Workup"
   source: string
   notes: string
 }
@@ -234,7 +234,7 @@ const patientCases: Record<
       p: "Immediate blood cultures x2. Start IV Cefepime 2g q8h. Hold oxaliplatin/5-FU. Sub-Q G-CSF (Filgrastim 300mcg) daily until ANC > 1,500.",
     },
     labReport: [
-      ["WBC", "1.8", "x10³/µL"],
+      ["WBC", "1.8", "x10Â³/µL"],
       ["ANC", "420", "cells/µL"],
       ["Platelets", formatNumber(88000), "/µL"],
       ["Hemoglobin", "10.2", "g/dL"],
@@ -270,7 +270,7 @@ const patientCases: Record<
       p: "Repeat CBC and temperature q4h. Initiate oral Levofloxacin 500mg daily prophylaxis. Magic mouthwash for oral comfort.",
     },
     labReport: [
-      ["WBC", "2.4", "x10³/µL"],
+      ["WBC", "2.4", "x10Â³/µL"],
       ["ANC", "750", "cells/µL"],
       ["Platelets", formatNumber(110000), "/µL"],
       ["Hemoglobin", "11.4", "g/dL"],
@@ -306,7 +306,7 @@ const patientCases: Record<
       p: "Cleared for cycle continuation as scheduled. Routine hydration and discharge readiness evaluation.",
     },
     labReport: [
-      ["WBC", "5.4", "x10³/µL"],
+      ["WBC", "5.4", "x10Â³/µL"],
       ["ANC", formatNumber(1620), "cells/µL"],
       ["Platelets", formatNumber(215000), "/µL"],
       ["Hemoglobin", "12.1", "g/dL"],
@@ -641,6 +641,7 @@ function Census({
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search patients"
+          aria-label="Search patients"
         />
       </label>
       <div className="plain-filters">
@@ -731,7 +732,7 @@ function Waveform({ active = false }: { active?: boolean }) {
 function ReportImage({
   patient = patients[0],
   labReport = [
-    ["WBC", "1.8", "x10³/µL"],
+    ["WBC", "1.8", "x10Â³/µL"],
     ["ANC", "420", "cells/µL"],
     ["Platelets", formatNumber(88000), "/µL"],
     ["Hemoglobin", "10.2", "g/dL"],
@@ -1129,7 +1130,7 @@ function ClinicalAutoCorrectModal({
             </p>
           </div>
           <button className="icon-button" onClick={onClose} aria-label="Close modal">
-            ✕
+            âœ•
           </button>
         </div>
 
@@ -1358,7 +1359,7 @@ function OcrReviewModal({
             </p>
           </div>
           <button className="text-button" onClick={onClose} aria-label="Close modal">
-            ✕
+            âœ•
           </button>
         </div>
 
@@ -1416,7 +1417,7 @@ function OcrReviewModal({
                 onChange={(e) => setWbc(Number(e.target.value) || 0)}
                 style={{ flex: 1, height: "40px", padding: "0 10px", borderRadius: "8px", border: "1px solid var(--border)", background: "var(--surface)", fontFamily: "JetBrains Mono" }}
               />
-              <span style={{ color: "var(--secondary)", fontSize: "13px" }}>x10³/µL</span>
+              <span style={{ color: "var(--secondary)", fontSize: "13px" }}>x10Â³/µL</span>
             </div>
           </label>
 
@@ -1526,7 +1527,7 @@ function CaptureStep({
   const handleConfirmOcr = (confirmed: ParsedClinicalOcr) => {
     if (!pendingOcr) return
     const fileName = pendingOcr.fileName
-    const ocrReportText = `\n\n[OCR LAB REPORT: ${fileName}]\n• Collection: Today 07:15 AM · Ward 4B Stat Hematology\n• Absolute Neutrophil Count (ANC): ${formatNumber(confirmed.anc)} /µL (CTCAE Grade ${confirmed.grade})\n• Platelets: ${formatNumber(confirmed.platelets)} /µL\n• WBC: ${confirmed.wbc} x10³/µL\n• Hemoglobin: ${confirmed.hemoglobin} g/dL\n• Vitals: Temp ${confirmed.temp}°C\n[High-confidence Vision OCR · Synced to Analytics JSON]`
+    const ocrReportText = `\n\n[OCR LAB REPORT: ${fileName}]\n• Collection: Today 07:15 AM · Ward 4B Stat Hematology\n• Absolute Neutrophil Count (ANC): ${formatNumber(confirmed.anc)} /µL (CTCAE Grade ${confirmed.grade})\n• Platelets: ${formatNumber(confirmed.platelets)} /µL\n• WBC: ${confirmed.wbc} x10Â³/µL\n• Hemoglobin: ${confirmed.hemoglobin} g/dL\n• Vitals: Temp ${confirmed.temp}°C\n[High-confidence Vision OCR · Synced to Analytics JSON]`
 
     setTranscript((prev) => prev + ocrReportText)
     setOcrStatus(`OCR Verified: ANC ${formatNumber(confirmed.anc)} /µL (Grade ${confirmed.grade}) · Platelets ${formatNumber(confirmed.platelets)} /µL`)
@@ -1606,7 +1607,7 @@ function CaptureStep({
               <span className="live-tag">LIVE SPEECH ASR:</span>
             </div>
             <span className="live-interim-text">
-              {interimTranscript ? `"${interimTranscript}"` : "Listening… speak naturally (e.g. 'Patient on R-CHOP, ANC 1400, afebrile')"}
+              {interimTranscript ? `"${interimTranscript}"` : "Listeningâ€¦ speak naturally (e.g. 'Patient on R-CHOP, ANC 1400, afebrile')"}
             </span>
           </div>
         )}
@@ -1616,7 +1617,7 @@ function CaptureStep({
           <div className="whisper-status-card recording" role="status" aria-live="polite">
             <span className="whisper-pulse-dot" />
             <div>
-              <strong>🎙️ Recording Audio for Local Whisper ({whisperSeconds}s)</strong>
+              <strong>ðŸŽ™ï¸ Recording Audio for Local Whisper ({whisperSeconds}s)</strong>
               <small>Local audio capture · Actual speech transcribed on stop · Zero cloud egress</small>
             </div>
           </div>
@@ -1815,7 +1816,6 @@ function ReviewStep({
     const updated = [...checklistItems]
     updated[index] = editText.trim()
     setChecklistItems(updated)
-    patientCase.checklist[index] = editText.trim()
     setEditingIndex(null)
     if (onToast) onToast(`✓ Updated verification point ${index + 1}`)
   }
@@ -1999,6 +1999,8 @@ function SignStep({
   patientCase,
   allConfirmed,
   locked,
+  soapSections,
+  onSoapChange,
   onCopy,
   onAttest,
 }: {
@@ -2006,14 +2008,16 @@ function SignStep({
   patientCase: typeof patientCases[string]
   allConfirmed: boolean
   locked: boolean
+  soapSections: { s: string; o: string; a: string; p: string }
+  onSoapChange: (key: "s" | "o" | "a" | "p", value: string) => void
   onCopy: () => void
   onAttest: () => void
 }) {
-  const sections = [
-    ["Subjective", patientCase.soapDraft.s],
-    ["Objective", patientCase.soapDraft.o],
-    ["Assessment", patientCase.soapDraft.a],
-    ["Plan", patientCase.soapDraft.p],
+  const sections: [string, "s" | "o" | "a" | "p"][] = [
+    ["Subjective", "s"],
+    ["Objective", "o"],
+    ["Assessment", "a"],
+    ["Plan", "p"],
   ]
   return (
     <section className="step-content sign-step">
@@ -2039,12 +2043,13 @@ function SignStep({
           </div>
           <span style={{ fontSize: "13px", color: "var(--brand)", fontWeight: 600 }}>Attending: Dr. Amrut S Kadam, MD</span>
         </div>
-        {sections.map(([title, text]) => (
+        {sections.map(([title, key]) => (
           <div className="soap-section" key={title}>
             <h3>{title}</h3>
             <textarea
               aria-label={`${title} note`}
-              defaultValue={text}
+              value={soapSections[key]}
+              onChange={(e) => onSoapChange(key, e.target.value)}
               key={`${patient.id}-${title}`}
               readOnly={locked}
             />
@@ -2225,7 +2230,7 @@ function Station({
       p: `Continue scheduled regimen ${patient.regimen}. Monitor CBC and vitals per protocol.`,
     },
     labReport: [
-      ["WBC", "5.2", "x10³/µL"],
+      ["WBC", "5.2", "x10Â³/µL"],
       ["ANC", String(patient.baselineAnc), "cells/µL"],
       ["Platelets", "210,000", "/µL"],
       ["Hemoglobin", "12.5", "g/dL"],
@@ -2240,6 +2245,25 @@ function Station({
   const [confirmed, setConfirmed] = useState([true, true, false])
   const [attested, setAttested] = useState(false)
   const [toast, setToast] = useState("")
+  const [soapSections, setSoapSections] = useState({
+    s: patientCase.soapDraft.s,
+    o: patientCase.soapDraft.o,
+    a: patientCase.soapDraft.a,
+    p: patientCase.soapDraft.p,
+  })
+
+  useEffect(() => {
+    setSoapSections({
+      s: patientCase.soapDraft.s,
+      o: patientCase.soapDraft.o,
+      a: patientCase.soapDraft.a,
+      p: patientCase.soapDraft.p,
+    })
+  }, [patientCase, patient.id])
+
+  const handleSoapChange = (sectionKey: "s" | "o" | "a" | "p", val: string) => {
+    setSoapSections((prev) => ({ ...prev, [sectionKey]: val }))
+  }
 
   useEffect(() => {
     setStationTranscript(patientCase.transcript)
@@ -2351,7 +2375,7 @@ function Station({
   }
 
   const copyNote = () => {
-    const rawNote = `PATIENT: ${patient.name} (Bed ${patient.bed}, ${patient.mrn})\nDIAGNOSIS: ${patient.diagnosis} · ${patient.regimen} (${patient.cycle})\n\nSUBJECTIVE:\n${patientCase.soapDraft.s}\n\nOBJECTIVE:\n${patientCase.soapDraft.o}\n\nASSESSMENT:\n${patientCase.soapDraft.a}\n\nPLAN:\n${patientCase.soapDraft.p}`
+    const rawNote = `PATIENT: ${patient.name} (Bed ${patient.bed}, ${patient.mrn})\nDIAGNOSIS: ${patient.diagnosis} · ${patient.regimen} (${patient.cycle})\n\nSUBJECTIVE:\n${soapSections.s}\n\nOBJECTIVE:\n${soapSections.o}\n\nASSESSMENT:\n${soapSections.a}\n\nPLAN:\n${soapSections.p}`
     const noteText = formatEmrClipboardNote(
       rawNote,
       `round-${patient.id}-active`,
@@ -2368,18 +2392,29 @@ function Station({
   const attestNote = () => {
     setAttested(true)
     setStep(3)
+
+    // Parse acute round values from patientCase.metrics
+    const ancMetric = patientCase.metrics.find((m) => m[0].toLowerCase().includes("anc"))
+    const wbcMetric = patientCase.metrics.find((m) => m[0].toLowerCase().includes("wbc"))
+    const pltMetric = patientCase.metrics.find((m) => m[0].toLowerCase().includes("platelet"))
+
+    const acuteAnc = ancMetric ? parseInt(ancMetric[1].replace(/,/g, ""), 10) : (patient.baselineAnc || 1400)
+    const acuteWbc = wbcMetric ? Math.round(parseFloat(wbcMetric[1].replace(/,/g, "")) * (parseFloat(wbcMetric[1]) < 50 ? 1000 : 1)) : 4800
+    const acutePlt = pltMetric ? parseInt(pltMetric[1].replace(/,/g, ""), 10) : 180000
+    const acuteGrade = patientCase.alert?.grade ?? patient.grade ?? (acuteAnc < 500 ? 4 : acuteAnc < 1000 ? 3 : acuteAnc < 1500 ? 2 : 0)
+
     const newRecord: RoundRecord = {
       id: `attested-${Date.now()}`,
       date: new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }),
       doctor: "Dr. Attending, MD",
-      anc: patient.baselineAnc || 1400,
-      wbc: 4800,
-      platelets: 180000,
+      anc: isNaN(acuteAnc) ? patient.baselineAnc : acuteAnc,
+      wbc: isNaN(acuteWbc) ? 4800 : acuteWbc,
+      platelets: isNaN(acutePlt) ? 180000 : acutePlt,
       hemoglobin: 12.0,
-      ctcae_grade: patient.grade || 0,
+      ctcae_grade: acuteGrade,
       status: "Approved",
       source: "Ward Station Note Attestation",
-      notes: `${patient.regimen} (${patient.cycle}) verified and attested by attending clinician.`
+      notes: `${soapSections.a ? soapSections.a.slice(0, 100) : patient.regimen} (${patient.cycle}) verified and attested by attending clinician.`
     }
     if (onAttestRound) {
       onAttestRound(patient.id, newRecord)
@@ -2511,6 +2546,8 @@ function Station({
               patientCase={patientCase}
               allConfirmed={confirmed.every(Boolean)}
               locked={attested}
+              soapSections={soapSections}
+              onSoapChange={handleSoapChange}
               onCopy={copyNote}
               onAttest={attestNote}
             />
@@ -2554,6 +2591,20 @@ function Roster({
   const [discharge, setDischarge] = useState<typeof patients[number] | null>(null)
   const [menu, setMenu] = useState("")
   const [errors, setErrors] = useState<string[]>([])
+  const [bedError, setBedError] = useState("")
+  const [admitBed, setAdmitBed] = useState("18")
+  const [editBed, setEditBed] = useState("")
+
+  const WARD_BEDS = ["10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20"]
+
+  const openAdmitDrawer = () => {
+    const occupied = new Set(patientsList.map((p) => normalizeBedIdentifier(p.bed)))
+    const firstFree = WARD_BEDS.find((b) => !occupied.has(normalizeBedIdentifier(b))) || "18"
+    setAdmitBed(firstFree)
+    setBedError("")
+    setErrors([])
+    setDrawer(true)
+  }
 
   // Close menu on click outside
   useEffect(() => {
@@ -2607,6 +2658,14 @@ function Roster({
     if (missing.length) return setErrors(missing)
     setErrors([])
 
+    const rawBed = String(data.get("bed") || admitBed || "").trim()
+    const bedCheck = validateBedOccupancy(rawBed, patientsList)
+    if (bedCheck.isOccupied) {
+      setBedError(bedCheck.message || `Bed ${rawBed} is currently occupied.`)
+      return
+    }
+    setBedError("")
+
     const name = String(data.get("name") || "")
     const initials = name
       .split(" ")
@@ -2615,17 +2674,23 @@ function Roster({
       .slice(0, 2)
       .toUpperCase() || "PT"
 
+    const rawAncStr = String(data.get("anc") ?? "").replace(/,/g, "").trim()
+    const baselineAnc = rawAncStr !== "" && !isNaN(Number(rawAncStr)) ? Number(rawAncStr) : 1500
+
+    const rawEcogStr = String(data.get("ecog") ?? "").trim()
+    const ecog = rawEcogStr !== "" && !isNaN(Number(rawEcogStr)) ? Number(rawEcogStr) : 1
+
     const newPatient = {
       id: String(Date.now()).slice(-4),
-      bed: String(data.get("bed") || "18"),
+      bed: rawBed.replace(/^bed\s*/i, "").trim() || "18",
       name,
       ageSex: `${data.get("age")}${String(data.get("sex") || "M")[0]}`,
       mrn: String(data.get("mrn") || `MRN-${Math.floor(100000 + Math.random() * 900000)}`),
       diagnosis: String(data.get("diagnosis") || "Oncology Admission"),
       regimen: String(data.get("regimen") || "Standard Regimen"),
       cycle: String(data.get("cycle") || "Cycle 1"),
-      baselineAnc: Number(data.get("anc")) || 1500,
-      ecog: Number(data.get("ecog")) || 1,
+      baselineAnc,
+      ecog,
       grade: 0,
       initials,
     }
@@ -2641,17 +2706,31 @@ function Roster({
     if (!editingPatient) return
     const data = new FormData(event.currentTarget)
 
+    const rawBed = String(data.get("bed") || editBed || editingPatient.bed).trim()
+    const bedCheck = validateBedOccupancy(rawBed, patientsList, editingPatient.id)
+    if (bedCheck.isOccupied) {
+      setBedError(bedCheck.message || `Bed ${rawBed} is currently occupied.`)
+      return
+    }
+    setBedError("")
+
+    const rawEditAncStr = String(data.get("baselineAnc") ?? "").replace(/,/g, "").trim()
+    const baselineAnc = rawEditAncStr !== "" && !isNaN(Number(rawEditAncStr)) ? Number(rawEditAncStr) : editingPatient.baselineAnc
+
+    const rawEditEcogStr = String(data.get("ecog") ?? "").trim()
+    const ecog = rawEditEcogStr !== "" && !isNaN(Number(rawEditEcogStr)) ? Number(rawEditEcogStr) : editingPatient.ecog
+
     const updated: typeof patients[number] = {
       ...editingPatient,
       name: String(data.get("name") || editingPatient.name),
       ageSex: String(data.get("ageSex") || editingPatient.ageSex),
       mrn: String(data.get("mrn") || editingPatient.mrn),
-      bed: String(data.get("bed") || editingPatient.bed),
+      bed: rawBed.replace(/^bed\s*/i, "").trim() || editingPatient.bed,
       diagnosis: String(data.get("diagnosis") || editingPatient.diagnosis),
       regimen: String(data.get("regimen") || editingPatient.regimen),
       cycle: String(data.get("cycle") || editingPatient.cycle),
-      baselineAnc: Number(data.get("baselineAnc")) || editingPatient.baselineAnc,
-      ecog: Number(data.get("ecog")) || editingPatient.ecog,
+      baselineAnc,
+      ecog,
     }
 
     if (onUpdatePatient) {
@@ -2675,7 +2754,7 @@ function Roster({
               Reset demo census
             </Button>
           )}
-          <Button variant="primary" onClick={() => setDrawer(true)}>
+          <Button variant="primary" onClick={openAdmitDrawer}>
             Admit patient
           </Button>
         </div>
@@ -2688,7 +2767,7 @@ function Roster({
             All ward beds are currently free. Admit an oncology inpatient or reset the demo ward census.
           </p>
           <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
-            <Button variant="primary" onClick={() => setDrawer(true)}>Admit patient</Button>
+            <Button variant="primary" onClick={openAdmitDrawer}>Admit patient</Button>
             {onResetCensus && <Button onClick={onResetCensus}>Reset demo census</Button>}
           </div>
         </div>
@@ -2777,6 +2856,8 @@ function Roster({
                             <button
                               onClick={() => {
                                 setEditingPatient(patient)
+                                setEditBed(patient.bed)
+                                setBedError("")
                                 setMenu("")
                               }}
                             >
@@ -2811,39 +2892,116 @@ function Roster({
             onClick={() => setDrawer(false)}
             aria-label="Close admission drawer"
           />
-          <aside className="admit-drawer">
+          <aside className="admit-drawer" role="dialog" aria-modal="true" aria-labelledby="admit-drawer-title">
             <div className="drawer-heading">
               <div>
-                <h2>Admit patient</h2>
+                <h2 id="admit-drawer-title">Admit patient</h2>
                 <p>Add an oncology patient to the Ward 4B roster.</p>
               </div>
               <button onClick={() => setDrawer(false)}>Close</button>
             </div>
             <form onSubmit={submitAdmit}>
+              {bedError && (
+                <div className="bed-conflict-banner">
+                  <Icon name="alert" />
+                  <div>
+                    <strong>Bed Allocation Conflict</strong>
+                    <span>{bedError}</span>
+                  </div>
+                </div>
+              )}
+              <div className="ward-bed-selector">
+                <span className="ward-bed-selector-label">Ward 4B Bed Allocation Map (Select an available bed)</span>
+                <div className="ward-bed-chip-list">
+                  {WARD_BEDS.map((b) => {
+                    const occ = patientsList.find((p) => normalizeBedIdentifier(p.bed) === normalizeBedIdentifier(b))
+                    const isSelected = normalizeBedIdentifier(admitBed) === normalizeBedIdentifier(b)
+                    return (
+                      <button
+                        key={b}
+                        type="button"
+                        disabled={Boolean(occ)}
+                        className={`ward-bed-chip ${occ ? "occupied" : ""} ${isSelected ? "active-bed" : ""}`}
+                        onClick={() => {
+                          if (!occ) {
+                            setAdmitBed(b)
+                            setBedError("")
+                          }
+                        }}
+                        title={occ ? `Bed ${b} is occupied by ${occ.name}` : `Allocate Bed ${b}`}
+                      >
+                        Bed {b} {occ ? `(${occ.name.split(" ")[0]} · Occupied)` : isSelected ? "✓ Selected" : ""}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
               <div className="form-grid">
-                {[
-                  ["name", "Full name", "David Miller"],
-                  ["age", "Age", "58"],
-                  ["mrn", "MRN", "MRN-009184"],
-                  ["bed", "Bed", "12"],
-                  ["diagnosis", "Diagnosis", "Colorectal cancer, Stage III"],
-                  ["regimen", "Regimen", "mFOLFOX6"],
-                  ["cycle", "Cycle", "Cycle 3 of 6"],
-                  ["anc", "Baseline ANC", formatNumber(1400)],
-                  ["ecog", "ECOG", "1"],
-                ].map(([name, label, placeholder]) => (
-                  <label
-                    className={errors.includes(name) ? "invalid" : ""}
-                    key={name}
-                  >
-                    {label}
-                    <input name={name} placeholder={placeholder} />
-                    {errors.includes(name) && <span>Required</span>}
-                  </label>
-                ))}
-                <label>
+                <label htmlFor="admit-name" className={errors.includes("name") ? "invalid" : ""}>
+                  Full name
+                  <input id="admit-name" name="name" placeholder="David Miller" />
+                  {errors.includes("name") && <span>Required</span>}
+                </label>
+                <label htmlFor="admit-age" className={errors.includes("age") ? "invalid" : ""}>
+                  Age
+                  <input id="admit-age" name="age" placeholder="58" />
+                  {errors.includes("age") && <span>Required</span>}
+                </label>
+                <label htmlFor="admit-mrn" className={errors.includes("mrn") ? "invalid" : ""}>
+                  MRN
+                  <input id="admit-mrn" name="mrn" placeholder="MRN-009184" />
+                  {errors.includes("mrn") && <span>Required</span>}
+                </label>
+                <label htmlFor="admit-bed" className={errors.includes("bed") || bedError ? "invalid" : ""}>
+                  Bed Number
+                  <input
+                    id="admit-bed"
+                    name="bed"
+                    value={admitBed}
+                    aria-invalid={Boolean(bedError || errors.includes("bed"))}
+                    aria-describedby={bedError ? "admit-bed-err" : undefined}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      setAdmitBed(val)
+                      const chk = validateBedOccupancy(val, patientsList)
+                      if (chk.isOccupied) {
+                        setBedError(chk.message || `Bed ${val} is currently occupied.`)
+                      } else {
+                        setBedError("")
+                      }
+                    }}
+                    placeholder="18"
+                  />
+                  {bedError ? <span id="admit-bed-err">{bedError}</span> : errors.includes("bed") ? <span>Required</span> : null}
+                </label>
+                <label htmlFor="admit-diagnosis" className={errors.includes("diagnosis") ? "invalid" : ""}>
+                  Diagnosis
+                  <input id="admit-diagnosis" name="diagnosis" placeholder="Colorectal cancer, Stage III" />
+                  {errors.includes("diagnosis") && <span>Required</span>}
+                </label>
+                <label htmlFor="admit-regimen" className={errors.includes("regimen") ? "invalid" : ""}>
+                  Regimen
+                  <input id="admit-regimen" name="regimen" placeholder="mFOLFOX6" />
+                  {errors.includes("regimen") && <span>Required</span>}
+                </label>
+                <label htmlFor="admit-cycle" className={errors.includes("cycle") ? "invalid" : ""}>
+                  Cycle
+                  <input id="admit-cycle" name="cycle" placeholder="Cycle 3 of 6" />
+                  {errors.includes("cycle") && <span>Required</span>}
+                </label>
+                <label htmlFor="admit-anc" className={errors.includes("anc") ? "invalid" : ""}>
+                  Baseline ANC (/µL)
+                  <input id="admit-anc" name="anc" placeholder="1,400" />
+                  {errors.includes("anc") && <span>Required</span>}
+                </label>
+                <label htmlFor="admit-ecog" className={errors.includes("ecog") ? "invalid" : ""}>
+                  ECOG Performance
+                  <input id="admit-ecog" name="ecog" placeholder="1" />
+                  {errors.includes("ecog") && <span>Required</span>}
+                </label>
+                <label htmlFor="admit-sex">
                   Sex
-                  <select name="sex">
+                  <select id="admit-sex" name="sex">
                     <option>Male</option>
                     <option>Female</option>
                     <option>Other</option>
@@ -2869,51 +3027,104 @@ function Roster({
             onClick={() => setEditingPatient(null)}
             aria-label="Close edit drawer"
           />
-          <aside className="admit-drawer">
+          <aside className="admit-drawer" role="dialog" aria-modal="true" aria-labelledby="edit-drawer-title">
             <div className="drawer-heading">
               <div>
-                <h2>Edit patient details</h2>
+                <h2 id="edit-drawer-title">Edit patient details</h2>
                 <p>Update admission for Bed {editingPatient.bed} · {editingPatient.name}</p>
               </div>
               <button onClick={() => setEditingPatient(null)}>Close</button>
             </div>
             <form onSubmit={submitEdit}>
+              {bedError && (
+                <div className="bed-conflict-banner">
+                  <Icon name="alert" />
+                  <div>
+                    <strong>Bed Allocation Conflict</strong>
+                    <span>{bedError}</span>
+                  </div>
+                </div>
+              )}
+              <div className="ward-bed-selector">
+                <span className="ward-bed-selector-label">Ward 4B Bed Map (Select bed to relocate)</span>
+                <div className="ward-bed-chip-list">
+                  {WARD_BEDS.map((b) => {
+                    const occ = patientsList.find((p) => p.id !== editingPatient.id && normalizeBedIdentifier(p.bed) === normalizeBedIdentifier(b))
+                    const isSelected = normalizeBedIdentifier(editBed) === normalizeBedIdentifier(b)
+                    return (
+                      <button
+                        key={b}
+                        type="button"
+                        disabled={Boolean(occ)}
+                        className={`ward-bed-chip ${occ ? "occupied" : ""} ${isSelected ? "active-bed" : ""}`}
+                        onClick={() => {
+                          if (!occ) {
+                            setEditBed(b)
+                            setBedError("")
+                          }
+                        }}
+                        title={occ ? `Bed ${b} occupied by ${occ.name}` : `Assign Bed ${b}`}
+                      >
+                        Bed {b} {occ ? `(${occ.name.split(" ")[0]} · Occupied)` : isSelected ? "✓ Current" : ""}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
               <div className="form-grid">
-                <label>
+                <label htmlFor="edit-name">
                   Full name
-                  <input name="name" defaultValue={editingPatient.name} required />
+                  <input id="edit-name" name="name" defaultValue={editingPatient.name} required />
                 </label>
-                <label>
+                <label htmlFor="edit-agesex">
                   Age & Sex
-                  <input name="ageSex" defaultValue={editingPatient.ageSex} required />
+                  <input id="edit-agesex" name="ageSex" defaultValue={editingPatient.ageSex} required />
                 </label>
-                <label>
+                <label htmlFor="edit-mrn">
                   MRN
-                  <input name="mrn" defaultValue={editingPatient.mrn} required />
+                  <input id="edit-mrn" name="mrn" defaultValue={editingPatient.mrn} required />
                 </label>
-                <label>
+                <label htmlFor="edit-bed" className={bedError ? "invalid" : ""}>
                   Bed
-                  <input name="bed" defaultValue={editingPatient.bed} required />
+                  <input
+                    id="edit-bed"
+                    name="bed"
+                    value={editBed}
+                    aria-invalid={Boolean(bedError)}
+                    aria-describedby={bedError ? "edit-bed-err" : undefined}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      setEditBed(val)
+                      const chk = validateBedOccupancy(val, patientsList, editingPatient.id)
+                      if (chk.isOccupied) {
+                        setBedError(chk.message || `Bed ${val} is currently occupied.`)
+                      } else {
+                        setBedError("")
+                      }
+                    }}
+                    required
+                  />
+                  {bedError && <span id="edit-bed-err">{bedError}</span>}
                 </label>
-                <label style={{ gridColumn: "1 / -1" }}>
+                <label htmlFor="edit-diagnosis" style={{ gridColumn: "1 / -1" }}>
                   Diagnosis
-                  <input name="diagnosis" defaultValue={editingPatient.diagnosis} required />
+                  <input id="edit-diagnosis" name="diagnosis" defaultValue={editingPatient.diagnosis} required />
                 </label>
-                <label>
+                <label htmlFor="edit-regimen">
                   Regimen
-                  <input name="regimen" defaultValue={editingPatient.regimen} required />
+                  <input id="edit-regimen" name="regimen" defaultValue={editingPatient.regimen} required />
                 </label>
-                <label>
+                <label htmlFor="edit-cycle">
                   Cycle
-                  <input name="cycle" defaultValue={editingPatient.cycle} required />
+                  <input id="edit-cycle" name="cycle" defaultValue={editingPatient.cycle} required />
                 </label>
-                <label>
+                <label htmlFor="edit-baseline-anc">
                   Baseline ANC (/µL)
-                  <input name="baselineAnc" type="number" defaultValue={editingPatient.baselineAnc} required />
+                  <input id="edit-baseline-anc" name="baselineAnc" type="number" defaultValue={editingPatient.baselineAnc} required />
                 </label>
-                <label>
+                <label htmlFor="edit-ecog">
                   ECOG Performance Status
-                  <input name="ecog" type="number" min="0" max="4" defaultValue={editingPatient.ecog} required />
+                  <input id="edit-ecog" name="ecog" type="number" min="0" max="4" defaultValue={editingPatient.ecog} required />
                 </label>
               </div>
               <div className="drawer-actions">
@@ -3102,7 +3313,7 @@ const handleMobileScan = (e: React.ChangeEvent<HTMLInputElement>) => {
           >
             <Icon name="mic" size={20} />
           </button>
-          <h2>{recording ? (sttEngine === "whisper" ? `Listening to Whisper (${whisperSeconds}s)…` : "Listening to microphone…") : `Tap to dictate (${sttEngine === "whisper" ? "Whisper" : "Live ASR"})`}</h2>
+          <h2>{recording ? (sttEngine === "whisper" ? `Listening to Whisper (${whisperSeconds}s)â€¦` : "Listening to microphoneâ€¦") : `Tap to dictate (${sttEngine === "whisper" ? "Whisper" : "Live ASR"})`}</h2>
           <p>Audio stays on this device · Type or edit note anytime</p>
         </div>
         <Waveform active={recording} />
@@ -3111,7 +3322,7 @@ const handleMobileScan = (e: React.ChangeEvent<HTMLInputElement>) => {
         {recording && sttEngine === "live-asr" && (
           <div className="live-asr-stream mobile" style={{ margin: "8px 12px", padding: "8px 12px", background: "rgba(0,102,102,0.08)", border: "1px solid var(--border)", borderRadius: "8px", fontSize: "13px" }}>
             <span style={{ fontWeight: 700, color: "var(--brand)", marginRight: "6px" }}>LIVE:</span>
-            <span style={{ fontStyle: "italic" }}>{interimTranscript || "Listening… speak now"}</span>
+            <span style={{ fontStyle: "italic" }}>{interimTranscript || "Listeningâ€¦ speak now"}</span>
           </div>
         )}
 
@@ -3237,103 +3448,177 @@ function NadirChart({ rounds = [], baseline = 1400 }: { rounds?: RoundRecord[]; 
   const chronRounds = [...rounds].reverse()
   const count = chronRounds.length
   const points = chronRounds.map((r, i) => {
-    const x = count > 1 ? Math.round(96 + (i * (608 / (count - 1)))) : 400
+    const x = count > 1 ? Math.round(96 + (i * (608 / (count - 1)))) : 380
     const clamped = Math.max(0, Math.min(4000, r.anc))
     const y = Math.round(256 - ((clamped / 4000) * (256 - 32)))
+    const gradeColor =
+      r.ctcae_grade >= 4 ? "#d92d20" :
+      r.ctcae_grade === 3 ? "#f79009" :
+      r.ctcae_grade === 2 ? "#eaaa08" : "#0f766e"
     return {
       x,
       y,
-      label: `${r.source.includes("Cycle") ? r.source : `Round ${i + 1}`}: ${formatNumber(r.anc)} /µL (Grade ${r.ctcae_grade})`,
+      label: `${r.source && r.source.includes("Cycle") ? r.source : `Round ${i + 1}`}: ${formatNumber(r.anc)} /µL (Grade ${r.ctcae_grade})`,
       anc: r.anc,
       grade: r.ctcae_grade,
+      gradeColor,
       source: r.source,
       date: r.date,
     }
   })
   const polylinePoints = points.map((p) => `${p.x},${p.y}`).join(" ")
   const baselineY = Math.round(256 - ((Math.min(4000, baseline) / 4000) * (256 - 32)))
-  const latestPoint = points[points.length - 1]
 
   return (
     <svg
       className="chart"
-      viewBox="0 0 760 290"
+      viewBox="0 0 760 300"
       role="img"
       aria-label="Myelosuppression nadir trajectory"
     >
+      {/* Grade 4 Danger Zone (<500 /uL) */}
       <rect
         x="56"
         y="228"
         width="670"
-        height="34"
+        height="32"
         rx="4"
-        className="danger-band"
+        fill="rgba(254, 243, 242, 0.9)"
+        stroke="rgba(253, 162, 155, 0.4)"
       />
-      <text x="66" y="250" className="band-label">
-        Grade 4 · below 500 /µL
+      <text x="66" y="249" fontSize="11" fontWeight="600" fill="#b42318">
+        Grade 4 · Severe Myelosuppression (below 500 /µL)
       </text>
+
+      {/* Grade 3 Warning Zone (500-999 /uL) */}
+      <rect
+        x="56"
+        y="200"
+        width="670"
+        height="28"
+        rx="0"
+        fill="rgba(255, 250, 235, 0.6)"
+      />
+      <text x="66" y="218" fontSize="10.5" fontWeight="500" fill="#b54708">
+        Grade 3 (500–999 /µL)
+      </text>
+
+      {/* Grid Lines */}
       {[32, 88, 144, 200, 256].map((y, index) => (
         <g key={y}>
-          <line x1="56" x2="726" y1={y} y2={y} />
-          <text x="44" y={y + 5} textAnchor="end">
+          <line x1="56" x2="726" y1={y} y2={y} stroke="var(--divider)" strokeWidth="1" />
+          <text x="44" y={y + 4} textAnchor="end" fontSize="12" fill="var(--secondary)">
             {formatNumber(4000 - index * 1000)}
           </text>
         </g>
       ))}
-      <line className="baseline-line" x1="76" x2="704" y1={baselineY} y2={baselineY} />
-      <text x="708" y={baselineY + 4} fontSize="11" fill="var(--secondary)">
-        Baseline
-      </text>
-      {points.length > 1 && (
-        <polyline className="primary-line" points={polylinePoints} />
+
+      {/* Patient-specific Baseline */}
+      <line
+        className="baseline-line"
+        x1="56"
+        x2="630"
+        y1={baselineY}
+        y2={baselineY}
+        stroke="var(--secondary)"
+        strokeWidth="1.5"
+        strokeDasharray="4 4"
+      />
+      <g transform={`translate(634, ${baselineY - 10})`}>
+        <rect x="0" y="0" width="94" height="20" rx="4" fill="var(--subtle)" stroke="var(--divider)" />
+        <text x="47" y="14" textAnchor="middle" fontSize="10.5" fontWeight="600" fill="var(--secondary)">
+          Base: {formatNumber(baseline)}
+        </text>
+      </g>
+
+      {/* Single round projection */}
+      {points.length === 1 && (
+        <line
+          x1={points[0].x}
+          y1={points[0].y}
+          x2={600}
+          y2={baselineY}
+          stroke="var(--brand)"
+          strokeWidth="2"
+          strokeDasharray="6 6"
+          opacity="0.6"
+        />
       )}
+
+      {/* Polyline */}
+      {points.length > 1 && (
+        <polyline
+          className="primary-line"
+          points={polylinePoints}
+          stroke="var(--brand)"
+          strokeWidth="3"
+          fill="none"
+        />
+      )}
+
+      {/* Data Points */}
       {points.map((p, idx) => (
         <g className="data-point" tabIndex={0} key={`${p.x}-${idx}`}>
-          <circle cx={p.x} cy={p.y} r="6" />
-          <title>{p.label}</title>
-          <g className="hover-tip">
+          <circle
+            cx={p.x}
+            cy={p.y}
+            r="6"
+            fill="var(--surface)"
+            stroke={p.gradeColor}
+            strokeWidth="3.5"
+          />
+          {/* Direct value callout pill */}
+          <g transform={`translate(${p.x - 38}, ${p.y - 28})`}>
             <rect
-              x={p.x - 70}
-              y={p.y - 52}
-              width="140"
-              height="34"
-              rx="7"
+              x="0"
+              y="0"
+              width="76"
+              height="20"
+              rx="10"
+              fill="var(--surface)"
+              stroke={p.gradeColor}
+              strokeWidth="1.5"
             />
-            <text x={p.x} y={p.y - 30} textAnchor="middle">
-              {p.label}
+            <text
+              x="38"
+              y="14"
+              textAnchor="middle"
+              fontSize="11"
+              fontWeight="700"
+              fill={p.gradeColor}
+            >
+              {formatNumber(p.anc)}
             </text>
           </g>
+          {/* Hover tooltip */}
+          <title>{p.label}</title>
         </g>
       ))}
-      {latestPoint && (
-        <g className="latest-badge">
-          <rect
-            x={Math.min(640, latestPoint.x + 12)}
-            y={Math.max(28, latestPoint.y - 14)}
-            width="88"
-            height="28"
-            rx="14"
-          />
+
+      {/* Dates along X axis */}
+      {points.map((p, index) => (
+        <g key={`lbl-${p.x}-${index}`}>
           <text
-            x={Math.min(640, latestPoint.x + 12) + 44}
-            y={Math.max(28, latestPoint.y - 14) + 19}
+            x={p.x}
+            y="282"
             textAnchor="middle"
+            fontSize="12"
+            fontWeight="600"
+            fill="var(--text)"
           >
-            {formatNumber(latestPoint.anc)} /µL
+            {p.source && p.source.length <= 15 ? p.source : `Round ${index + 1}`}
+          </text>
+          <text
+            x={p.x}
+            y="296"
+            textAnchor="middle"
+            fontSize="10.5"
+            fill="var(--secondary)"
+          >
+            {p.date}
           </text>
         </g>
-      )}
-      {points.map((p, index) => (
-        <text
-          x={p.x}
-          y="286"
-          textAnchor="middle"
-          key={p.x}
-        >
-          {p.source && p.source.length <= 14 ? p.source : `Round ${index + 1}`}
-        </text>
       ))}
-      <title>Baseline ANC {formatNumber(baseline)} per microliter</title>
     </svg>
   )
 }
@@ -3341,75 +3626,140 @@ function NadirChart({ rounds = [], baseline = 1400 }: { rounds?: RoundRecord[]; 
 function RecoveryChart({ rounds = [] }: { rounds?: RoundRecord[] }) {
   const chronRounds = [...rounds].reverse()
   const count = chronRounds.length
+
   const pltPoints = chronRounds.map((r, i) => {
-    const x = count > 1 ? Math.round(96 + (i * (608 / (count - 1)))) : 400
-    // Platelets scale 0 to 300,000 -> y between 34 and 208
+    const x = count > 1 ? Math.round(96 + (i * (608 / (count - 1)))) : 380
+    // Platelets scale 0 to 300,000 -> y between 40 and 208
     const clampedPlt = Math.max(0, Math.min(300000, r.platelets))
-    const y = Math.round(208 - ((clampedPlt / 300000) * (208 - 34)))
-    return { x, y, label: `Platelets: ${formatNumber(r.platelets)} /µL`, value: r.platelets, source: r.source }
+    const y = Math.round(208 - ((clampedPlt / 300000) * (208 - 40)))
+    return {
+      x,
+      y,
+      label: `Platelets: ${formatNumber(r.platelets)} /µL`,
+      value: r.platelets,
+      source: r.source,
+      date: r.date,
+    }
   })
   const pltPolyline = pltPoints.map((p) => `${p.x},${p.y}`).join(" ")
 
   const hgbPoints = chronRounds.map((r, i) => {
-    const x = count > 1 ? Math.round(96 + (i * (608 / (count - 1)))) : 400
-    // Hemoglobin scale 8 to 16 g/dL -> y between 34 and 208
+    const x = count > 1 ? Math.round(96 + (i * (608 / (count - 1)))) : 380
+    // Hemoglobin scale 8 to 16 g/dL -> y between 40 and 208
     const clampedHgb = Math.max(8, Math.min(16, r.hemoglobin || 12))
-    const y = Math.round(208 - (((clampedHgb - 8) / 8) * (208 - 34)))
-    return { x, y, label: `Hemoglobin: ${r.hemoglobin || 12} g/dL`, value: r.hemoglobin || 12 }
+    const y = Math.round(208 - (((clampedHgb - 8) / 8) * (208 - 40)))
+    return {
+      x,
+      y,
+      label: `Hemoglobin: ${r.hemoglobin || 12} g/dL`,
+      value: r.hemoglobin || 12,
+      source: r.source,
+      date: r.date,
+    }
   })
   const hgbPolyline = hgbPoints.map((p) => `${p.x},${p.y}`).join(" ")
 
-  const latestPlt = chronRounds[chronRounds.length - 1]?.platelets ?? 180000
-  const latestHgb = chronRounds[chronRounds.length - 1]?.hemoglobin ?? 12.0
+  const latestRound = chronRounds[chronRounds.length - 1]
+  const latestPlt = latestRound?.platelets ?? 180000
+  const latestHgb = latestRound?.hemoglobin ?? 12.0
 
   return (
     <svg
       className="chart"
-      viewBox="0 0 760 270"
+      viewBox="0 0 760 280"
       role="img"
       aria-label="Platelet and hemoglobin recovery"
     >
-      {[34, 92, 150, 208].map((y) => (
-        <line x1="56" x2="726" y1={y} y2={y} key={y} />
+      {/* Legend */}
+      <g transform="translate(480, 16)">
+        <circle cx="0" cy="0" r="5" fill="#0f766e" />
+        <text x="8" y="4" fontSize="11.5" fontWeight="600" fill="var(--text)">
+          Platelets (/µL)
+        </text>
+        <rect x="110" y="-4" width="8" height="8" rx="2" fill="#7c3aed" />
+        <text x="124" y="4" fontSize="11.5" fontWeight="600" fill="var(--text)">
+          Hemoglobin (g/dL)
+        </text>
+      </g>
+
+      {/* Grid Lines */}
+      {[40, 96, 152, 208].map((y, idx) => (
+        <g key={y}>
+          <line x1="56" x2="726" y1={y} y2={y} stroke="var(--divider)" strokeWidth="1" />
+          <text x="44" y={y + 4} textAnchor="end" fontSize="11" fill="var(--secondary)">
+            {formatNumber(300000 - idx * 80000)}
+          </text>
+          <text x="734" y={y + 4} textAnchor="start" fontSize="11" fill="#7c3aed">
+            {(16 - idx * 2.5).toFixed(1)}g
+          </text>
+        </g>
       ))}
+
+      {/* Polylines */}
       {pltPoints.length > 1 && (
         <polyline
           className="primary-line"
           points={pltPolyline}
+          stroke="#0f766e"
+          strokeWidth="3"
+          fill="none"
         />
       )}
       {hgbPoints.length > 1 && (
         <polyline
-          className="baseline-line recovery-baseline"
           points={hgbPolyline}
+          stroke="#7c3aed"
+          strokeWidth="2.5"
+          strokeDasharray="6 4"
+          fill="none"
         />
       )}
+
+      {/* Platelet Data Points */}
       {pltPoints.map((p, index) => (
         <g className="data-point" tabIndex={0} key={`plt-${p.x}-${index}`}>
-          <circle cx={p.x} cy={p.y} r="6" />
+          <circle cx={p.x} cy={p.y} r="5.5" fill="var(--surface)" stroke="#0f766e" strokeWidth="3" />
+          <g transform={`translate(${p.x - 36}, ${p.y - 24})`}>
+            <rect x="0" y="0" width="72" height="18" rx="9" fill="var(--surface)" stroke="#0f766e" strokeWidth="1" />
+            <text x="36" y="13" textAnchor="middle" fontSize="10" fontWeight="700" fill="#0f766e">
+              {formatNumber(p.value)}
+            </text>
+          </g>
           <title>{p.label}</title>
         </g>
       ))}
-      <g className="latest-badge">
-        <rect x="580" y="66" width="134" height="28" rx="14" />
-        <text x="647" y="85" textAnchor="middle">
-          Plt: {formatNumber(latestPlt)} · Hgb: {latestHgb}
+
+      {/* Hemoglobin Data Points */}
+      {hgbPoints.map((p, index) => (
+        <g className="data-point" tabIndex={0} key={`hgb-${p.x}-${index}`}>
+          <rect x={p.x - 4} y={p.y - 4} width="8" height="8" rx="2" fill="#7c3aed" stroke="var(--surface)" strokeWidth="1.5" />
+          <text x={p.x} y={p.y + 16} textAnchor="middle" fontSize="10" fontWeight="600" fill="#7c3aed">
+            {p.value} g/dL
+          </text>
+          <title>{p.label}</title>
+        </g>
+      ))}
+
+      {/* Latest dynamic badge */}
+      <g className="latest-badge" transform="translate(68, 12)">
+        <rect x="0" y="0" width="220" height="24" rx="12" fill="var(--brand-tint)" stroke="var(--brand-border)" />
+        <text x="110" y="16" textAnchor="middle" fontSize="11" fontWeight="600" fill="var(--brand)">
+          Latest: Plt {formatNumber(latestPlt)} · Hgb {latestHgb} g/dL
         </text>
       </g>
-      <text x="44" y="39" textAnchor="end">
-        300k
-      </text>
-      <text x="44" y="213" textAnchor="end">
-        50k
-      </text>
+
+      {/* Dates along X axis */}
       {pltPoints.map((p, index) => (
         <text
           x={p.x}
-          y="258"
+          y="256"
           textAnchor="middle"
+          fontSize="11"
+          fontWeight="500"
+          fill="var(--secondary)"
           key={`lbl-${p.x}-${index}`}
         >
-          {p.source && p.source.length <= 14 ? p.source : `Round ${index + 1}`}
+          {p.date}
         </text>
       ))}
     </svg>
@@ -3449,17 +3799,15 @@ function Analytics({
   const baselineOnly = (patientAnalytics.rounds || []).length <= 1
   const kpis = patientAnalytics.kpis
 
-  const rows = useMemo(() => {
+  const doseRec = getDoseModificationRecommendation(patient, patientAnalytics.rounds)
+
+  const sortedRounds = useMemo(() => {
     const list = patientAnalytics.rounds || []
-    return [...list]
-      .sort((a, b) => (ascending ? a.date.localeCompare(b.date) : b.date.localeCompare(a.date)))
-      .map((r) => [
-        r.date,
-        r.doctor,
-        `${formatNumber(r.anc)} /µL`,
-        r.ctcae_grade,
-        r.status,
-      ])
+    return [...list].sort((a, b) => {
+      const dateA = new Date(a.date).getTime() || 0
+      const dateB = new Date(b.date).getTime() || 0
+      return ascending ? dateA - dateB : dateB - dateA
+    })
   }, [patientAnalytics.rounds, ascending])
 
   const exportAnalyticsJson = () => {
@@ -3624,7 +3972,9 @@ function Analytics({
           </div>
           <span className="info-chip">CTCAE v5.0 ANC thresholds</span>
         </div>
-        <NadirChart rounds={patientAnalytics.rounds} baseline={patient.baselineAnc} />
+        <div className="chart-scroll">
+          <NadirChart rounds={patientAnalytics.rounds} baseline={patient.baselineAnc} />
+        </div>
       </section>
       <section className="analytics-section">
         <div className="section-head">
@@ -3636,33 +3986,60 @@ function Analytics({
             </p>
           </div>
         </div>
-        <RecoveryChart rounds={patientAnalytics.rounds} />
+        <div className="chart-scroll">
+          <RecoveryChart rounds={patientAnalytics.rounds} />
+        </div>
       </section>
       <section className="analytics-section">
         <div className="section-head">
           <div>
             <h2>Dose modification recommendations</h2>
             <p>
-              Protocol-guided adjustments based on CTCAE Grade 4 toxicity
-              history.
+              Protocol-guided adjustments based on {patient.name}'s CTCAE toxicity profile & marrow nadir.
             </p>
           </div>
-          <span className="status-badge warning">Action required</span>
+          <span className={`status-badge ${doseRec.badgeVariant}`}>
+            {doseRec.statusBadge}
+          </span>
         </div>
-        <div className="alert-box">
-          <p>
-            <b>NCCN / ASCO Recommendation:</b> Following documented Grade 4
-            febrile neutropenia, protocol warrants secondary G-CSF prophylaxis
-            (filgrastim 300 mcg daily) or 20% dose reduction of oxaliplatin for
-            Cycle 4.
+        <div className={`dose-recommendation-card ${doseRec.badgeVariant}`}>
+          <div className="dose-rec-header">
+            <div>
+              <span className="dose-rec-title">{doseRec.title}</span>
+              <p style={{ margin: "4px 0 0", fontSize: "12px", color: "var(--secondary)" }}>
+                Protocol source: {doseRec.protocolSource}
+              </p>
+            </div>
+            {doseRec.actionRequired && (
+              <span className="danger-text" style={{ fontSize: "13px", fontWeight: 600 }}>
+                ⚠️ï¸ Clinical Action Mandatory
+              </span>
+            )}
+          </div>
+          <p style={{ fontSize: "14.5px", lineHeight: "1.6", margin: "6px 0 0", color: "var(--text)" }}>
+            <b>Primary Assessment:</b> {doseRec.recommendation}
           </p>
+          <div className="dose-rec-grid">
+            <div className="dose-rec-field">
+              <strong>Chemotherapy Dose Adjustment</strong>
+              <p>{doseRec.doseAdjustment}</p>
+            </div>
+            <div className="dose-rec-field">
+              <strong>G-CSF Growth Factor Prophylaxis</strong>
+              <p>{doseRec.gcsfProphylaxis}</p>
+            </div>
+            <div className="dose-rec-field">
+              <strong>Clinical Monitoring Plan</strong>
+              <p>{doseRec.monitoringPlan}</p>
+            </div>
+          </div>
         </div>
       </section>
       <section className="audit-section">
         <div className="section-head">
           <div>
             <h2>Historical rounds audit log</h2>
-            <p>Attested round evaluations and OCR laboratory findings.</p>
+            <p>Attested round evaluations and OCR laboratory findings for {patient.name}.</p>
           </div>
           <button
             className="text-button"
@@ -3671,36 +4048,65 @@ function Analytics({
             Date {ascending ? "▲" : "▼"}
           </button>
         </div>
-        <table>
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Attending</th>
-              <th>ANC Nadir</th>
-              <th>CTCAE Grade</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={String(row[0]) + String(row[1])}>
-                <td>{row[0]}</td>
-                <td>{row[1]}</td>
-                <td className="numeric">{row[2]}</td>
-                <td>
-                  <SeverityBadge grade={Number(row[3])}>
-                    Grade {row[3]}
-                  </SeverityBadge>
-                </td>
-                <td>
-                  <span className={`status-pill ${String(row[4]).toLowerCase().replace(/\s+/g, "-")}`}>
-                    {row[4]}
-                  </span>
-                </td>
+        <div className="audit-table">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Attending</th>
+                <th>ANC Nadir</th>
+                <th>Platelets</th>
+                <th>CTCAE Grade</th>
+                <th>Status</th>
+                <th>Evaluation / Source</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {sortedRounds.length === 0 ? (
+                <tr>
+                  <td colSpan={7} style={{ textAlign: "center", padding: "32px", color: "var(--secondary)" }}>
+                    No historical rounds recorded yet for this admission. Attest a round or scan a lab report to populate the audit log.
+                  </td>
+                </tr>
+              ) : (
+                sortedRounds.map((r) => (
+                  <tr key={r.id}>
+                    <td>
+                      <strong>{r.date}</strong>
+                    </td>
+                    <td>{r.doctor}</td>
+                    <td className="numeric">
+                      <strong className={r.ctcae_grade >= 4 ? "danger-text" : ""}>
+                        {formatNumber(r.anc)} /µL
+                      </strong>
+                    </td>
+                    <td className="numeric">
+                      {formatNumber(r.platelets)} /µL
+                    </td>
+                    <td>
+                      <SeverityBadge grade={r.ctcae_grade}>
+                        Grade {r.ctcae_grade}
+                      </SeverityBadge>
+                    </td>
+                    <td>
+                      <span className={`status-pill ${r.status.toLowerCase().replace(/\s+/g, "-")}`}>
+                        {r.status}
+                      </span>
+                    </td>
+                    <td>
+                      <div style={{ fontSize: "13px", fontWeight: 500 }}>{r.source}</div>
+                      {r.notes && (
+                        <div style={{ fontSize: "12px", color: "var(--secondary)", marginTop: "2px" }}>
+                          {r.notes}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </section>
     </main>
   )
@@ -3794,7 +4200,7 @@ function MiniVisual({ type }: { type: number }) {
         </button>
         <Waveform active />
         <p>
-          Patient febrile overnight to <span className="numeric">38.4°C</span>…
+          Patient febrile overnight to <span className="numeric">38.4°C</span>â€¦
         </p>
       </div>
     )
@@ -3847,7 +4253,7 @@ function Landing({
     ],
     [
       "Does audio leave the device?",
-      "No. The prototype’s speech workflow is designed for local processing with zero audio upload.",
+      "No. The prototypeâ€™s speech workflow is designed for local processing with zero audio upload.",
     ],
     [
       "Which guidelines does it use?",
@@ -4159,7 +4565,7 @@ function Landing({
                 aria-expanded={openFaq === index}
               >
                 <span>{question}</span>
-                <b>{openFaq === index ? "−" : "+"}</b>
+                <b>{openFaq === index ? "âˆ’" : "+"}</b>
               </button>
               {openFaq === index && <p>{answer}</p>}
             </article>
@@ -4186,7 +4592,7 @@ function Landing({
           Decision-support prototype. Not a medical device. Clinician judgment
           required.
         </p>
-        <span>© 2025 RoundsAI</span>
+        <span>Â© 2025 RoundsAI</span>
       </footer>
     </main>
   )
@@ -4310,7 +4716,7 @@ function Login({
             <button type="button">Reset password</button>
           </div>
           <Button variant="primary" type="submit" className="full">
-            {loading ? "Signing in…" : "Sign in"}
+            {loading ? "Signing inâ€¦" : "Sign in"}
           </Button>
           <div className="or-divider">
             <span>or</span>
@@ -4350,7 +4756,24 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
   }
   const [signedIn, setSignedIn] = useState(false)
   const [online, setOnline] = useState(true)
-  const [patientsList, setPatientsList] = useState(patients)
+  const [patientsList, setPatientsList] = useState<typeof patients>(() => {
+    if (typeof localStorage !== "undefined") {
+      const saved = localStorage.getItem("rounds-patients-list")
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved)
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed
+        } catch {}
+      }
+    }
+    return patients
+  })
+
+  useEffect(() => {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem("rounds-patients-list", JSON.stringify(patientsList))
+    }
+  }, [patientsList])
   const [selectedPatientId, setSelectedPatientId] = useState("104")
   const [screen, setScreen] = useState<Screen>(initialScreen || "landing")
   const [globalToast, setGlobalToast] = useState("")
@@ -4382,14 +4805,9 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
     setAnalyticsData((prev) => {
       const current = prev[patientId] || {
         patient_id: patientId,
-        patient_name: patients.find((p) => p.id === patientId)?.name || "Patient",
+        patient_name: patientsList.find((p) => p.id === patientId)?.name || "Patient",
         rounds: [],
-        kpis: [
-          ["Absolute neutrophils", `${formatNumber(record.anc)}`, "/µL", `Grade ${record.ctcae_grade}`],
-          ["Platelet reserve", `${formatNumber(record.platelets)}`, "/µL", "Verified"],
-          ["Active graded toxicities", record.ctcae_grade > 0 ? "1" : "0", "", `Grade ${record.ctcae_grade}`],
-          ["Clinical risk level", record.ctcae_grade >= 4 ? "High" : "Low", "", record.status],
-        ],
+        kpis: [],
         trajectory: [],
       }
 
@@ -4397,11 +4815,18 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
       const updatedTrajectory = [
         ...current.trajectory,
         {
-          label: "Attested Note",
+          label: record.source.includes("OCR") ? "Round (OCR)" : "Attested Note",
           date: new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short" }),
           value: record.anc,
           grade: record.ctcae_grade,
         },
+      ]
+
+      const updatedKpis: [string, string, string, string][] = [
+        ["Absolute neutrophils", `${formatNumber(record.anc)}`, "/µL", record.ctcae_grade === 0 ? "Grade 0" : `Grade ${record.ctcae_grade}`],
+        ["Platelet reserve", `${formatNumber(record.platelets)}`, "/µL", record.platelets >= 150000 ? "Grade 0" : "Grade 1"],
+        ["Active graded toxicities", record.ctcae_grade > 0 ? "1" : "0", "", record.ctcae_grade === 0 ? "Stable" : `Grade ${record.ctcae_grade}`],
+        ["Clinical risk level", record.ctcae_grade >= 4 ? "High" : record.ctcae_grade >= 3 ? "Moderate" : "Low", "", record.ctcae_grade >= 4 ? "Febrile neutropenia" : record.ctcae_grade === 0 ? "Protocol cleared" : "Thermal vigilance"],
       ]
 
       const updated = {
@@ -4409,6 +4834,7 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
         [patientId]: {
           ...current,
           rounds: updatedRounds,
+          kpis: updatedKpis,
           trajectory: updatedTrajectory,
         },
       }
@@ -4509,6 +4935,57 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
   const handleAdmitPatient = (newPatient: typeof patients[number]) => {
     setPatientsList((prev) => [...prev, newPatient])
     setSelectedPatientId(newPatient.id)
+
+    // Seed new patient's analytics with initial admission baseline
+    const dateStr = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+    const baseGrade = newPatient.baselineAnc < 500 ? 4 : newPatient.baselineAnc < 1000 ? 3 : newPatient.baselineAnc < 1500 ? 2 : 0
+    const admissionRound: RoundRecord = {
+      id: `adm-${newPatient.id}`,
+      date: dateStr,
+      doctor: "Dr. Attending, MD",
+      anc: newPatient.baselineAnc,
+      wbc: Math.round((newPatient.baselineAnc / 0.6) * 1.5) || 5200,
+      platelets: 220000,
+      hemoglobin: 12.5,
+      ctcae_grade: baseGrade,
+      status: "Admission Workup",
+      source: "Ward 4B Admission",
+      notes: `Admission baseline: ${newPatient.diagnosis}, ${newPatient.regimen} (${newPatient.cycle}). Baseline ANC ${formatNumber(newPatient.baselineAnc)} /µL.`,
+    }
+
+    const initialKpis: [string, string, string, string][] = [
+      ["Absolute neutrophils", `${formatNumber(newPatient.baselineAnc)}`, "/µL", baseGrade === 0 ? "Grade 0" : `Grade ${baseGrade}`],
+      ["Platelet reserve", formatNumber(220000), "/µL", "Grade 0"],
+      ["Active graded toxicities", baseGrade > 0 ? "1" : "0", "", baseGrade === 0 ? "Stable" : `Grade ${baseGrade}`],
+      ["Clinical risk level", baseGrade >= 4 ? "High" : baseGrade >= 3 ? "Moderate" : "Low", "", baseGrade >= 4 ? "High Risk" : "Stable"],
+    ]
+
+    const initialTrajectory = [
+      {
+        label: "Admission Baseline",
+        date: new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short" }),
+        value: newPatient.baselineAnc,
+        grade: baseGrade,
+      },
+    ]
+
+    setAnalyticsData((prev) => {
+      const updated = {
+        ...prev,
+        [newPatient.id]: {
+          patient_id: newPatient.id,
+          patient_name: newPatient.name,
+          rounds: [admissionRound],
+          kpis: initialKpis,
+          trajectory: initialTrajectory,
+        },
+      }
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem("rounds-analytics-data", JSON.stringify(updated))
+      }
+      return updated
+    })
+
     showToast(`Admitted ${newPatient.name} to Bed ${newPatient.bed}`)
   }
 
@@ -4516,6 +4993,7 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
     setPatientsList(patients)
     setAnalyticsData(INITIAL_ANALYTICS)
     if (typeof localStorage !== "undefined") {
+      localStorage.removeItem("rounds-patients-list")
       localStorage.removeItem("rounds-analytics-data")
     }
     setSelectedPatientId("104")
