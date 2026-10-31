@@ -4622,7 +4622,7 @@ function Landing({
     ],
     [
       "Does audio leave the device?",
-      "No. The prototypeâ€™s speech workflow is designed for local processing with zero audio upload.",
+      "No. The prototype's speech workflow is designed for local processing with zero audio upload.",
     ],
     [
       "Which guidelines does it use?",
@@ -4934,7 +4934,7 @@ function Landing({
                 aria-expanded={openFaq === index}
               >
                 <span>{question}</span>
-                <b>{openFaq === index ? "âˆ’" : "+"}</b>
+                <b>{openFaq === index ? "-" : "+"}</b>
               </button>
               {openFaq === index && <p>{answer}</p>}
             </article>
@@ -4961,7 +4961,7 @@ function Landing({
           Decision-support prototype. Not a medical device. Clinician judgment
           required.
         </p>
-        <span>Â© 2025 RoundsAI</span>
+        <span>© 2026 RoundsAI</span>
       </footer>
     </main>
   )
