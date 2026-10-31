@@ -226,10 +226,14 @@ describe("Clinical Utilities — TDD Suite", () => {
       assert.equal(res.grade, 4);
     });
 
-    it("falls back to patient baseline when text has no numerical matches", () => {
+    it("does not invent values when text has no numerical matches", () => {
       const res = parseClinicalLabReport("unreadable.png", "Binary stream...", { id: "105" });
-      assert.equal(res.anc, 750);
-      assert.equal(res.grade, 3);
+      assert.equal(res.anc, 0);
+      assert.equal(res.wbc, 0);
+      assert.equal(res.platelets, 0);
+      assert.equal(res.hemoglobin, 0);
+      assert.equal(res.temp, 0);
+      assert.equal(res.grade, 0);
       assert.equal(res.extractedFromText, false);
       assert.equal(res.confidence, 0);
     });
@@ -238,6 +242,14 @@ describe("Clinical Utilities — TDD Suite", () => {
       const text = "HbA1c: 5.6%, Hemoglobin: 11.2 g/dL, ANC: 1500 /uL, WBC: 4.8";
       const res = parseClinicalLabReport("labs.txt", text);
       assert.equal(res.hemoglobin, 11.2);
+    });
+
+    it("correctly grades true zero ANC (ANC: 0) as CTCAE Grade 4 agranulocytosis", () => {
+      const text = "ANC: 0 /uL, WBC: 0.8, Platelets: 45000, Temp 37.0 C";
+      const res = parseClinicalLabReport("labs.txt", text);
+      assert.equal(res.anc, 0);
+      assert.equal(res.grade, 4);
+      assert.equal(res.extractedFromText, true);
     });
   });
 

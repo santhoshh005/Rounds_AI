@@ -61,10 +61,10 @@ def extract_clinical_facts_gemini(text: str) -> ClinicalExtraction:
 
     import time
     model_name = os.getenv("GEMINI_MODEL_DRAFT", "gemini-2.5-flash")
-    fallback_model = os.getenv("GEMINI_MODEL_POLISH", "gemini-2.5-pro")
-    # 4-model cascading fallback hierarchy: 2.5-flash -> 2.5-pro -> 1.5-flash -> 1.5-pro
+    fallback_model = os.getenv("GEMINI_MODEL_EXTRACT_FALLBACK", "gemini-1.5-flash")
+    # 4-model cascading fallback hierarchy: 2.5-flash -> 1.5-flash -> 1.5-pro -> 2.5-pro
     candidate_models: list[str] = []
-    for m in (model_name, fallback_model, "gemini-1.5-flash", "gemini-1.5-pro"):
+    for m in (model_name, fallback_model, "gemini-1.5-pro", "gemini-2.5-pro"):
         if m and m not in candidate_models:
             candidate_models.append(m)
 

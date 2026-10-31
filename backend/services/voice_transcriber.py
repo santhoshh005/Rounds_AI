@@ -49,7 +49,7 @@ def _transcribe_with_gemini(audio_bytes: bytes, mime_type: str) -> Optional[str]
         return None
 
     model_name = os.getenv("GEMINI_MODEL_DRAFT", "gemini-2.5-flash")
-    candidate_models = [m for m in (model_name, "gemini-2.5-pro", "gemini-1.5-flash", "gemini-1.5-pro") if m]
+    candidate_models = list(dict.fromkeys([m for m in (model_name, "gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.5-pro") if m]))
 
     try:
         from google import genai
@@ -168,11 +168,11 @@ def transcribe_audio_with_details(audio_bytes: bytes, filename: str = "recording
         engine_name = "faster-whisper-on-device (zero egress)"
     elif mode == "cloud":
         raw_transcript = _transcribe_with_gemini(audio_bytes, mime_type)
-        engine_name = f"gemini-audio ({os.getenv('GEMINI_MODEL_DRAFT', 'gemini-3.5-flash')})"
+        engine_name = f"gemini-audio ({os.getenv('GEMINI_MODEL_DRAFT', 'gemini-2.5-flash')})"
     else:  # hybrid
         raw_transcript = _transcribe_with_gemini(audio_bytes, mime_type)
         if raw_transcript:
-            engine_name = f"gemini-audio ({os.getenv('GEMINI_MODEL_DRAFT', 'gemini-3.5-flash')})"
+            engine_name = f"gemini-audio ({os.getenv('GEMINI_MODEL_DRAFT', 'gemini-2.5-flash')})"
         else:
             raw_transcript = _transcribe_with_faster_whisper(audio_bytes, filename)
             engine_name = "faster-whisper-on-device (hybrid fallback)"

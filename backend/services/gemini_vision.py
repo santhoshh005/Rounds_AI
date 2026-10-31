@@ -65,10 +65,10 @@ def analyze_clinical_images(images: list[ImageAttachment]) -> list[VisionObserva
 
     import time
     model_name = os.getenv("GEMINI_MODEL_VISION", "gemini-2.5-flash")
-    fallback_model = os.getenv("GEMINI_MODEL_POLISH", "gemini-2.5-pro")
-    # 4-model cascading fallback hierarchy: 2.5-flash -> 2.5-pro -> 1.5-flash -> 1.5-pro
+    fallback_model = os.getenv("GEMINI_MODEL_VISION_FALLBACK", "gemini-1.5-flash")
+    # 4-model cascading fallback hierarchy: 2.5-flash -> 1.5-flash -> 1.5-pro -> 2.5-pro
     candidate_models: list[str] = []
-    for m in (model_name, fallback_model, "gemini-1.5-flash", "gemini-1.5-pro"):
+    for m in (model_name, fallback_model, "gemini-1.5-pro", "gemini-2.5-pro"):
         if m and m not in candidate_models:
             candidate_models.append(m)
 
@@ -80,7 +80,8 @@ def analyze_clinical_images(images: list[ImageAttachment]) -> list[VisionObserva
         observations: list[VisionObservation] = []
 
         for img in images:
-            raw_bytes = base64.b64decode(img.data)
+            b64_payload = img.data.split(",", 1)[1] if "," in img.data else img.data
+            raw_bytes = base64.b64decode(b64_payload)
             image_part = types.Part.from_bytes(
                 data=raw_bytes,
                 mime_type=img.mime_type,
@@ -188,4 +189,3 @@ def _local_vision_fallback(images: list[ImageAttachment]) -> list[VisionObservat
                 )
             )
     return observations
-

@@ -200,12 +200,13 @@ def apply_rule_based_autocorrect(text: str) -> tuple[str, list[dict]]:
                         "rule_id": rule_id,
                     })
 
-    # Capitalize the first letter of sentences
+    # Capitalize the first letter of sentences while preserving lowercase oncology prefixes (e.g. mFOLFOX6)
     sentences = re.split(r"([.!?]\s+)", corrected)
     capitalized_sentences = []
     for s in sentences:
         if s and not re.match(r"^[.!?]\s+$", s):
-            s = s[0].upper() + s[1:]
+            if not s.startswith("mFOLFOX"):
+                s = s[0].upper() + s[1:]
         capitalized_sentences.append(s)
     corrected = "".join(capitalized_sentences)
 
@@ -301,10 +302,10 @@ def correct_clinical_transcript(raw_text: str, use_gemini: bool = True) -> dict:
     # Step 2: Gemini contextual medical polish with 4-model fallback cascade
     import time
     model_name = os.getenv("GEMINI_MODEL_POLISH", "gemini-2.5-flash")
-    fallback_model = os.getenv("GEMINI_MODEL_DRAFT", "gemini-2.5-pro")
-    # 4-model cascading fallback hierarchy: 2.5-flash -> 2.5-pro -> 1.5-flash -> 1.5-pro
+    fallback_model = os.getenv("GEMINI_MODEL_DRAFT", "gemini-1.5-flash")
+    # 4-model cascading fallback hierarchy: 2.5-flash -> 1.5-flash -> 1.5-pro -> 2.5-pro
     candidate_models: list[str] = []
-    for m in (model_name, fallback_model, "gemini-1.5-flash", "gemini-1.5-pro"):
+    for m in (model_name, fallback_model, "gemini-1.5-pro", "gemini-2.5-pro"):
         if m and m not in candidate_models:
             candidate_models.append(m)
 
@@ -401,4 +402,3 @@ def correct_clinical_transcript(raw_text: str, use_gemini: bool = True) -> dict:
 
 # Convenience alias
 autocorrect_clinical_text = correct_clinical_transcript
-

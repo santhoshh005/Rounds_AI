@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { Icon } from "./components/Icons"
-import { roundsApi, type ExtractRoundResponse } from "../lib/api"
+import { roundsApi, API_URL, type ExtractRoundResponse } from "../lib/api"
 import {
   formatEmrClipboardNote,
   parseClinicalLabReport,
@@ -168,29 +168,7 @@ function parseClinicalLabOcr(fileName: string, textContent: string, patient: typ
   return parseClinicalLabReport(fileName, textContent, patient)
 }
 
-function _legacyParseClinicalLabOcr(fileName: string, textContent: string, patient: typeof patients[number]) {
-  // Extract numbers using regex if present in user file
-  const ancMatch = textContent.match(/anc[:\s]+(\d+[\d,]*)/i) || textContent.match(/neutrophils?[:\s]+(\d+[\d,]*)/i)
-  const wbcMatch = textContent.match(/wbc[:\s]+(\d+\.?\d*)/i) || textContent.match(/white blood[:\s]+(\d+\.?\d*)/i)
-  const pltMatch = textContent.match(/platelets?[:\s]+(\d+[\d,]*)/i) || textContent.match(/plt[:\s]+(\d+[\d,]*)/i)
-  const hgbMatch = textContent.match(/hemoglobin[:\s]+(\d+\.?\d*)/i) || textContent.match(/hgb[:\s]+(\d+\.?\d*)/i)
 
-  // Use parsed values or high-fidelity clinical ground truth tailored to patient admission
-  let anc = ancMatch ? parseInt(ancMatch[1].replace(/,/g, ""), 10) : patient.id === "106" ? 1620 : patient.id === "105" ? 750 : 420
-  let wbc = wbcMatch ? parseFloat(wbcMatch[1]) : patient.id === "106" ? 5.4 : patient.id === "105" ? 2.4 : 1.8
-  let platelets = pltMatch ? parseInt(pltMatch[1].replace(/,/g, ""), 10) : patient.id === "106" ? 215000 : patient.id === "105" ? 110000 : 88000
-  let hemoglobin = hgbMatch ? parseFloat(hgbMatch[1]) : patient.id === "106" ? 12.1 : patient.id === "105" ? 11.4 : 10.2
-  let temp = patient.id === "104" ? 38.4 : patient.id === "105" ? 38.1 : 36.8
-
-  // Compute CTCAE v5.0 grade
-  let grade = 0
-  if (anc < 500) grade = 4
-  else if (anc < 1000) grade = 3
-  else if (anc < 1500) grade = 2
-  else if (anc < 2000) grade = 1
-
-  return { anc, wbc, platelets, hemoglobin, temp, grade }
-}
 
 const patientCases: Record<
   string,
@@ -248,7 +226,7 @@ const patientCases: Record<
       p: "Immediate blood cultures x2. Start IV Cefepime 2g q8h. Hold oxaliplatin/5-FU. Sub-Q G-CSF (Filgrastim 300mcg) daily until ANC > 1,500.",
     },
     labReport: [
-      ["WBC", "1.8", "x10Â³/µL"],
+      ["WBC", "1.8", "x10³/µL"],
       ["ANC", "420", "cells/µL"],
       ["Platelets", formatNumber(88000), "/µL"],
       ["Hemoglobin", "10.2", "g/dL"],
@@ -284,7 +262,7 @@ const patientCases: Record<
       p: "Repeat CBC and temperature q4h. Initiate oral Levofloxacin 500mg daily prophylaxis. Magic mouthwash for oral comfort.",
     },
     labReport: [
-      ["WBC", "2.4", "x10Â³/µL"],
+      ["WBC", "2.4", "x10³/µL"],
       ["ANC", "750", "cells/µL"],
       ["Platelets", formatNumber(110000), "/µL"],
       ["Hemoglobin", "11.4", "g/dL"],
@@ -320,7 +298,7 @@ const patientCases: Record<
       p: "Cleared for cycle continuation as scheduled. Routine hydration and discharge readiness evaluation.",
     },
     labReport: [
-      ["WBC", "5.4", "x10Â³/µL"],
+      ["WBC", "5.4", "x10³/µL"],
       ["ANC", formatNumber(1620), "cells/µL"],
       ["Platelets", formatNumber(215000), "/µL"],
       ["Hemoglobin", "12.1", "g/dL"],
@@ -652,7 +630,7 @@ function ClinicianProfileModal({
               <strong>Clinical Processing Architecture</strong>
               <ul style={{ margin: "6px 0 0 18px", padding: 0 }}>
                 <li>
-                  <strong>AI Multimodal Hierarchy:</strong> 4-model fallback cascade (Gemini 2.5 Flash → 2.5 Pro → 1.5 Flash → 1.5 Pro)
+                  <strong>AI Multimodal Hierarchy:</strong> 4-model fallback cascade (Gemini 2.5 Flash → 1.5 Flash → 1.5 Pro → 2.5 Pro)
                 </li>
                 <li>
                   <strong>Deterministic Offline Fallback:</strong> Local CPU regex parser & CTCAE v5.0 rules if offline / unauthenticated
@@ -1096,7 +1074,7 @@ function Waveform({ active = false }: { active?: boolean }) {
 function ReportImage({
   patient = patients[0],
   labReport = [
-    ["WBC", "1.8", "x10Â³/µL"],
+    ["WBC", "1.8", "x10³/µL"],
     ["ANC", "420", "cells/µL"],
     ["Platelets", formatNumber(88000), "/µL"],
     ["Hemoglobin", "10.2", "g/dL"],
@@ -1185,6 +1163,9 @@ function useVoiceDictation({
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
       setWhisperProcessing(true)
       mediaRecorderRef.current.stop()
+    } else if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop())
+      streamRef.current = null
     }
   }, [])
 
@@ -1338,9 +1319,9 @@ function useVoiceDictation({
               const formData = new FormData()
               formData.append("file", audioBlob, "bedside_audio.webm")
               const controller = new AbortController()
-              const timeoutId = setTimeout(() => controller.abort(), 2000)
+              const timeoutId = setTimeout(() => controller.abort(), 15000)
 
-              const res = await fetch("http://localhost:8000/api/v1/voice/transcribe", {
+              const res = await fetch(`${API_URL.replace(/\/$/, "")}/api/v1/voice/transcribe`, {
                 method: "POST",
                 body: formData,
                 signal: controller.signal,
@@ -1494,7 +1475,7 @@ function ClinicalAutoCorrectModal({
             </p>
           </div>
           <button className="icon-button" onClick={onClose} aria-label="Close modal">
-            âœ•
+            ✕
           </button>
         </div>
 
@@ -1662,11 +1643,12 @@ function OcrReviewModal({
   onClose: () => void
   onCommit: (confirmed: ParsedClinicalOcr) => void
 }) {
-  const [anc, setAnc] = useState(initialParsed?.anc || 420)
-  const [wbc, setWbc] = useState(initialParsed?.wbc || 1.8)
-  const [platelets, setPlatelets] = useState(initialParsed?.platelets || 88000)
-  const [hemoglobin, setHemoglobin] = useState(initialParsed?.hemoglobin || 10.2)
-  const [temp, setTemp] = useState(initialParsed?.temp || 38.4)
+  const [anc, setAnc] = useState(initialParsed?.anc ?? 0)
+  const [wbc, setWbc] = useState(initialParsed?.wbc ?? 0)
+  const [platelets, setPlatelets] = useState(initialParsed?.platelets ?? 0)
+  const [hemoglobin, setHemoglobin] = useState(initialParsed?.hemoglobin ?? 0)
+  const [temp, setTemp] = useState(initialParsed?.temp ?? 0)
+  const [validationError, setValidationError] = useState("")
 
   useEffect(() => {
     if (initialParsed) {
@@ -1674,29 +1656,48 @@ function OcrReviewModal({
       setWbc(initialParsed.wbc)
       setPlatelets(initialParsed.platelets)
       setHemoglobin(initialParsed.hemoglobin)
-      setTemp(initialParsed.temp)
+      setTemp(initialParsed.temp > 0 ? initialParsed.temp : 37.0)
+      setValidationError("")
     }
   }, [initialParsed])
 
   if (!isOpen || !initialParsed) return null
 
   let grade = 0
-  if (anc < 500) grade = 4
-  else if (anc < 1000) grade = 3
-  else if (anc < 1500) grade = 2
-  else if (anc < 2000) grade = 1
+  if (anc > 0) {
+    if (anc < 500) grade = 4
+    else if (anc < 1000) grade = 3
+    else if (anc < 1500) grade = 2
+    else if (anc < 2000) grade = 1
+  } else if (anc === 0 && initialParsed.extractedFromText) {
+    grade = 4
+  }
 
   const isFebrile = temp >= 38.0
 
   const handleCommit = () => {
+    const hasAtLeastOneLab =
+      (anc >= 0 && initialParsed.extractedFromText) ||
+      anc > 0 ||
+      wbc > 0 ||
+      platelets > 0 ||
+      hemoglobin > 0
+
+    if (!hasAtLeastOneLab) {
+      setValidationError("Enter at least one verified laboratory value before committing this report.")
+      return
+    }
+    const finalTemp = temp > 0 ? temp : 37.0
+    const finalIsFebrile = finalTemp >= 38.0
+    setValidationError("")
     onCommit({
       anc,
       wbc,
       platelets,
       hemoglobin,
-      temp,
+      temp: finalTemp,
       grade,
-      isFebrile,
+      isFebrile: finalIsFebrile,
       confidence: initialParsed.confidence,
       extractedFromText: initialParsed.extractedFromText,
     })
@@ -1723,7 +1724,7 @@ function OcrReviewModal({
             </p>
           </div>
           <button className="text-button" onClick={onClose} aria-label="Close modal">
-            âœ•
+            ✕
           </button>
         </div>
 
@@ -1731,11 +1732,18 @@ function OcrReviewModal({
           <div className="metric-pill confidence-pill">
             <Icon name="shield" size={16} />
             <span>
-              <strong>{initialParsed.confidence}%</strong> OCR Vision Match
+              <strong>{initialParsed.confidence}%</strong>{" "}
+              {initialParsed.extractedFromText ? "OCR Vision Match" : "No readable values — manual verification required"}
             </span>
           </div>
           <SeverityBadge grade={grade}>
-            {grade === 0 ? "Grade 0 · Stable" : grade === 4 ? "Grade 4 · Life-threatening" : `Grade ${grade} · Severe`}
+            {anc <= 0
+              ? "Incomplete · Manual verification required"
+              : grade === 0
+                ? "Grade 0 · Stable"
+                : grade === 4
+                  ? "Grade 4 · Life-threatening"
+                  : `Grade ${grade} · Severe`}
           </SeverityBadge>
           {isFebrile && (
             <span style={{ fontSize: "12px", padding: "4px 8px", borderRadius: "999px", background: "var(--g4-bg)", color: "var(--g4)", fontWeight: 600 }}>
@@ -1781,7 +1789,7 @@ function OcrReviewModal({
                 onChange={(e) => setWbc(Number(e.target.value) || 0)}
                 style={{ flex: 1, height: "40px", padding: "0 10px", borderRadius: "8px", border: "1px solid var(--border)", background: "var(--surface)", fontFamily: "JetBrains Mono" }}
               />
-              <span style={{ color: "var(--secondary)", fontSize: "13px" }}>x10Â³/µL</span>
+              <span style={{ color: "var(--secondary)", fontSize: "13px" }}>x10³/µL</span>
             </div>
           </label>
 
@@ -1813,6 +1821,12 @@ function OcrReviewModal({
             </div>
           </label>
         </div>
+
+        {validationError && (
+          <p role="alert" style={{ color: "var(--g4)", fontSize: "13px", margin: "0 0 12px" }}>
+            {validationError}
+          </p>
+        )}
 
         <div className="modal-footer" style={{ borderTop: "1px solid var(--divider)", paddingTop: "16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <Button onClick={onClose}>
@@ -1891,7 +1905,7 @@ function CaptureStep({
   const handleConfirmOcr = (confirmed: ParsedClinicalOcr) => {
     if (!pendingOcr) return
     const fileName = pendingOcr.fileName
-    const ocrReportText = `\n\n[OCR LAB REPORT: ${fileName}]\n• Collection: Today 07:15 AM · Ward 4B Stat Hematology\n• Absolute Neutrophil Count (ANC): ${formatNumber(confirmed.anc)} /µL (CTCAE Grade ${confirmed.grade})\n• Platelets: ${formatNumber(confirmed.platelets)} /µL\n• WBC: ${confirmed.wbc} x10Â³/µL\n• Hemoglobin: ${confirmed.hemoglobin} g/dL\n• Vitals: Temp ${confirmed.temp}°C\n[High-confidence Vision OCR · Synced to Analytics JSON]`
+    const ocrReportText = `\n\n[OCR LAB REPORT: ${fileName}]\n• Collection: Today 07:15 AM · Ward 4B Stat Hematology\n• Absolute Neutrophil Count (ANC): ${formatNumber(confirmed.anc)} /µL (CTCAE Grade ${confirmed.grade})\n• Platelets: ${formatNumber(confirmed.platelets)} /µL\n• WBC: ${confirmed.wbc} x10³/µL\n• Hemoglobin: ${confirmed.hemoglobin} g/dL\n• Vitals: Temp ${confirmed.temp}°C\n[High-confidence Vision OCR · Synced to Analytics JSON]`
 
     setTranscript((prev) => prev + ocrReportText)
     setOcrStatus(`OCR Verified: ANC ${formatNumber(confirmed.anc)} /µL (Grade ${confirmed.grade}) · Platelets ${formatNumber(confirmed.platelets)} /µL`)
@@ -1971,7 +1985,7 @@ function CaptureStep({
               <span className="live-tag">LIVE SPEECH ASR:</span>
             </div>
             <span className="live-interim-text">
-              {interimTranscript ? `"${interimTranscript}"` : "Listeningâ€¦ speak naturally (e.g. 'Patient on R-CHOP, ANC 1400, afebrile')"}
+              {interimTranscript ? `"${interimTranscript}"` : "Listening… speak naturally (e.g. 'Patient on R-CHOP, ANC 1400, afebrile')"}
             </span>
           </div>
         )}
@@ -1981,7 +1995,7 @@ function CaptureStep({
           <div className="whisper-status-card recording" role="status" aria-live="polite">
             <span className="whisper-pulse-dot" />
             <div>
-              <strong>ðŸŽ™ï¸ Recording Audio for Local Whisper ({whisperSeconds}s)</strong>
+              <strong>🎙️ Recording Audio for Local Whisper ({whisperSeconds}s)</strong>
               <small>Local audio capture · Actual speech transcribed on stop · Zero cloud egress</small>
             </div>
           </div>
@@ -2602,7 +2616,7 @@ function Station({
       p: `Continue scheduled regimen ${patient.regimen}. Monitor CBC and vitals per protocol.`,
     },
     labReport: [
-      ["WBC", "5.2", "x10Â³/µL"],
+      ["WBC", "5.2", "x10³/µL"],
       ["ANC", String(patient.baselineAnc), "cells/µL"],
       ["Platelets", "210,000", "/µL"],
       ["Hemoglobin", "12.5", "g/dL"],
@@ -3676,7 +3690,7 @@ const handleMobileScan = (e: React.ChangeEvent<HTMLInputElement>) => {
           >
             <Icon name="mic" size={20} />
           </button>
-          <h2>{recording ? (sttEngine === "whisper" ? `Listening to Whisper (${whisperSeconds}s)â€¦` : "Listening to microphoneâ€¦") : `Tap to dictate (${sttEngine === "whisper" ? "Whisper" : "Live ASR"})`}</h2>
+          <h2>{recording ? (sttEngine === "whisper" ? `Listening to Whisper (${whisperSeconds}s)…` : "Listening to microphone…") : `Tap to dictate (${sttEngine === "whisper" ? "Whisper" : "Live ASR"})`}</h2>
           <p>Audio stays on this device · Type or edit note anytime</p>
         </div>
         <Waveform active={recording} />
@@ -3685,7 +3699,7 @@ const handleMobileScan = (e: React.ChangeEvent<HTMLInputElement>) => {
         {recording && sttEngine === "live-asr" && (
           <div className="live-asr-stream mobile" style={{ margin: "8px 12px", padding: "8px 12px", background: "rgba(0,102,102,0.08)", border: "1px solid var(--border)", borderRadius: "8px", fontSize: "13px" }}>
             <span style={{ fontWeight: 700, color: "var(--brand)", marginRight: "6px" }}>LIVE:</span>
-            <span style={{ fontStyle: "italic" }}>{interimTranscript || "Listeningâ€¦ speak now"}</span>
+            <span style={{ fontStyle: "italic" }}>{interimTranscript || "Listening… speak now"}</span>
           </div>
         )}
 
@@ -4555,7 +4569,7 @@ function MiniVisual({ type }: { type: number }) {
         </button>
         <Waveform active />
         <p>
-          Patient febrile overnight to <span className="numeric">38.4°C</span>â€¦
+          Patient febrile overnight to <span className="numeric">38.4°C</span>…
         </p>
       </div>
     )
@@ -5071,7 +5085,7 @@ function Login({
             <button type="button">Reset password</button>
           </div>
           <Button variant="primary" type="submit" className="full">
-            {loading ? "Signing inâ€¦" : "Sign in"}
+            {loading ? "Signing in…" : "Sign in"}
           </Button>
           <div className="or-divider">
             <span>or</span>
@@ -5299,9 +5313,12 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
         },
       ]
 
+      const getPlateletGrade = (plt: number) =>
+        plt < 25000 ? "Grade 4" : plt < 50000 ? "Grade 3" : plt < 75000 ? "Grade 2" : plt < 150000 ? "Grade 1" : "Grade 0"
+
       const updatedKpis: [string, string, string, string][] = [
         ["Absolute neutrophils", `${formatNumber(record.anc)}`, "/µL", record.ctcae_grade === 0 ? "Grade 0" : `Grade ${record.ctcae_grade}`],
-        ["Platelet reserve", `${formatNumber(record.platelets)}`, "/µL", record.platelets >= 150000 ? "Grade 0" : "Grade 1"],
+        ["Platelet reserve", `${formatNumber(record.platelets)}`, "/µL", getPlateletGrade(record.platelets)],
         ["Active graded toxicities", record.ctcae_grade > 0 ? "1" : "0", "", record.ctcae_grade === 0 ? "Stable" : `Grade ${record.ctcae_grade}`],
         ["Clinical risk level", record.ctcae_grade >= 4 ? "High" : record.ctcae_grade >= 3 ? "Moderate" : "Low", "", record.ctcae_grade >= 4 ? "Febrile neutropenia" : record.ctcae_grade === 0 ? "Protocol cleared" : "Thermal vigilance"],
       ]
@@ -5340,6 +5357,9 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
       year: "numeric",
     })
 
+    const getPlateletGrade = (plt: number) =>
+      plt < 25000 ? "Grade 4" : plt < 50000 ? "Grade 3" : plt < 75000 ? "Grade 2" : plt < 150000 ? "Grade 1" : "Grade 0"
+
     const newRound: RoundRecord = {
       id: `ocr-${Date.now()}`,
       date: dateStr,
@@ -5351,12 +5371,12 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
       ctcae_grade: extracted.grade,
       status: "OCR Verified",
       source: `OCR: ${fileName}`,
-      notes: `Multimodal Vision OCR verified with CTCAE Grade ${extracted.grade} (${extracted.grade === 0 ? "Normal" : extracted.grade >= 4 ? "Life-threatening Febrile Neutropenia" : "Severe Neutropenia"})`,
+      notes: `Multimodal Vision OCR verified with CTCAE Grade ${extracted.grade} (${extracted.grade === 0 ? "Normal" : extracted.grade >= 4 ? "Life-threatening Febrile Neutropenia" : extracted.grade === 3 ? "Severe Neutropenia" : extracted.grade === 2 ? "Moderate Neutropenia" : "Mild Neutropenia"})`,
     }
 
     const updatedKpis: [string, string, string, string][] = [
       ["Absolute neutrophils", `${formatNumber(extracted.anc)}`, "/µL", extracted.grade === 0 ? "Grade 0" : `Grade ${extracted.grade}`],
-      ["Platelet reserve", `${formatNumber(extracted.platelets)}`, "/µL", extracted.platelets >= 150000 ? "Grade 0" : "Grade 1"],
+      ["Platelet reserve", `${formatNumber(extracted.platelets)}`, "/µL", getPlateletGrade(extracted.platelets)],
       ["Active graded toxicities", extracted.grade > 0 ? "1" : "0", "", extracted.grade === 0 ? "Stable" : `Grade ${extracted.grade}`],
       ["Clinical risk level", extracted.grade >= 4 ? "High" : extracted.grade >= 3 ? "Moderate" : "Low", "", extracted.grade >= 4 ? "Febrile neutropenia" : extracted.grade === 0 ? "Protocol cleared" : "Thermal vigilance"],
     ]
@@ -5377,7 +5397,7 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
         trajectory: [],
       }
 
-      return {
+      const updated = {
         ...prev,
         [patientId]: {
           ...current,
@@ -5386,6 +5406,14 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
           trajectory: [...current.trajectory, newTrajectoryPoint],
         },
       }
+      if (typeof localStorage !== "undefined") {
+        try {
+          localStorage.setItem("rounds-analytics-data", JSON.stringify(updated))
+        } catch (e) {
+          console.warn("Could not persist OCR analytics data to localStorage:", e)
+        }
+      }
+      return updated
     })
 
     showToast(`Full OCR parsed from ${fileName} · Stored in analytics JSON`)

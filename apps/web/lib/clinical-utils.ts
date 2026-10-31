@@ -303,6 +303,7 @@ export function extractOncologyTriad(labs: RawLabItem[]): OncologyTriad {
       if (normalizedVal < 1.0) grade = 4;
       else if (normalizedVal < 2.0) grade = 3;
       else if (normalizedVal < 3.0) grade = 2;
+      else if (normalizedVal < 4.0) grade = 1;
 
       wbcItem = {
         name: "WBC",
@@ -435,7 +436,7 @@ export function parseClinicalLabReport(
     anc = Math.round(parseFloat(ancDecimalMatch[1]) * 1000);
     extractedFromText = true;
   } else {
-    const ancMatch = textContent.match(/(?:anc|absolute\s+neutrophil(?:\s+count)?|neutrophils?\s*\(?absolute\)?|neut#)\s*[:=]?\s*(\d[\d,]*)/i);
+    const ancMatch = textContent.match(/(?:anc|absolute\s+neutrophils?(?:\s+count)?|neutrophils?\s*\(?absolute\)?|neut#)\s*(?:\(\s*anc\s*\))?\s*[:=]?\s*(\d[\d,]*)/i);
     if (ancMatch) {
       anc = parseInt(ancMatch[1].replace(/,/g, ""), 10);
       extractedFromText = true;
@@ -493,21 +494,26 @@ export function parseClinicalLabReport(
     }
   }
 
-  // Fallbacks if not detected in raw text
-  const pId = fallbackPatient?.id || "104";
-  const defaultBaseline = fallbackPatient?.baselineAnc || 1400;
-  const finalAnc = anc !== null ? anc : (pId === "106" ? 1620 : pId === "105" ? 750 : pId === "104" ? 420 : defaultBaseline);
-  const finalWbc = wbc !== null ? wbc : (pId === "106" ? 5.4 : pId === "105" ? 2.4 : pId === "104" ? 1.8 : 5.0);
-  const finalPlatelets = platelets !== null ? platelets : (pId === "106" ? 215000 : pId === "105" ? 110000 : pId === "104" ? 88000 : 200000);
-  const finalHgb = hemoglobin !== null ? hemoglobin : (pId === "106" ? 12.1 : pId === "105" ? 11.4 : pId === "104" ? 10.2 : 12.5);
-  const finalTemp = temp !== null ? temp : (pId === "104" ? 38.4 : pId === "105" ? 38.1 : 36.8);
+  // Missing OCR values must remain missing. Never substitute values from a
+  // patient's demo profile because that can silently create a false clinical
+  // result when an image is unreadable.
+  void fileName;
+  void fallbackPatient;
+  const finalAnc = anc ?? 0;
+  const finalWbc = wbc ?? 0;
+  const finalPlatelets = platelets ?? 0;
+  const finalHgb = hemoglobin ?? 0;
+  const finalTemp = temp ?? 0;
 
   // Compute CTCAE v5.0 Toxicity Grade
   let grade = 0;
-  if (finalAnc < 500) grade = 4;
-  else if (finalAnc < 1000) grade = 3;
-  else if (finalAnc < 1500) grade = 2;
-  else if (finalAnc < 2000) grade = 1;
+  if (anc !== null) {
+    if (anc < 500) grade = 4;
+    else if (anc < 1000) grade = 3;
+    else if (anc < 1500) grade = 2;
+    else if (anc < 2000) grade = 1;
+    else grade = 0;
+  }
 
   const isFebrile = finalTemp >= 38.0;
   const confidence = extractedFromText ? 99 : 0;
@@ -804,6 +810,4 @@ export function deriveDoctorInitials(name: string): string {
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
-
-
 
