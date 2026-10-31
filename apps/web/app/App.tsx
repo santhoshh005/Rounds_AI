@@ -4560,52 +4560,6 @@ function ProductMockup() {
   )
 }
 
-function MiniVisual({ type }: { type: number }) {
-  if (type === 1)
-    return (
-      <div className="feature-visual voice">
-        <button aria-label="Start dictation" title="Start dictation">
-          <Icon name="mic" size={20} />
-        </button>
-        <Waveform active />
-        <p>
-          Patient febrile overnight to <span className="numeric">38.4°C</span>…
-        </p>
-      </div>
-    )
-  if (type === 2)
-    return (
-      <div className="feature-visual scan">
-        <ReportImage />
-      </div>
-    )
-  if (type === 3)
-    return (
-      <div className="feature-visual alert-visual">
-        <div className="icon-box danger">
-          <Icon name="alert" />
-        </div>
-        <div>
-          <b>Possible febrile neutropenia</b>
-          <p>
-            <span className="numeric">38.4°C</span> · ANC{" "}
-            <span className="numeric">420 /µL</span>
-          </p>
-        </div>
-      </div>
-    )
-  return (
-    <div className="feature-visual note-visual">
-      {["Subjective", "Objective", "Assessment", "Plan"].map((item) => (
-        <div key={item}>
-          <b>{item}</b>
-          <span />
-        </div>
-      ))}
-    </div>
-  )
-}
-
 function Landing({
   go,
   signedIn,
@@ -4651,8 +4605,6 @@ function Landing({
         </button>
         <div className={`public-links ${menu ? "open" : ""}`}>
           <a href="#features">Features</a>
-          <a href="#how">How it works</a>
-          <a href="#safety">Safety</a>
           <a href="#faq">FAQ</a>
         </div>
         <div className="public-actions">
@@ -4701,102 +4653,6 @@ function Landing({
         </div>
         <ProductMockup />
       </section>
-      <section className="problem-strip landing-container">
-        {[
-          [
-            1,
-            "Rounds are rushed",
-            "Important details are captured across conversation, paper, and memory.",
-          ],
-          [
-            2,
-            "Labs and notes live apart",
-            "Clinicians reconcile bedside findings with fragmented systems.",
-          ],
-          [
-            3,
-            "Documentation runs late",
-            "The clinical day ends, but note writing continues after hours.",
-          ],
-        ].map(([number, title, copy]) => (
-          <article key={String(number)}>
-            <div className="icon-box">
-              <Icon
-                name={
-                  number === 1 ? "activity" : number === 2 ? "file" : "moon"
-                }
-              />
-            </div>
-            <h3>{title}</h3>
-            <p>{copy}</p>
-          </article>
-        ))}
-      </section>
-      <section className="how-section landing-container" id="how">
-        <div className="landing-heading">
-          <span>How it works</span>
-          <h2>From bedside conversation to a note you can trust.</h2>
-        </div>
-        {[
-          [
-            "01",
-            "Dictate at the bedside",
-            "Capture the assessment naturally while local speech recognition keeps audio on the device.",
-            [
-              "Tap once to dictate",
-              "Use clinical presets",
-              "Review the live transcript",
-            ],
-          ],
-          [
-            "02",
-            "Scan the lab sheet",
-            "Photograph a printed report and bring extracted values into the same review flow.",
-            [
-              "Document crop guidance",
-              "High-confidence OCR",
-              "Original image stays visible",
-            ],
-          ],
-          [
-            "03",
-            "Review safety alerts and CTCAE grades",
-            "See the urgent finding first, with evidence, grade, and guideline source together.",
-            [
-              "Confirm critical values",
-              "See trend context",
-              "Open the guideline source",
-            ],
-          ],
-          [
-            "04",
-            "Confirm and sign the SOAP note",
-            "Review the draft in readable sections, then attest it with a complete audit trail.",
-            [
-              "Editable SOAP sections",
-              "Confirm before signing",
-              "Copy to the EMR",
-            ],
-          ],
-        ].map((item, index) => (
-          <article className={index % 2 ? "reverse" : ""} key={String(item[0])}>
-            <MiniVisual type={index + 1} />
-            <div>
-              <span>{item[0]}</span>
-              <h3>{item[1]}</h3>
-              <p>{item[2]}</p>
-              <ul>
-                {(item[3] as string[]).map((bullet) => (
-                  <li key={bullet}>
-                    <Icon name="check" />
-                    {bullet}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </article>
-        ))}
-      </section>
       <section className="features-section" id="features">
         <div className="landing-container">
           <div className="landing-heading">
@@ -4844,82 +4700,8 @@ function Landing({
                 <p>{copy}</p>
               </article>
             ))}
-            <article className="wide-feature">
-              <div>
-                <div className="icon-box">
-                  <Icon name="zap" />
-                </div>
-                <h3>Bedside-to-station live sync</h3>
-                <p>
-                  Send the round from the patient room and continue review at
-                  the doctor station without repeating work.
-                </p>
-              </div>
-              <div className="sync-demo">
-                <span>Bed 12 · David Miller</span>
-                <i />
-                <b>Received at station</b>
-              </div>
-            </article>
-          </div>
+            </div>
         </div>
-      </section>
-      <section className="trust-section landing-container" id="safety">
-        <div>
-          <span>Safety by design</span>
-          <h2>Clinician in the loop, at every consequential step.</h2>
-          <p>
-            RoundsAI supports clinical judgment. It does not automate the final
-            decision.
-          </p>
-        </div>
-        <div>
-          {[
-            [
-              "check",
-              "Confirm before signing",
-              "Critical extracted values require explicit verification.",
-            ],
-            [
-              "shield",
-              "Assistive suggestions only",
-              "Recommendations remain clearly separate from clinician decisions.",
-            ],
-            [
-              "clipboard",
-              "Attestation audit trail",
-              "Approved notes retain reviewer and timestamp context.",
-            ],
-            [
-              "lock",
-              "Audio stays on device",
-              "Speech processing is designed for local execution.",
-            ],
-          ].map(([icon, title, copy]) => (
-            <article key={title}>
-              <div className="icon-box">
-                <Icon name={icon as any} />
-              </div>
-              <div>
-                <h3>{title}</h3>
-                <p>{copy}</p>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
-      <section className="preview-section landing-container">
-        <div className="landing-heading">
-          <span>See it in action</span>
-          <h2>A clinical workspace that stays out of the way.</h2>
-          <p>
-            Explore the seeded Ward 4B demo from capture through attestation.
-          </p>
-          <Button variant="primary" onClick={() => go("login")}>
-            Try demo
-          </Button>
-        </div>
-        <ProductMockup />
       </section>
       <section className="faq-section landing-container" id="faq">
         <div className="landing-heading">
@@ -5003,20 +4785,6 @@ function Login({
             <Icon name="stethoscope" />
           </span>
           RoundsAI
-        </div>
-        <div className="floating-events">
-          <span>
-            <Icon name="check" />
-            Note drafted in <b className="numeric">12s</b>
-          </span>
-          <span>
-            <Icon name="alert" />
-            ANC <b className="numeric">420</b> flagged
-          </span>
-          <span>
-            <Icon name="zap" />
-            Synced to station
-          </span>
         </div>
         <div className="hero-copy">
           <h1>
