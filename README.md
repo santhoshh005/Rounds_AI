@@ -22,7 +22,7 @@
 
 | S.No. | Deliverable | Format / Link | Description |
 | :---: | :--- | :--- | :--- |
-| **1** | **Functional Solution MVP** | **[rounds-ai-umber.vercel.app](https://rounds-ai-umber.vercel.app/)** | Working production deployment. Click **"⚡ Continue in Demo Mode"** for instant evaluator access with zero login required. |
+| **1** | **Functional Solution MVP** | **[rounds-ai-umber.vercel.app](https://rounds-ai-umber.vercel.app/)** | Working production deployment. Click **"Try demo"** for instant 1-click evaluator access into the live ward copilot with zero login required. |
 | **2** | **Two-Page Solution Brief** | **[`docs/submissions/Deliverable_2_...pptx`](docs/submissions/Deliverable_2_Two_Page_Overview_BinaryMinds_1RKUPH.pptx)** | Completed official 2-page widescreen presentation brief. |
 | **3** | **Final Presentation** | **[`docs/submissions/Deliverable_3_...pptx`](docs/submissions/Deliverable_3_Final_Presentation_BinaryMinds_1RKUPH.pptx)** | 12-slide comprehensive presentation covering clinical problem, architecture, validation, cost model, and deployment. |
 | **4** | **Demo Walkthrough Video** | **[youtu.be/Kia1C-a0QLk](https://youtu.be/Kia1C-a0QLk)** | Narrated end-to-end video demonstration featuring bedside mobile capture, local Whisper STT, CTCAE v5.0 safety sentinels, and live desktop sync. |
@@ -51,6 +51,13 @@ Inpatient oncology ward rounds represent one of the most cognitively taxing envi
 - **Specialized Oncology Normalizer**: A clinical phonetic engine corrects 120+ oncology acoustic homophones (*"fall fox"* $\rightarrow$ **mFOLFOX6**, *"anc nine hundred"* $\rightarrow$ **ANC 900 /µL**).
 - **Instant Bedside-to-Desktop Synchronization**: 1-tap transmission immediately triggers a live Server-Sent Events (SSE) notification on the desktop workstation with 1-click encounter loading.
 - **Automated CTCAE v5.0 Toxicity Grading**: Calculates baseline-to-current lab deltas and detects Grade 1–4 myelosuppression.
+- **Comprehensive Grade 0–4 Demo Cases**: Seeded ward census includes complete clinical trajectories representing every CTCAE grade:
+  - **Grade 4**: David Miller (`#104`, Bed 12) — Febrile neutropenia (ANC 420 /µL, T 38.4°C, secondary G-CSF protocol)
+  - **Grade 3**: Sarah Jenkins (`#105`, Bed 14) — Severe neutropenia & low-grade fever (ANC 750 /µL, cycle delay)
+  - **Grade 2**: Robert Chen (`#107`, Bed 18) — Moderate myelosuppression & fatigue (ANC 1,250 /µL, pre-infusion CBC surveillance)
+  - **Grade 1**: Emily Watson (`#108`, Bed 20) — Mild myelosuppression & sensory neuropathy (ANC 1,750 /µL, full dose cleared)
+  - **Grade 0 (Stable)**: Elena Rostova (`#106`, Bed 16) — Normal bone marrow recovery (ANC 1,620 /µL, 100% RDI continuation)
+- **Clinical Notification Center**: Surfaces active ward alerts, warnings, and recovery notes by CTCAE urgency with 1-click mark as read and clear all.
 - **Assistive Safety Sentinels**: Evaluates high-risk criteria (e.g. **Febrile Neutropenia** per IDSA/ASCO 2018) as `"Criterion met, for clinician review"` with neutral guideline citations.
 - **Longitudinal Patient Analytics (`/analytics`)**: Charts ANC/WBC/Platelet nadirs across chemotherapy cycles, predicts recovery windows, and surfaces guideline-concordant dose modifications.
 - **Hospital EMR Grade UI**: Clean, distraction-free interface built with vector SVG icons, tabular monospace lab typography (`tnum`), and strict 0-emoji compliance.
@@ -333,9 +340,9 @@ pytest
 cd apps/web
 npm test
 ```
-- **22 Unit Tests** (`apps/web/lib/clinical-utils.test.ts`):
-  - Executes in **<6.5ms** via Node.js native test runner.
-  - Verifies CTCAE badge styles, lab trend calculation, source provenance badges, oncology triad extraction, and clinical clipboard note formatting.
+- **53 Unit Tests** (`apps/web/lib/clinical-utils.test.ts` & `oncology-autocorrect.test.ts`):
+  - Executes in **~1.3s** via Node.js native test runner.
+  - Verifies CTCAE badge styles, lab trend calculation, source provenance badges, oncology triad extraction, bed occupancy validation, Grade 0–4 dose modification recommendations, toast cleanups, doctor initials, and clinical notification center defaults.
 
 ---
 

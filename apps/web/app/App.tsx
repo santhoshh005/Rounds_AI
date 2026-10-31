@@ -55,6 +55,34 @@ const patients = [
     initials: "SJ",
   },
   {
+    id: "107",
+    bed: "18",
+    name: "Robert Chen",
+    ageSex: "52M",
+    mrn: "MRN-014930",
+    diagnosis: "Metastatic pancreatic adenocarcinoma",
+    regimen: "FOLFIRINOX",
+    cycle: "Cycle 3 of 12",
+    baselineAnc: 2800,
+    ecog: 1,
+    grade: 2,
+    initials: "RC",
+  },
+  {
+    id: "108",
+    bed: "20",
+    name: "Emily Watson",
+    ageSex: "49F",
+    mrn: "MRN-020512",
+    diagnosis: "Non-small cell lung cancer, Stage IIIA",
+    regimen: "Cisplatin + Pemetrexed",
+    cycle: "Cycle 2 of 4",
+    baselineAnc: 3100,
+    ecog: 0,
+    grade: 1,
+    initials: "EW",
+  },
+  {
     id: "106",
     bed: "16",
     name: "Elena Rostova",
@@ -160,6 +188,50 @@ const INITIAL_ANALYTICS: Record<string, PatientAnalytics> = {
       { label: "Cycle 3 D14", date: "01 Oct", value: 1720, grade: 0 },
       { label: "Cycle 4 D1", date: "15 Oct", value: 1650, grade: 0 },
       { label: "Cycle 4 D14", date: "29 Oct", value: 1620, grade: 0 },
+    ],
+  },
+  "107": {
+    patient_id: "107",
+    patient_name: "Robert Chen",
+    rounds: [
+      { id: "r-107-3", date: "28 Oct 2026", doctor: "Dr. Amrut S Kadam", anc: 1250, wbc: 3200, platelets: 135000, hemoglobin: 10.8, ctcae_grade: 2, status: "Approved", source: "Bedside Round", notes: "FOLFIRINOX C3D11 nadir" },
+      { id: "r-107-2", date: "17 Oct 2026", doctor: "Dr. Mehta", anc: 2400, wbc: 6100, platelets: 220000, hemoglobin: 11.5, ctcae_grade: 0, status: "Verified", source: "Cycle 3 Day 1", notes: "Pre-infusion baseline" },
+      { id: "r-107-1", date: "03 Oct 2026", doctor: "Dr. Wilson", anc: 1380, wbc: 3600, platelets: 155000, hemoglobin: 11.1, ctcae_grade: 2, status: "Approved", source: "Cycle 2 Nadir", notes: "Moderate nadir" },
+      { id: "r-107-0", date: "20 Sep 2026", doctor: "Dr. Rao", anc: 2800, wbc: 6800, platelets: 250000, hemoglobin: 12.0, ctcae_grade: 0, status: "Verified", source: "Cycle 1 Day 1", notes: "Pre-treatment baseline" },
+    ],
+    kpis: [
+      ["Absolute neutrophils", formatNumber(1250), "/µL", "Grade 2"],
+      ["Platelet reserve", formatNumber(135000), "/µL", "Grade 1"],
+      ["Active graded toxicities", "2", "", "Fatigue & Neutropenia"],
+      ["Clinical risk level", "Moderate", "", "Close surveillance"],
+    ],
+    trajectory: [
+      { label: "Cycle 1 D1", date: "20 Sep", value: 2800, grade: 0 },
+      { label: "Cycle 2 Nadir", date: "03 Oct", value: 1380, grade: 2 },
+      { label: "Cycle 3 D1", date: "17 Oct", value: 2400, grade: 0 },
+      { label: "Cycle 3 Nadir", date: "28 Oct", value: 1250, grade: 2 },
+    ],
+  },
+  "108": {
+    patient_id: "108",
+    patient_name: "Emily Watson",
+    rounds: [
+      { id: "r-108-3", date: "27 Oct 2026", doctor: "Dr. Amrut S Kadam", anc: 1750, wbc: 4200, platelets: 175000, hemoglobin: 11.8, ctcae_grade: 1, status: "Approved", source: "Bedside Round", notes: "Cisplatin/Pemetrexed C2D14 mild nadir" },
+      { id: "r-108-2", date: "13 Oct 2026", doctor: "Dr. Rao", anc: 2950, wbc: 6500, platelets: 240000, hemoglobin: 12.2, ctcae_grade: 0, status: "Verified", source: "Cycle 2 Day 1", notes: "Pre-infusion CBC" },
+      { id: "r-108-1", date: "29 Sep 2026", doctor: "Dr. Mehta", anc: 1850, wbc: 4600, platelets: 190000, hemoglobin: 12.0, ctcae_grade: 1, status: "Approved", source: "Cycle 1 Nadir", notes: "Grade 1 mild myelosuppression" },
+      { id: "r-108-0", date: "15 Sep 2026", doctor: "Dr. Wilson", anc: 3100, wbc: 7200, platelets: 265000, hemoglobin: 12.5, ctcae_grade: 0, status: "Verified", source: "Baseline Workup", notes: "Pre-treatment baseline" },
+    ],
+    kpis: [
+      ["Absolute neutrophils", formatNumber(1750), "/µL", "Grade 1"],
+      ["Platelet reserve", formatNumber(175000), "/µL", "Grade 0"],
+      ["Active graded toxicities", "1", "", "Sensory neuropathy"],
+      ["Clinical risk level", "Low", "", "Full dose cleared"],
+    ],
+    trajectory: [
+      { label: "Cycle 1 D1", date: "15 Sep", value: 3100, grade: 0 },
+      { label: "Cycle 1 Nadir", date: "29 Sep", value: 1850, grade: 1 },
+      { label: "Cycle 2 D1", date: "13 Oct", value: 2950, grade: 0 },
+      { label: "Cycle 2 Nadir", date: "27 Oct", value: 1750, grade: 1 },
     ],
   },
 }
@@ -302,6 +374,78 @@ const patientCases: Record<
       ["ANC", formatNumber(1620), "cells/µL"],
       ["Platelets", formatNumber(215000), "/µL"],
       ["Hemoglobin", "12.1", "g/dL"],
+    ],
+  },
+  "107": {
+    patientId: "107",
+    caseLabel: "Case 4: #107 Robert Chen, ANC 1,250 + afebrile 37.1°C → Grade 2 Moderate Toxicity",
+    transcript: `Robert Chen, Bed 18. Cycle 3 FOLFIRINOX Day 11. Afebrile at 37.1°C, BP 122/78. Reports moderate fatigue Grade 2 affecting daily tasks and mild cold sensitivity in hands. Labs: ANC 1,250 cells/µL, Platelets ${formatNumber(135000)}/µL, WBC ${formatNumber(3200)} cells/µL, Hemoglobin 10.8 g/dL.`,
+    alert: {
+      title: "Moderate Neutropenia & Fatigue",
+      subtitle: "Pre-infusion surveillance & symptom monitoring",
+      grade: 2,
+      temp: "37.1°C",
+      anc: "1,250 /µL",
+      timer: "04:00:00",
+      guideline: "CTCAE Grade 2 myelosuppression. Verify Day 1 pre-cycle ANC recovers to ≥ 1,500 /µL before Cycle 4 infusion.",
+    },
+    metrics: [
+      ["ANC", "1,250", "cells/µL", `Down 55% from ${formatNumber(2800)}`, 2],
+      ["Platelets", formatNumber(135000), "/µL", `Down from ${formatNumber(250000)}`, 1],
+      ["WBC", formatNumber(3200), "cells/µL", `Down from ${formatNumber(6800)}`, 2],
+    ],
+    checklist: [
+      "Confirm ANC is 1,250 /µL (CTCAE Grade 2 moderate neutropenia)",
+      "Confirm patient remains afebrile (37.1°C) with no signs of infection",
+      "Schedule pre-cycle Day 1 repeat CBC diff to ensure recovery to ≥ 1,500 /µL",
+    ],
+    soapDraft: {
+      s: "52M with metastatic pancreatic cancer post Cycle 3 FOLFIRINOX. Complains of moderate fatigue (Grade 2) and mild cold sensitivity in fingertips (Grade 1 oxaliplatin neuropathy). Denies fever, diarrhea, or chills.",
+      o: `T 37.1°C, BP 122/78, HR 78, RR 16. Labs: ANC 1,250/µL (Grade 2), WBC 3.2 K/µL, Plt ${formatNumber(135000)}/µL, Hgb 10.8 g/dL.`,
+      a: "Metastatic pancreatic adenocarcinoma on FOLFIRINOX with CTCAE Grade 2 Moderate Neutropenia and Grade 2 Fatigue.",
+      p: "Continue close surveillance. Prescribe oral hydration and resting strategy. Recheck CBC with differential 48 hours prior to Cycle 4 Day 1. Proceed with Cycle 4 if ANC recovers to ≥ 1,500 /µL.",
+    },
+    labReport: [
+      ["WBC", "3.2", "x10³/µL"],
+      ["ANC", "1,250", "cells/µL"],
+      ["Platelets", formatNumber(135000), "/µL"],
+      ["Hemoglobin", "10.8", "g/dL"],
+    ],
+  },
+  "108": {
+    patientId: "108",
+    caseLabel: "Case 5: #108 Emily Watson, ANC 1,750 + sensory paresthesias → Grade 1 Mild Toxicity",
+    transcript: `Emily Watson, Bed 20. Cycle 2 Cisplatin and Pemetrexed Day 14. Afebrile at 36.9°C, ECOG Performance Status 0. Reports mild Grade 1 sensory neuropathy in fingertips and mild nausea. Labs show ANC 1,750 cells/µL, Platelets ${formatNumber(175000)}/µL, WBC ${formatNumber(4200)} cells/µL, Hemoglobin 11.8 g/dL.`,
+    alert: {
+      title: "Mild Myelosuppression & Sensory Neuropathy",
+      subtitle: "Protocol adherence & routine supportive care",
+      grade: 1,
+      temp: "36.9°C",
+      anc: "1,750 /µL",
+      timer: "Routine",
+      guideline: "CTCAE Grade 1 mild toxicity. Full dose continuation permissible with ongoing neurotoxicity counseling.",
+    },
+    metrics: [
+      ["ANC", "1,750", "cells/µL", `Down 43% from ${formatNumber(3100)}`, 1],
+      ["Platelets", formatNumber(175000), "/µL", `Normal reserve (Baseline ${formatNumber(265000)})`, 0],
+      ["WBC", formatNumber(4200), "cells/µL", `Normal range (Baseline ${formatNumber(7200)})`, 0],
+    ],
+    checklist: [
+      "Confirm ANC is 1,750 /µL (CTCAE Grade 1 mild neutropenia, adequate for therapy)",
+      "Assess Grade 1 sensory neuropathy (mild paresthesia without motor deficit)",
+      "Clear for planned Cycle 3 continuation at 100% full dose intensity",
+    ],
+    soapDraft: {
+      s: "49F receiving adjuvant Cisplatin + Pemetrexed for NSCLC Stage IIIA post Cycle 2. Reports mild tingling in distal fingertips (Grade 1 peripheral neuropathy), appetite preserved, no vomiting.",
+      o: `T 36.9°C, BP 116/74, HR 74, RR 14. Labs: ANC 1,750/µL (Grade 1), WBC 4.2 K/µL, Plt ${formatNumber(175000)}/µL, Hgb 11.8 g/dL.`,
+      a: "NSCLC Stage IIIA post Cycle 2 with CTCAE Grade 1 Mild Neutropenia and Grade 1 Sensory Neuropathy.",
+      p: "Cleared for Cycle 3 at 100% relative dose intensity. Continue oral ondansetron PRN and daily folic acid/vitamin B12 supplementation. Instruct patient to report any motor neuropathy.",
+    },
+    labReport: [
+      ["WBC", "4.2", "x10³/µL"],
+      ["ANC", "1,750", "cells/µL"],
+      ["Platelets", formatNumber(175000), "/µL"],
+      ["Hemoglobin", "11.8", "g/dL"],
     ],
   },
 }
@@ -2965,10 +3109,10 @@ function Roster({
   const [menu, setMenu] = useState("")
   const [errors, setErrors] = useState<string[]>([])
   const [bedError, setBedError] = useState("")
-  const [admitBed, setAdmitBed] = useState("18")
+  const [admitBed, setAdmitBed] = useState("22")
   const [editBed, setEditBed] = useState("")
 
-  const WARD_BEDS = ["10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20"]
+  const WARD_BEDS = ["10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24"]
 
   const openAdmitDrawer = () => {
     const occupied = new Set(patientsList.map((p) => normalizeBedIdentifier(p.bed)))
@@ -3126,8 +3270,8 @@ function Roster({
           </p>
         </div>
         <div style={{ display: "flex", gap: "10px" }}>
-          {patientsList.length < 3 && onResetCensus && (
-            <Button onClick={onResetCensus} title="Restore standard 3 demo cases">
+          {patientsList.length < 5 && onResetCensus && (
+            <Button onClick={onResetCensus} title="Restore standard 5 demo cases (All CTCAE Grades)">
               Reset demo census
             </Button>
           )}
@@ -4563,12 +4707,20 @@ function ProductMockup() {
 function Landing({
   go,
   signedIn,
+  onTryDemo,
 }: {
+  onTryDemo?: () => void;
   go: (screen: Screen) => void
   signedIn: boolean
 }) {
   const [menu, setMenu] = useState(false)
   const [openFaq, setOpenFaq] = useState(0)
+  const handleTryDemo = onTryDemo || (() => {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem("rounds-auth", "demo")
+    }
+    go("station")
+  })
   const faqs = [
     [
       "What is RoundsAI?",
@@ -4611,11 +4763,11 @@ function Landing({
           <ThemeToggle />
           <button
             className="text-button"
-            onClick={() => go(signedIn ? "station" : "login")}
+            onClick={() => go("login")}
           >
-            {signedIn ? "Open station" : "Sign in"}
+            Login
           </button>
-          <Button variant="primary" onClick={() => go("login")}>
+          <Button variant="primary" onClick={handleTryDemo}>
             Try demo
           </Button>
           <button
@@ -4639,11 +4791,11 @@ function Landing({
             complete a structured note—all in one calm workspace.
           </p>
           <div>
-            <Button variant="primary" onClick={() => go("login")}>
+            <Button variant="primary" onClick={handleTryDemo}>
               Try demo
             </Button>
-            <Button onClick={() => go(signedIn ? "station" : "login")}>
-              {signedIn ? "Open station" : "Sign in"}
+            <Button onClick={() => go("login")}>
+              Login
             </Button>
           </div>
           <small>
@@ -4728,7 +4880,7 @@ function Landing({
           <h2>Make the round the center of the work again.</h2>
           <p>Explore the evaluation prototype with the seeded Ward 4B cases.</p>
         </div>
-        <Button variant="primary" onClick={() => go("login")}>
+        <Button variant="primary" onClick={handleTryDemo}>
           Try demo
         </Button>
       </section>
@@ -4899,7 +5051,14 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
       if (saved) {
         try {
           const parsed = JSON.parse(saved)
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const existingIds = new Set(parsed.map((p: any) => p.id))
+            const missing = patients.filter((p) => !existingIds.has(p.id))
+            if (missing.length > 0) {
+              return [...parsed, ...missing]
+            }
+            return parsed
+          }
         } catch {}
       }
     }
@@ -4938,7 +5097,14 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
       if (saved !== null) {
         try {
           const parsed = JSON.parse(saved)
-          if (Array.isArray(parsed)) return parsed
+          if (Array.isArray(parsed)) {
+            const existingIds = new Set(parsed.map((n: any) => n.id))
+            const missing = INITIAL_CLINICAL_NOTIFICATIONS.filter((n) => !existingIds.has(n.id))
+            if (missing.length > 0) {
+              return [...parsed, ...missing]
+            }
+            return parsed
+          }
         } catch {}
       }
     }
@@ -4956,7 +5122,8 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
       const saved = localStorage.getItem("rounds-analytics-data")
       if (saved) {
         try {
-          return JSON.parse(saved)
+          const parsed = JSON.parse(saved)
+          return { ...INITIAL_ANALYTICS, ...parsed }
         } catch {}
       }
     }
@@ -5316,6 +5483,11 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
     setSignedIn(true)
   }
 
+  const handleTryDemo = () => {
+    authenticate()
+    go("station")
+  }
+
   const signOut = () => {
     localStorage.removeItem("rounds-auth")
     setSignedIn(false)
@@ -5349,7 +5521,7 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
     }
   }, [])
 
-  if (screen === "landing") return <Landing go={go} signedIn={signedIn} />
+  if (screen === "landing") return <Landing go={go} signedIn={signedIn} onTryDemo={handleTryDemo} />
   if (screen === "login") return <Login go={go} onAuth={authenticate} />
   return (
     <div>

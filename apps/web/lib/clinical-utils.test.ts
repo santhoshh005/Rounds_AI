@@ -344,6 +344,25 @@ describe("Clinical Utilities — TDD Suite", () => {
       assert.match(rec.doseAdjustment, /20%/);
     });
 
+    it("returns Grade 2 surveillance and pre-infusion CBC check for Robert Chen", () => {
+      const p107 = { id: "107", name: "Robert Chen", regimen: "FOLFIRINOX", cycle: "Cycle 3", baselineAnc: 2800, grade: 2 };
+      const rec = getDoseModificationRecommendation(p107, [{ anc: 1250, ctcae_grade: 2 }]);
+      assert.equal(rec.badgeVariant, "warning");
+      assert.equal(rec.actionRequired, false);
+      assert.match(rec.statusBadge, /Grade 2/);
+      assert.match(rec.title, /Close Surveillance/);
+      assert.match(rec.recommendation, /Moderate myelosuppression/);
+    });
+
+    it("returns Grade 1 mild monitoring and 100% dose continuation for Emily Watson", () => {
+      const p108 = { id: "108", name: "Emily Watson", regimen: "Cisplatin + Pemetrexed", cycle: "Cycle 2", baselineAnc: 3100, grade: 1 };
+      const rec = getDoseModificationRecommendation(p108, [{ anc: 1750, ctcae_grade: 1 }]);
+      assert.equal(rec.badgeVariant, "warning");
+      assert.equal(rec.actionRequired, false);
+      assert.match(rec.statusBadge, /Grade 1 Mild · Monitoring/);
+      assert.match(rec.doseAdjustment, /100% relative dose intensity/);
+    });
+
     it("prioritizes Grade 2 toxicity vigilance even when ANC >= 1500", () => {
       const patient = { id: "201", name: "Alex Chen", regimen: "mFOLFOX6", cycle: "Cycle 2", baselineAnc: 1800, grade: 2 };
       const rec = getDoseModificationRecommendation(patient, [{ anc: 1650, ctcae_grade: 2 }]);

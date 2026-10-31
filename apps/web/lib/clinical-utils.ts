@@ -661,32 +661,15 @@ export function getDoseModificationRecommendation(
     };
   }
 
-  // Grade 0-1 Stable / ANC >= 1500
-  if (highestGrade <= 1 && lowestAnc >= 1500) {
-    let protocolSource = "NCCN / ASCO Systemic Therapy Evidence-Based Guidelines";
-    let doseAdjustment = `No dose reduction or schedule delay warranted. Proceed with planned ${patient.cycle} ${patient.regimen} at 100% relative dose intensity.`;
-    if (regLower.includes("ac-t") || regLower.includes("doxorubicin") || regLower.includes("breast")) {
-      protocolSource = "NCCN Breast Cancer Guidelines · ASCO Systemic Therapy Recommendations";
-      doseAdjustment = `No dose reduction or schedule delay warranted. Proceed with planned Cycle 4 AC-T (doxorubicin 60 mg/m² + cyclophosphamide 600 mg/m²) at 100% relative dose intensity.`;
+  // Moderate / Grade 2 (ANC 1000 - 1499 or Grade 2)
+  if (highestGrade === 2 || (lowestAnc >= 1000 && lowestAnc < 1500)) {
+    let protocolSource = "CTCAE v5.0 / NCCN Toxicity Management Guidelines";
+    let doseAdjustment = `Standard dose continuation permissible if asymptomatic and Day 1 pre-chemo ANC ≥ 1,500 /µL.`;
+    if (regLower.includes("folfirinox") || regLower.includes("pancrea")) {
+      protocolSource = "NCCN Pancreatic Adenocarcinoma / ASCO Guidelines";
+      doseAdjustment = "Standard dose permissible if Day 1 pre-chemo ANC ≥ 1,500 /µL. If Grade 2 fatigue/neutropenia persists, consider 20% dose reduction of irinotecan/bolus 5-FU.";
     }
 
-    return {
-      patientId: patient.id,
-      patientName: patient.name,
-      statusBadge: "On track · Full dose cleared",
-      badgeVariant: "success",
-      title: "Full Planned Dose Continuation (100% RDI)",
-      actionRequired: false,
-      protocolSource,
-      recommendation: `Hematologic recovery verified robust and within protocol limits (ANC ${lowestAnc} /µL ≥ 1,500 /µL, afebrile, ECOG 0).`,
-      doseAdjustment,
-      gcsfProphylaxis: `No growth factor prophylaxis indicated for this cycle based on maintained bone marrow reserve.`,
-      monitoringPlan: `Routine day 1 pre-chemotherapy complete blood count and metabolic panel. Continue standard supportive antiemetics.`,
-    };
-  }
-
-  // Moderate / Grade 2 (ANC 1000 - 1499)
-  if (highestGrade === 2 || lowestAnc < 1500) {
     return {
       patientId: patient.id,
       patientName: patient.name,
@@ -694,27 +677,58 @@ export function getDoseModificationRecommendation(
       badgeVariant: "warning",
       title: "Close Surveillance & Pre-infusion CBC Check",
       actionRequired: false,
-      protocolSource: "CTCAE v5.0 / Institutional Oncology Clinical Protocol",
+      protocolSource,
       recommendation: `Moderate myelosuppression observed (nadir ANC ${lowestAnc} /µL). Relative dose intensity preserved.`,
-      doseAdjustment: `Standard dose continuation permissible if asymptomatic and Day 1 pre-chemo ANC ≥ 1,500 /µL.`,
+      doseAdjustment,
       gcsfProphylaxis: `Observe without growth factors unless nadir drops below 1,000 /µL or patient experiences febrile episodes.`,
       monitoringPlan: `CBC with differential 48 hours prior to planned cycle initiation.`,
     };
   }
 
-  // Default stable
+  // Grade 1 Mild Myelosuppression / Toxicity (ANC 1500 - 1999 or Grade 1)
+  if (highestGrade === 1) {
+    let protocolSource = "NCCN Guidelines / CTCAE v5.0 Toxicity Management";
+    let doseAdjustment = `Maintain 100% full dose intensity for ${patient.cycle} ${patient.regimen}. Provide supportive care and monitor for cumulative toxicity.`;
+    if (regLower.includes("cisplatin") || regLower.includes("pemetrexed") || regLower.includes("nsclc") || regLower.includes("lung")) {
+      protocolSource = "NCCN Non-Small Cell Lung Cancer Guidelines v2.2025";
+      doseAdjustment = "Proceed with planned Cycle 3 Cisplatin + Pemetrexed at 100% relative dose intensity. Counsel patient on Grade 1 peripheral sensory symptoms.";
+    }
+
+    return {
+      patientId: patient.id,
+      patientName: patient.name,
+      statusBadge: "Grade 1 Mild · Monitoring",
+      badgeVariant: "warning",
+      title: "Full Dose Continuation with Symptom Surveillance",
+      actionRequired: false,
+      protocolSource,
+      recommendation: `Documented CTCAE Grade 1 mild toxicity (nadir ANC ${lowestAnc} /µL). Protocol supports continued therapy at standard dosing with close monitoring.`,
+      doseAdjustment,
+      gcsfProphylaxis: `Growth factor prophylaxis not indicated for Grade 1 myelosuppression.`,
+      monitoringPlan: `Day 1 pre-chemotherapy CBC with differential. Re-evaluate sensory neuropathy prior to each platinum infusion.`,
+    };
+  }
+
+  // Grade 0 Stable / Normal reserve
+  let protocolSource = "NCCN / ASCO Systemic Therapy Evidence-Based Guidelines";
+  let doseAdjustment = `No dose reduction or schedule delay warranted. Proceed with planned ${patient.cycle} ${patient.regimen} at 100% relative dose intensity.`;
+  if (regLower.includes("ac-t") || regLower.includes("doxorubicin") || regLower.includes("breast")) {
+    protocolSource = "NCCN Breast Cancer Guidelines · ASCO Systemic Therapy Recommendations";
+    doseAdjustment = `No dose reduction or schedule delay warranted. Proceed with planned Cycle 4 AC-T (doxorubicin 60 mg/m² + cyclophosphamide 600 mg/m²) at 100% relative dose intensity.`;
+  }
+
   return {
     patientId: patient.id,
     patientName: patient.name,
-    statusBadge: "Standard Protocol Cleared",
+    statusBadge: "On track · Full dose cleared",
     badgeVariant: "success",
-    title: "Continue Planned Regimen",
+    title: "Full Planned Dose Continuation (100% RDI)",
     actionRequired: false,
-    protocolSource: "ASCO / NCCN Evidence-Based Regimen Guidelines",
-    recommendation: `Baseline ANC of ${patient.baselineAnc} /µL indicates adequate baseline marrow reserve.`,
-    doseAdjustment: `Administer cycle according to standard institutional oncology protocol at 100% dose.`,
-    gcsfProphylaxis: `Standard protocol as per disease stage and regimen risk tier.`,
-    monitoringPlan: `Weekly blood counts throughout the expected nadir window (Days 7–12).`,
+    protocolSource,
+    recommendation: `Hematologic recovery verified robust and within protocol limits (ANC ${lowestAnc} /µL ≥ 1,500 /µL, afebrile, ECOG 0).`,
+    doseAdjustment,
+    gcsfProphylaxis: `No growth factor prophylaxis indicated for this cycle based on maintained bone marrow reserve.`,
+    monitoringPlan: `Routine day 1 pre-chemotherapy complete blood count and metabolic panel. Continue standard supportive antiemetics.`,
   };
 }
 
@@ -779,13 +793,44 @@ export const INITIAL_CLINICAL_NOTIFICATIONS: ClinicalNotification[] = [
   },
   {
     id: "notif-init-3",
+    title: "CTCAE Grade 2 Alert · Bed 18",
+    message: "Robert Chen: ANC 1,250/µL moderate nadir. Pre-infusion CBC scheduled for Cycle 4.",
+    patientId: "107",
+    patientName: "Robert Chen",
+    timestamp: 1728985000000,
+    timeStr: "3 hrs ago",
+    type: "warning",
+    read: false,
+  },
+  {
+    id: "notif-init-4",
+    title: "CTCAE Grade 1 Note · Bed 20",
+    message: "Emily Watson: ANC 1,750/µL with mild Grade 1 sensory neuropathy. Full dose cleared.",
+    patientId: "108",
+    patientName: "Emily Watson",
+    timestamp: 1728982000000,
+    timeStr: "4 hrs ago",
+    type: "info",
+    read: true,
+  },
+  {
+    id: "notif-init-5",
     title: "Hematologic Recovery · Bed 16",
     message: "Elena Rostova: ANC 1,620/µL verified. Grade 0 stable.",
     patientId: "106",
     patientName: "Elena Rostova",
     timestamp: 1728980000000,
-    timeStr: "3 hrs ago",
+    timeStr: "5 hrs ago",
     type: "success",
+    read: true,
+  },
+  {
+    id: "notif-init-6",
+    title: "Ward 4B Bedside Sync Active",
+    message: "Bedside-to-station real-time channel connected. Audio egress: zero (local WebAssembly).",
+    timestamp: 1728975000000,
+    timeStr: "6 hrs ago",
+    type: "info",
     read: true,
   },
 ];
