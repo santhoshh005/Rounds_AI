@@ -2,11 +2,9 @@
 
 > **Turn a 20-minute inpatient oncology round into a structured, evidence-linked clinical note in under 2 minutes — with zero cloud audio privacy leakage and ₹0 API cost.**
 
-[![Health-a-thon 2026](https://img.shields.io/badge/Health--a--thon%202026-Team%20Binary%20Minds%20(1RKUPH)-008080?style=flat&logo=target)](https://rounds-ai-umber.vercel.app/)
-[![Track](https://img.shields.io/badge/Track-Cancer%20·%20Doctor%20Productivity-blueviolet?style=flat)](https://rounds-ai-umber.vercel.app/)
-[![Live MVP](https://img.shields.io/badge/Live%20MVP-rounds--ai--umber.vercel.app-success?style=flat&logo=vercel)](https://rounds-ai-umber.vercel.app/)
+[![Live App](https://img.shields.io/badge/Live%20App-rounds--ai--umber.vercel.app-success?style=flat&logo=vercel)](https://rounds-ai-umber.vercel.app/)
 [![Backend API](https://img.shields.io/badge/Render%20API-rounds--ai--backend.onrender.com-46E3B7?style=flat&logo=render)](https://rounds-ai-backend.onrender.com/health)
-[![Demo Video](https://img.shields.io/badge/YouTube-Demo%20Walkthrough-FF0000?style=flat&logo=youtube)](https://youtu.be/Kia1C-a0QLk)
+[![Demo Video](https://img.shields.io/badge/YouTube-Walkthrough%20Video-FF0000?style=flat&logo=youtube)](https://youtu.be/Kia1C-a0QLk)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?style=flat&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
@@ -15,29 +13,6 @@
 [![Python](https://img.shields.io/badge/Python-3.12+-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org)
 [![Whisper AI](https://img.shields.io/badge/Whisper-On--Device%20Base%20int8-orange?style=flat)](https://github.com/openai/whisper)
 [![Google Gemini](https://img.shields.io/badge/Gemini%202.5%20Flash-Multimodal%20Vision-4285F4?style=flat&logo=google&logoColor=white)](https://ai.google.dev)
-
----
-
-## 🏆 Health-a-thon 2026 Build Sprint Deliverables
-
-| S.No. | Deliverable | Format / Link | Description |
-| :---: | :--- | :--- | :--- |
-| **1** | **Functional Solution MVP** | **[rounds-ai-umber.vercel.app](https://rounds-ai-umber.vercel.app/)** | Working production deployment. Click **"Try demo"** for instant 1-click evaluator access into the live ward copilot with zero login required. |
-| **2** | **Two-Page Solution Brief** | **[`docs/submissions/Deliverable_2_...pptx`](docs/submissions/Deliverable_2_Two_Page_Overview_BinaryMinds_1RKUPH.pptx)** | Completed official 2-page widescreen presentation brief. |
-| **3** | **Final Presentation** | **[`docs/submissions/Deliverable_3_...pptx`](docs/submissions/Deliverable_3_Final_Presentation_BinaryMinds_1RKUPH.pptx)** | 12-slide comprehensive presentation covering clinical problem, architecture, validation, cost model, and deployment. |
-| **4** | **Demo Walkthrough Video** | **[youtu.be/Kia1C-a0QLk](https://youtu.be/Kia1C-a0QLk)** | Narrated end-to-end video demonstration featuring bedside mobile capture, local Whisper STT, CTCAE v5.0 safety sentinels, and live desktop sync. |
-
----
-
-## 👥 Team Binary Minds & Clinical Collaboration
-
-- **Chalicheemala Surya Thejas** — Team Leader & Technical Lead (`suryathejas970@gmail.com`)  
-  *Architected full-stack pipeline: FastAPI async gateway, real-time Server-Sent Events (SSE) live sync, CTCAE scoring engine, and clinical Next.js 15 workstation.*
-- **Gaddam Sai Santhosh** — AI Systems Engineer (`saisanthosh05012006@gmail.com`)  
-  *Designed on-device Whisper transcription pipeline, multimodal Gemini Vision OCR extraction, 120+ oncology phonetic normalizer, and automated test harnesses.*
-- **Dr. Amrut S Kadam** — Clinical Lead & Doctor Partner (`raysoflife@gmail.com`)  
-  *Inpatient Ward Attending, Victoria Hospital, Bangalore Medical College & Research Institute (BMCRI).*  
-  *Co-designed oncology rounding workflows, validated CTCAE v5.0 myelosuppression grading thresholds, calibrated 120+ chemotherapy regimen phonetic rules, and verified IDSA/ASCO 2018 febrile neutropenia screening protocols.*
 
 ---
 
@@ -383,6 +358,18 @@ RoundsAI is engineered with a strict privacy-first architecture controlled via `
 | `SUPABASE_SERVICE_ROLE_KEY` | Optional | Server-side only key for Supabase persistence. |
 | `DEMO_MODE` | Optional | `true` enables synthetic demo trajectories labeled `[DEMO DATA]`. |
 | `TEST_MODE` | Optional | `true` disables all cloud database writes for automated CI runs. |
+
+---
+
+## 👥 Authors & Clinical Advisory
+
+- **Chalicheemala Surya Thejas** — Technical Lead (`suryathejas970@gmail.com`)  
+  *Full-stack pipeline architecture: FastAPI asynchronous gateway, real-time Server-Sent Events (SSE) live sync, CTCAE scoring engine, and clinical Next.js 15 workstation.*
+- **Gaddam Sai Santhosh** — AI Systems Engineer (`saisanthosh05012006@gmail.com`)  
+  *On-device Whisper transcription pipeline, multimodal Gemini Vision OCR extraction, 120+ oncology phonetic normalizer, and automated test harnesses.*
+- **Dr. Amrut S Kadam** — Clinical Lead & Physician Partner (`raysoflife@gmail.com`)  
+  *Inpatient Ward Attending, Victoria Hospital, Bangalore Medical College & Research Institute (BMCRI).*  
+  *Clinical workflow co-design, CTCAE v5.0 myelosuppression grading threshold validation, 120+ chemotherapy regimen phonetic calibrations, and IDSA/ASCO 2018 febrile neutropenia protocol verification.*
 
 ---
 
