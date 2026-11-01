@@ -182,17 +182,23 @@ sequenceDiagram
 │   └── web/
 │       ├── app/
 │       │   ├── components/
-│       │   │   └── Icons.tsx           # Hospital-grade vector SVG icons (0 emojis)
-│       │   ├── mobile/page.tsx         # Bedside Mobile Capture Companion
-│       │   ├── analytics/page.tsx      # Longitudinal Patient Analytics Dashboard
-│       │   ├── login/page.tsx          # Clinician Authentication & Demo Mode
-│       │   ├── page.tsx                # Doctor Assessment Station & SSE Live Sync
-│       │   ├── layout.tsx              # Root Layout & Clinical Navigation Shell
-│       │   └── styles.css              # Hospital EMR typography & theme styling
+│       │   │   └── Icons.tsx              # Hospital-grade vector SVG icons (0 emojis)
+│       │   ├── mobile/page.tsx            # Bedside Mobile Capture Companion
+│       │   ├── analytics/page.tsx         # Longitudinal Patient Analytics Dashboard
+│       │   ├── roster/page.tsx            # Ward Census, Bed Allocations & Inpatient Management
+│       │   ├── station/page.tsx           # Doctor Assessment Station & SOAP Workflow
+│       │   ├── login/page.tsx             # Clinician Authentication & Demo Mode
+│       │   ├── page.tsx                   # Public Landing & Overview
+│       │   ├── App.tsx                    # Core responsive clinical workstation & state engine
+│       │   ├── layout.tsx                 # Root Layout & Clinical Navigation Shell
+│       │   └── styles.css                 # Hospital EMR typography & theme styling
 │       ├── lib/
-│       │   ├── clinical-utils.ts       # CTCAE badge styles, lab trends, and clipboard notes
-│       │   ├── clinical-utils.test.ts  # TDD unit test suite (22 tests passing in <6.5ms)
-│       │   └── firebase.ts             # Firebase client configuration & auth
+│       │   ├── clinical-utils.ts          # CTCAE badge styles, lab trends, bed occupancy & dose guidelines
+│       │   ├── clinical-utils.test.ts     # TDD unit test suite
+│       │   ├── oncology-autocorrect.ts    # 120+ oncology phonetic regex normalizer & rules
+│       │   ├── oncology-autocorrect.test.ts # Speech misrecognition & homophone tests
+│       │   ├── api.ts                     # REST client & Server-Sent Events (SSE) bridge
+│       │   └── firebase.ts                # Firebase client configuration & auth
 │       ├── package.json
 │       └── tsconfig.json
 ├── backend/
