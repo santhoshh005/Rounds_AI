@@ -3,11 +3,17 @@ services:
     name: roundsai-backend
     runtime: python
     buildCommand: pip install -r backend/requirements.txt
-    startCommand: uvicorn backend.api.main:app --host 0.0.0.0 --port $PORT
+    startCommand: sh -c "uvicorn backend.api.main:app --host 0.0.0.0 --port ${PORT:-10000} --workers 1"
     healthCheckPath: /health
     envVars:
       - key: PYTHONPATH
         value: .
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: WEB_CONCURRENCY
+        value: "1"
+      - key: PYTHON_VERSION
+        value: "3.12.8"
       - key: GEMINI_API_KEY
         sync: false
       - key: ALLOWED_ORIGINS

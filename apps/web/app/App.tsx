@@ -24,6 +24,34 @@ import {
 } from "../lib/clinical-utils"
 import { autocorrectOncologyTranscript, applySelectedCorrections, formatSpokenClinicalPunctuation, type AutocorrectChange, type AutocorrectResult } from "../lib/oncology-autocorrect"
 
+/**
+ * SSR-safe wrapper for localStorage.
+ * Prevents Node 22/24/26 ExperimentalWarning: "localStorage is not available because --localstorage-file was not provided"
+ * during Next.js SSG / prerendering by verifying window is defined before accessing localStorage.
+ */
+const safeLocalStorage = {
+  getItem: (key: string): string | null => {
+    if (typeof window === "undefined") return null
+    try {
+      return window.localStorage.getItem(key)
+    } catch {
+      return null
+    }
+  },
+  setItem: (key: string, value: string): void => {
+    if (typeof window === "undefined") return
+    try {
+      window.localStorage.setItem(key, value)
+    } catch {}
+  },
+  removeItem: (key: string): void => {
+    if (typeof window === "undefined") return
+    try {
+      window.localStorage.removeItem(key)
+    } catch {}
+  },
+}
+
 
 
 type Screen = "landing" | "station" | "roster" | "mobile" | "analytics" | "login"
@@ -481,8 +509,8 @@ const Button = ({
 function ThemeToggle() {
   const [dark, setDark] = useState(false)
   useEffect(() => {
-    if (typeof localStorage !== "undefined") {
-      const isDark = localStorage.getItem("rounds-theme") === "dark"
+    if (typeof window !== "undefined") {
+      const isDark = safeLocalStorage.getItem("rounds-theme") === "dark"
       setDark(isDark)
       if (typeof document !== "undefined") {
         document.documentElement.dataset.theme = isDark ? "dark" : "light"
@@ -492,8 +520,8 @@ function ThemeToggle() {
   const toggle = () => {
     const next = !dark
     setDark(next)
-    if (typeof localStorage !== "undefined") {
-      localStorage.setItem("rounds-theme", next ? "dark" : "light")
+    if (typeof window !== "undefined") {
+      safeLocalStorage.setItem("rounds-theme", next ? "dark" : "light")
     }
     if (typeof document !== "undefined") {
       document.documentElement.dataset.theme = next ? "dark" : "light"
@@ -1100,7 +1128,7 @@ function Census({
   onClose?: () => void
   onResetCensus?: () => void
 }) {
-  const isDemo = typeof localStorage !== "undefined" && localStorage.getItem("rounds-auth") === "demo"
+  const isDemo = safeLocalStorage.getItem("rounds-auth") === "demo"
   const activePatients = patientsList && patientsList.length > 0 ? patientsList : (patientsList ? [] : (isDemo ? patients : []))
   const [filter, setFilter] = useState("All")
   const [query, setQuery] = useState("")
@@ -3279,7 +3307,7 @@ function Station({
   onToast?: (msg: string, type?: "info" | "success" | "warning" | "alert") => void
   clinicianProfile?: ClinicianProfile
 }) {
-  const isDemo = typeof localStorage !== "undefined" && localStorage.getItem("rounds-auth") === "demo"
+  const isDemo = safeLocalStorage.getItem("rounds-auth") === "demo"
   const activePatients = patientsList && patientsList.length > 0 ? patientsList : (patientsList ? [] : (isDemo ? patients : []))
   const patient =
     activePatients.find((item) => item.id === selectedPatientId) || activePatients[0] || patients[0]
@@ -3354,8 +3382,8 @@ function Station({
     setStep(1)
 
     // Inspect localStorage for pending bedside sync from mobile companion
-    if (typeof localStorage !== "undefined") {
-      const raw = localStorage.getItem(`rounds-bedside-sync-${patient.id}`)
+    if (typeof window !== "undefined") {
+      const raw = safeLocalStorage.getItem(`rounds-bedside-sync-${patient.id}`)
       if (raw) {
         try {
           const parsed = JSON.parse(raw)
@@ -3399,8 +3427,8 @@ function Station({
 
   const loadBedsideToStation = () => {
     let textToLoad = bedsideDraft?.transcript
-    if (!textToLoad && typeof localStorage !== "undefined") {
-      const raw = localStorage.getItem(`rounds-bedside-sync-${patient.id}`) || localStorage.getItem("rounds-bedside-sync-latest")
+    if (!textToLoad && typeof window !== "undefined") {
+      const raw = safeLocalStorage.getItem(`rounds-bedside-sync-${patient.id}`) || safeLocalStorage.getItem("rounds-bedside-sync-latest")
       if (raw) {
         try {
           const parsed = JSON.parse(raw)
@@ -3421,8 +3449,8 @@ function Station({
 
   const syncBedside = () => {
     let textToLoad = ""
-    if (typeof localStorage !== "undefined") {
-      const raw = localStorage.getItem(`rounds-bedside-sync-${patient.id}`)
+    if (typeof window !== "undefined") {
+      const raw = safeLocalStorage.getItem(`rounds-bedside-sync-${patient.id}`)
       if (raw) {
         try {
           const parsed = JSON.parse(raw)
@@ -3445,8 +3473,8 @@ function Station({
         wordCount: stationTranscript.trim().split(/\s+/).filter(Boolean).length,
         source: "station",
       }
-      if (typeof localStorage !== "undefined") {
-        localStorage.setItem(`rounds-bedside-sync-${patient.id}`, JSON.stringify(payload))
+      if (typeof window !== "undefined") {
+        safeLocalStorage.setItem(`rounds-bedside-sync-${patient.id}`, JSON.stringify(payload))
       }
       if (onToast) onToast(`Station draft saved to Bedside buffer for Bed ${patient.bed}`, "success")
     }
@@ -4304,7 +4332,7 @@ function MobileCompanion({
   go?: (screen: Screen) => void
   onResetCensus?: () => void
 } = {}) {
-  const isDemo = typeof localStorage !== "undefined" && localStorage.getItem("rounds-auth") === "demo"
+  const isDemo = safeLocalStorage.getItem("rounds-auth") === "demo"
   const activePatients = patientsList && patientsList.length > 0 ? patientsList : (patientsList ? [] : (isDemo ? patients : []))
   const activeId = selectedPatientId || activePatients[0]?.id || "104"
   const patient = activePatients.find((item) => item.id === activeId) || activePatients[0] || patients[0]
@@ -4552,9 +4580,9 @@ const handleMobileScan = (e: React.ChangeEvent<HTMLInputElement>) => {
                 wordCount: transcript.trim().split(/\s+/).filter(Boolean).length,
                 source: "mobile-bedside",
               }
-              if (typeof localStorage !== "undefined") {
-                localStorage.setItem(`rounds-bedside-sync-${patient.id}`, JSON.stringify(payload))
-                localStorage.setItem("rounds-bedside-sync-latest", JSON.stringify(payload))
+              if (typeof window !== "undefined") {
+                safeLocalStorage.setItem(`rounds-bedside-sync-${patient.id}`, JSON.stringify(payload))
+                safeLocalStorage.setItem("rounds-bedside-sync-latest", JSON.stringify(payload))
               }
               if (typeof window !== "undefined") {
                 window.dispatchEvent(new CustomEvent("rounds-bedside-sync-event", { detail: payload }))
@@ -4924,7 +4952,7 @@ function Analytics({
   go?: (screen: Screen) => void
   onResetCensus?: () => void
 } = {}) {
-  const isDemo = typeof localStorage !== "undefined" && localStorage.getItem("rounds-auth") === "demo"
+  const isDemo = safeLocalStorage.getItem("rounds-auth") === "demo"
   const activePatients = patientsList && patientsList.length > 0 ? patientsList : (patientsList ? [] : (isDemo ? patients : []))
   const activeId = selectedPatientId || activePatients[0]?.id || "104"
   const [ascending, setAscending] = useState(false)
@@ -5113,8 +5141,8 @@ function Analytics({
             icon="refresh"
             onClick={() => {
               let count = patientAnalytics.rounds?.length || 0
-              if (typeof localStorage !== "undefined") {
-                const saved = localStorage.getItem("rounds-analytics-data")
+              if (typeof window !== "undefined") {
+                const saved = safeLocalStorage.getItem("rounds-analytics-data")
                 if (saved) {
                   try {
                     const parsed = JSON.parse(saved)
@@ -5630,8 +5658,8 @@ function Landing({
   const [menu, setMenu] = useState(false)
   const [openFaq, setOpenFaq] = useState(0)
   const handleTryDemo = onTryDemo || (() => {
-    if (typeof localStorage !== "undefined") {
-      localStorage.setItem("rounds-auth", "demo")
+    if (typeof window !== "undefined") {
+      safeLocalStorage.setItem("rounds-auth", "demo")
     }
     go("station")
   })
@@ -5965,10 +5993,10 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
   const [signedIn, setSignedIn] = useState(false)
   const [online, setOnline] = useState(true)
   const [patientsList, setPatientsList] = useState<typeof patients>(() => {
-    if (typeof localStorage !== "undefined") {
-      const auth = localStorage.getItem("rounds-auth")
+    if (typeof window !== "undefined") {
+      const auth = safeLocalStorage.getItem("rounds-auth")
       if (auth === "account") {
-        const saved = localStorage.getItem("rounds-account-patients-list")
+        const saved = safeLocalStorage.getItem("rounds-account-patients-list")
         if (saved) {
           try {
             return JSON.parse(saved)
@@ -5977,7 +6005,7 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
         return []
       }
       if (auth === "demo") {
-        const saved = localStorage.getItem("rounds-demo-patients-list")
+        const saved = safeLocalStorage.getItem("rounds-demo-patients-list")
         if (saved) {
           try {
             const parsed = JSON.parse(saved)
@@ -5991,20 +6019,20 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
   })
 
   useEffect(() => {
-    if (typeof localStorage !== "undefined") {
-      const auth = localStorage.getItem("rounds-auth")
+    if (typeof window !== "undefined") {
+      const auth = safeLocalStorage.getItem("rounds-auth")
       if (auth === "account") {
-        localStorage.setItem("rounds-account-patients-list", JSON.stringify(patientsList))
+        safeLocalStorage.setItem("rounds-account-patients-list", JSON.stringify(patientsList))
       } else if (auth === "demo") {
-        localStorage.setItem("rounds-demo-patients-list", JSON.stringify(patientsList))
+        safeLocalStorage.setItem("rounds-demo-patients-list", JSON.stringify(patientsList))
       }
     }
   }, [patientsList])
   const [selectedPatientId, setSelectedPatientId] = useState<string>(() => {
-    if (typeof localStorage !== "undefined") {
-      const auth = localStorage.getItem("rounds-auth")
+    if (typeof window !== "undefined") {
+      const auth = safeLocalStorage.getItem("rounds-auth")
       if (auth === "account") {
-        const saved = localStorage.getItem("rounds-account-patients-list")
+        const saved = safeLocalStorage.getItem("rounds-account-patients-list")
         if (saved) {
           try {
             const parsed = JSON.parse(saved)
@@ -6019,8 +6047,8 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
   const [screen, setScreen] = useState<Screen>(initialScreen || "landing")
 
   const [clinicianProfile, setClinicianProfile] = useState<ClinicianProfile>(() => {
-    if (typeof localStorage !== "undefined") {
-      const saved = localStorage.getItem("rounds-clinician-profile")
+    if (typeof window !== "undefined") {
+      const saved = safeLocalStorage.getItem("rounds-clinician-profile")
       if (saved) {
         try {
           return { ...DEFAULT_CLINICIAN_PROFILE, ...JSON.parse(saved) }
@@ -6031,16 +6059,16 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
   })
 
   useEffect(() => {
-    if (typeof localStorage !== "undefined") {
-      localStorage.setItem("rounds-clinician-profile", JSON.stringify(clinicianProfile))
+    if (typeof window !== "undefined") {
+      safeLocalStorage.setItem("rounds-clinician-profile", JSON.stringify(clinicianProfile))
     }
   }, [clinicianProfile])
 
   const [notifications, setNotifications] = useState<ClinicalNotification[]>(() => {
-    if (typeof localStorage !== "undefined") {
-      const auth = localStorage.getItem("rounds-auth")
+    if (typeof window !== "undefined") {
+      const auth = safeLocalStorage.getItem("rounds-auth")
       if (auth === "account") {
-        const saved = localStorage.getItem("rounds-account-notifications")
+        const saved = safeLocalStorage.getItem("rounds-account-notifications")
         if (saved !== null) {
           try {
             return JSON.parse(saved)
@@ -6049,7 +6077,7 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
         return []
       }
       if (auth === "demo") {
-        const saved = localStorage.getItem("rounds-demo-notifications")
+        const saved = safeLocalStorage.getItem("rounds-demo-notifications")
         if (saved !== null) {
           try {
             const parsed = JSON.parse(saved)
@@ -6063,21 +6091,21 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
   })
 
   useEffect(() => {
-    if (typeof localStorage !== "undefined") {
-      const auth = localStorage.getItem("rounds-auth")
+    if (typeof window !== "undefined") {
+      const auth = safeLocalStorage.getItem("rounds-auth")
       if (auth === "account") {
-        localStorage.setItem("rounds-account-notifications", JSON.stringify(notifications))
+        safeLocalStorage.setItem("rounds-account-notifications", JSON.stringify(notifications))
       } else if (auth === "demo") {
-        localStorage.setItem("rounds-demo-notifications", JSON.stringify(notifications))
+        safeLocalStorage.setItem("rounds-demo-notifications", JSON.stringify(notifications))
       }
     }
   }, [notifications])
 
   const [analyticsData, setAnalyticsData] = useState<Record<string, PatientAnalytics>>(() => {
-    if (typeof localStorage !== "undefined") {
-      const auth = localStorage.getItem("rounds-auth")
+    if (typeof window !== "undefined") {
+      const auth = safeLocalStorage.getItem("rounds-auth")
       if (auth === "account") {
-        const saved = localStorage.getItem("rounds-account-analytics-data")
+        const saved = safeLocalStorage.getItem("rounds-account-analytics-data")
         if (saved) {
           try {
             return JSON.parse(saved)
@@ -6086,7 +6114,7 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
         return {}
       }
       if (auth === "demo") {
-        const saved = localStorage.getItem("rounds-demo-analytics-data")
+        const saved = safeLocalStorage.getItem("rounds-demo-analytics-data")
         if (saved) {
           try {
             const parsed = JSON.parse(saved)
@@ -6100,12 +6128,12 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
   })
 
   useEffect(() => {
-    if (typeof localStorage !== "undefined") {
-      const auth = localStorage.getItem("rounds-auth")
+    if (typeof window !== "undefined") {
+      const auth = safeLocalStorage.getItem("rounds-auth")
       if (auth === "account") {
-        localStorage.setItem("rounds-account-analytics-data", JSON.stringify(analyticsData))
+        safeLocalStorage.setItem("rounds-account-analytics-data", JSON.stringify(analyticsData))
       } else if (auth === "demo") {
-        localStorage.setItem("rounds-demo-analytics-data", JSON.stringify(analyticsData))
+        safeLocalStorage.setItem("rounds-demo-analytics-data", JSON.stringify(analyticsData))
       }
     }
   }, [analyticsData])
@@ -6241,8 +6269,8 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
           trajectory: updatedTrajectory,
         },
       }
-      if (typeof localStorage !== "undefined") {
-        localStorage.setItem("rounds-analytics-data", JSON.stringify(updated))
+      if (typeof window !== "undefined") {
+        safeLocalStorage.setItem("rounds-analytics-data", JSON.stringify(updated))
       }
       return updated
     })
@@ -6315,9 +6343,9 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
           trajectory: [...current.trajectory, newTrajectoryPoint],
         },
       }
-      if (typeof localStorage !== "undefined") {
+      if (typeof window !== "undefined") {
         try {
-          localStorage.setItem("rounds-analytics-data", JSON.stringify(updated))
+          safeLocalStorage.setItem("rounds-analytics-data", JSON.stringify(updated))
         } catch (e) {
           console.warn("Could not persist OCR analytics data to localStorage:", e)
         }
@@ -6394,8 +6422,8 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
           trajectory: initialTrajectory,
         },
       }
-      if (typeof localStorage !== "undefined") {
-        localStorage.setItem("rounds-analytics-data", JSON.stringify(updated))
+      if (typeof window !== "undefined") {
+        safeLocalStorage.setItem("rounds-analytics-data", JSON.stringify(updated))
       }
       return updated
     })
@@ -6407,16 +6435,16 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
     setPatientsList(patients)
     setAnalyticsData(INITIAL_ANALYTICS)
     setNotifications(INITIAL_CLINICAL_NOTIFICATIONS)
-    if (typeof localStorage !== "undefined") {
-      const mode = localStorage.getItem("rounds-auth")
+    if (typeof window !== "undefined") {
+      const mode = safeLocalStorage.getItem("rounds-auth")
       if (mode === "account") {
-        localStorage.setItem("rounds-account-patients-list", JSON.stringify(patients))
-        localStorage.setItem("rounds-account-analytics-data", JSON.stringify(INITIAL_ANALYTICS))
-        localStorage.setItem("rounds-account-notifications", JSON.stringify(INITIAL_CLINICAL_NOTIFICATIONS))
+        safeLocalStorage.setItem("rounds-account-patients-list", JSON.stringify(patients))
+        safeLocalStorage.setItem("rounds-account-analytics-data", JSON.stringify(INITIAL_ANALYTICS))
+        safeLocalStorage.setItem("rounds-account-notifications", JSON.stringify(INITIAL_CLINICAL_NOTIFICATIONS))
       } else {
-        localStorage.setItem("rounds-demo-patients-list", JSON.stringify(patients))
-        localStorage.setItem("rounds-demo-analytics-data", JSON.stringify(INITIAL_ANALYTICS))
-        localStorage.setItem("rounds-demo-notifications", JSON.stringify(INITIAL_CLINICAL_NOTIFICATIONS))
+        safeLocalStorage.setItem("rounds-demo-patients-list", JSON.stringify(patients))
+        safeLocalStorage.setItem("rounds-demo-analytics-data", JSON.stringify(INITIAL_ANALYTICS))
+        safeLocalStorage.setItem("rounds-demo-notifications", JSON.stringify(INITIAL_CLINICAL_NOTIFICATIONS))
       }
     }
     setSelectedPatientId("104")
@@ -6424,8 +6452,8 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
   }
 
   useEffect(() => {
-    if (typeof localStorage !== "undefined") {
-      const auth = localStorage.getItem("rounds-auth")
+    if (typeof window !== "undefined") {
+      const auth = safeLocalStorage.getItem("rounds-auth")
       const isAuth = auth === "demo" || auth === "account"
       setSignedIn(isAuth)
       const target = getRoute()
@@ -6447,7 +6475,7 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
       "analytics",
       "mobile",
     ].includes(next)
-    const auth = typeof localStorage !== "undefined" ? localStorage.getItem("rounds-auth") : null
+    const auth = typeof window !== "undefined" ? safeLocalStorage.getItem("rounds-auth") : null
     const isAuth = auth === "demo" || auth === "account"
     const destination = protectedRoute && !signedIn && !isAuth ? "login" : next
     history.pushState(
@@ -6460,25 +6488,25 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
   }
 
   const authenticate = (mode: "demo" | "account" = "demo") => {
-    if (typeof localStorage !== "undefined") {
-      localStorage.setItem("rounds-auth", mode)
+    if (typeof window !== "undefined") {
+      safeLocalStorage.setItem("rounds-auth", mode)
     }
     setSignedIn(true)
     if (mode === "demo") {
-      const savedPatients = typeof localStorage !== "undefined" ? localStorage.getItem("rounds-demo-patients-list") : null
+      const savedPatients = typeof window !== "undefined" ? safeLocalStorage.getItem("rounds-demo-patients-list") : null
       setPatientsList(savedPatients ? JSON.parse(savedPatients) : patients)
-      const savedNotifs = typeof localStorage !== "undefined" ? localStorage.getItem("rounds-demo-notifications") : null
+      const savedNotifs = typeof window !== "undefined" ? safeLocalStorage.getItem("rounds-demo-notifications") : null
       setNotifications(savedNotifs ? JSON.parse(savedNotifs) : INITIAL_CLINICAL_NOTIFICATIONS)
-      const savedAnalytics = typeof localStorage !== "undefined" ? localStorage.getItem("rounds-demo-analytics-data") : null
+      const savedAnalytics = typeof window !== "undefined" ? safeLocalStorage.getItem("rounds-demo-analytics-data") : null
       setAnalyticsData(savedAnalytics ? JSON.parse(savedAnalytics) : INITIAL_ANALYTICS)
       setSelectedPatientId("104")
     } else {
-      const savedPatients = typeof localStorage !== "undefined" ? localStorage.getItem("rounds-account-patients-list") : null
+      const savedPatients = typeof window !== "undefined" ? safeLocalStorage.getItem("rounds-account-patients-list") : null
       const parsedPatients = savedPatients ? JSON.parse(savedPatients) : []
       setPatientsList(parsedPatients)
-      const savedNotifs = typeof localStorage !== "undefined" ? localStorage.getItem("rounds-account-notifications") : null
+      const savedNotifs = typeof window !== "undefined" ? safeLocalStorage.getItem("rounds-account-notifications") : null
       setNotifications(savedNotifs ? JSON.parse(savedNotifs) : [])
-      const savedAnalytics = typeof localStorage !== "undefined" ? localStorage.getItem("rounds-account-analytics-data") : null
+      const savedAnalytics = typeof window !== "undefined" ? safeLocalStorage.getItem("rounds-account-analytics-data") : null
       setAnalyticsData(savedAnalytics ? JSON.parse(savedAnalytics) : {})
       setSelectedPatientId(parsedPatients.length > 0 ? parsedPatients[0].id : "")
     }
@@ -6490,8 +6518,8 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
   }
 
   const signOut = () => {
-    if (typeof localStorage !== "undefined") {
-      localStorage.removeItem("rounds-auth")
+    if (typeof window !== "undefined") {
+      safeLocalStorage.removeItem("rounds-auth")
     }
     setSignedIn(false)
     history.pushState({}, "", "/")

@@ -1,8 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
-  "buildCommand": "env -u npm_config_cache_dir -u NPM_CONFIG_CACHE_DIR -u npm_config_cache-dir -u NPM_CONFIG_CACHE-DIR npm --prefix apps/web run build",
-  "installCommand": "env -u npm_config_cache_dir -u NPM_CONFIG_CACHE_DIR -u npm_config_cache-dir -u NPM_CONFIG_CACHE-DIR npm --prefix apps/web install",
+  "buildCommand": "npm --prefix apps/web run build",
+  "installCommand": "npm --prefix apps/web install",
   "outputDirectory": "apps/web/.next",
   "headers": [
     {
