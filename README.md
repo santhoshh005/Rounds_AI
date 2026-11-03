@@ -32,6 +32,8 @@ Inpatient oncology ward rounds represent one of the most cognitively taxing envi
   - **Grade 2**: Robert Chen (`#107`, Bed 18) — Moderate myelosuppression & fatigue (ANC 1,250 /µL, pre-infusion CBC surveillance)
   - **Grade 1**: Emily Watson (`#108`, Bed 20) — Mild myelosuppression & sensory neuropathy (ANC 1,750 /µL, full dose cleared)
   - **Grade 0 (Stable)**: Elena Rostova (`#106`, Bed 16) — Normal bone marrow recovery (ANC 1,620 /µL, 100% RDI continuation)
+- **Demo Mode vs. Clean Hospital Account Isolation**: Evaluators can enter instant demo mode with 1 click ("Try demo") to explore all features across seeded cases, while credentialed staff login starts completely from scratch with zero demo data traces for admitting real patients.
+- **Multimodal Document Attachment**: Quick `+` attach button on the capture toolbar allowing rapid upload and Multimodal Vision OCR extraction of paper lab sheets directly into the note draft.
 - **Clinical Notification Center**: Surfaces active ward alerts, warnings, and recovery notes by CTCAE urgency with 1-click mark as read and clear all.
 - **Assistive Safety Sentinels**: Evaluates high-risk criteria (e.g. **Febrile Neutropenia** per IDSA/ASCO 2018) as `"Criterion met, for clinician review"` with neutral guideline citations.
 - **Longitudinal Patient Analytics (`/analytics`)**: Charts ANC/WBC/Platelet nadirs across chemotherapy cycles, predicts recovery windows, and surfaces guideline-concordant dose modifications.

@@ -43,24 +43,42 @@ HISTORICAL_OR_RESOLVED_PATTERNS = [
 
 def extract_temperature_celsius(text: str) -> Optional[float]:
     """Extract clinical body temperature explicitly stated in text, converting to °C."""
-    # Pattern e.g. "temp 38.4C", "temperature 38.3", "fever 39.1"
-    c_match = re.search(r"\b(?:temp(?:erature)?|fever)?\s*[:=]?\s*([34]\d(?:\.\d+)?)\s*(?:°?c|degrees?\s*c)?\b", text, re.I)
+    # Pattern e.g. "temp 38.4", "temperature: 38.3C", "fever 39.1", "38.4°C", "38.4 deg C"
+    # MUST require either prefix ("temp", "temperature", "fever") OR suffix ("°C", "degrees C")
+    # to avoid false positives on patient ages ("39 years old"), days ("day 38"), or marrow cell percentages ("40 percent").
+    c_match = re.search(
+        r"(?:(?:temp(?:erature)?|fever)\s*(?:is|was|at|of)?\s*[:=]?\s*([34]\d(?:\.\d+)?)\s*(?:°?\s*c|deg(?:rees?)?\s*c)?|"
+        r"\b([34]\d(?:\.\d+)?)\s*(?:°\s*c|deg(?:rees?)?\s*c|\s*c\b))",
+        text,
+        re.I,
+    )
     if c_match:
         try:
-            val = float(c_match.group(1))
-            if 35.0 <= val <= 43.0:
-                return round(val, 1)
+            val_str = c_match.group(1) or c_match.group(2)
+            if val_str:
+                val = float(val_str)
+                if 35.0 <= val <= 43.0:
+                    return round(val, 1)
         except ValueError:
             pass
 
-    # Spoken temperature patterns (e.g. "temp one oh one point three" -> 101.3 F)
+    # Spoken temperature patterns (e.g. "temp one oh one point three", "fever one oh one")
     spoken_f_match = re.search(
-        r"\b(?:temp(?:erature)?|fever)?\s*[:=]?\s*(?:one\s+oh\s+one|one\s+zero\s+one|one\s+hundred\s+(?:and\s+)?one)\s+point\s+three\b",
+        r"\b(?:temp(?:erature)?|fever)\s*[:=]?\s*(?:one\s+oh\s+one|one\s+zero\s+one|one\s+hundred\s+(?:and\s+)?one)\s*(?:point\s+(\w+))?\b",
         text,
         re.I,
     )
     if spoken_f_match:
-        return round((101.3 - 32.0) * (5.0 / 9.0), 1)
+        decimal_part = 0.0
+        frac_word = spoken_f_match.group(1)
+        if frac_word:
+            digit_map = {"zero": 0, "oh": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9}
+            if frac_word.isdigit():
+                decimal_part = float("0." + frac_word)
+            elif frac_word.lower() in digit_map:
+                decimal_part = digit_map[frac_word.lower()] / 10.0
+        f_val = 101.0 + decimal_part
+        return round((f_val - 32.0) * (5.0 / 9.0), 1)
 
     # Fahrenheit pattern: e.g. "101.2F", "temperature 102", "temp 101.3"
     f_match = re.search(

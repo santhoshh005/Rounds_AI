@@ -751,7 +751,7 @@ export const ONCOLOGY_RULES: OncologyRule[] = [
   // ── Clinical Temperature & Spoken Numbers ───────────────────────────
   {
     id: "RULE_NUM_TEMP_101_3",
-    pattern: /\b(?:temp(?:erature)?|vitals?\s+temp)?\s*(?:one\s+oh\s+one|one\s+zero\s+one|one\s+hundred\s+(?:and\s+)?one)\s+point\s+three\b/gi,
+    pattern: /\b(?:temp(?:erature)?|vitals?\s+temp)\s*[:=]?\s*(?:one\s+oh\s+one|one\s+zero\s+one|one\s+hundred\s+(?:and\s+)?one)\s+point\s+three\b/gi,
     replacement: "temp 101.3°F",
     category: "Clinical Score / Unit",
     baseConfidence: 99,
@@ -759,7 +759,7 @@ export const ONCOLOGY_RULES: OncologyRule[] = [
   },
   {
     id: "RULE_NUM_TEMP_101",
-    pattern: /\b(?:temp(?:erature)?|vitals?\s+temp)?\s*(?:one\s+oh\s+one|one\s+zero\s+one|one\s+hundred\s+(?:and\s+)?one)\b/gi,
+    pattern: /\b(?:temp(?:erature)?|vitals?\s+temp)\s*[:=]?\s*(?:one\s+oh\s+one|one\s+zero\s+one|one\s+hundred\s+(?:and\s+)?one)\b/gi,
     replacement: "temp 101°F",
     category: "Clinical Score / Unit",
     baseConfidence: 98,

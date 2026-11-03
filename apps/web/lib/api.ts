@@ -1,4 +1,5 @@
 import { autocorrectOncologyTranscript } from "./oncology-autocorrect"
+import { type AiAnalyticsInsight, generateLocalClinicalAnalyticsInsight } from "./clinical-utils"
 
 export type ExtractRoundResponse = {
   round_id: string
@@ -106,6 +107,36 @@ export const roundsApi = {
   patients: () => request<unknown[]>("/api/v1/patients?status=admitted"),
   analytics: <T>(patientId: string) =>
     request<T>(`/api/v1/analytics/${encodeURIComponent(patientId)}`),
+  generateAiAnalytics: async (payload: {
+    patient_id: string
+    patient_name?: string
+    diagnosis?: string
+    regimen?: string
+    cycle?: string
+    baseline_anc?: number
+    rounds?: Array<any>
+    force_refresh?: boolean
+  }): Promise<AiAnalyticsInsight> => {
+    try {
+      return await request<AiAnalyticsInsight>("/api/v1/analytics/ai-insights", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      })
+    } catch {
+      // Deterministic rule-based fallback when backend offline or error
+      return generateLocalClinicalAnalyticsInsight(
+        {
+          id: payload.patient_id,
+          name: payload.patient_name || `Patient #${payload.patient_id}`,
+          regimen: payload.regimen || "Chemotherapy",
+          cycle: payload.cycle || "Cycle 1",
+          baselineAnc: payload.baseline_anc || 2000,
+          diagnosis: payload.diagnosis || "Oncology Inpatient",
+        },
+        payload.rounds || [],
+      )
+    }
+  },
   latest: () => request<ExtractRoundResponse>("/api/v1/rounds/latest"),
   stream: (
     patientId: string,

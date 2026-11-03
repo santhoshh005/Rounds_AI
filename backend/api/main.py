@@ -24,7 +24,8 @@ from pydantic import BaseModel
 from backend.agents.round_graph import round_graph, CTCAE_V5_CONFIG
 from backend.models.round import ExtractRoundRequest, ExtractRoundResponse
 from backend.models.patient import Patient, PatientCreate, PatientUpdate
-from backend.models.analytics import PatientAnalyticsResponse
+from backend.models.analytics import PatientAnalyticsResponse, AiAnalyticsInsight
+from backend.services.gemini_analytics import generate_ai_analytics_insight
 from backend.services.voice_transcriber import (
     transcribe_audio_with_details,
     get_transcription_mode,
@@ -513,3 +514,60 @@ def get_patient_analytics_data(patient_id: str) -> PatientAnalyticsResponse:
     if not analytics:
         raise HTTPException(status_code=404, detail=f"Analytics data for patient {patient_id} not found.")
     return analytics
+
+
+class AiAnalyticsRequest(BaseModel):
+    patient_id: str
+    patient_name: Optional[str] = None
+    diagnosis: Optional[str] = None
+    regimen: Optional[str] = None
+    cycle: Optional[str] = None
+    baseline_anc: Optional[float] = 2000.0
+    rounds: Optional[list[dict]] = None
+    force_refresh: bool = False
+
+
+@app.post("/api/v1/analytics/ai-insights", response_model=AiAnalyticsInsight)
+def post_ai_analytics_insights(req: AiAnalyticsRequest) -> AiAnalyticsInsight:
+    patient = find_patient_by_id(req.patient_id)
+    p_name = req.patient_name or (patient.name if patient else f"Patient #{req.patient_id}")
+    p_regimen = req.regimen or (getattr(patient, "regimen", "Chemotherapy") if patient else "Chemotherapy")
+    p_cycle = req.cycle or (getattr(patient, "cycle", "Cycle 1") if patient else "Cycle 1")
+    p_diag = req.diagnosis or (getattr(patient, "diagnosis", "Oncology Inpatient") if patient else "Oncology Inpatient")
+    p_base_anc = req.baseline_anc if req.baseline_anc is not None else float(getattr(patient, "baseline_anc", 2000.0) or 2000.0)
+
+    rounds_data = req.rounds or []
+    if not rounds_data and not req.force_refresh:
+        analytics = get_patient_analytics(req.patient_id)
+        if analytics and analytics.ai_insight:
+            return analytics.ai_insight
+
+    return generate_ai_analytics_insight(
+        patient_id=req.patient_id,
+        patient_name=p_name,
+        regimen=p_regimen,
+        cycle=p_cycle,
+        diagnosis=p_diag,
+        baseline_anc=p_base_anc,
+        rounds=rounds_data,
+        force_refresh=req.force_refresh,
+    )
+
+
+@app.get("/api/v1/patients/{patient_id}/ai-insights", response_model=AiAnalyticsInsight)
+@app.get("/api/v1/analytics/{patient_id}/ai-insights", response_model=AiAnalyticsInsight)
+def get_ai_analytics_insights(patient_id: str) -> AiAnalyticsInsight:
+    analytics = get_patient_analytics(patient_id)
+    if analytics and analytics.ai_insight:
+        return analytics.ai_insight
+    patient = find_patient_by_id(patient_id)
+    return generate_ai_analytics_insight(
+        patient_id=patient_id,
+        patient_name=patient.name if patient else f"Patient #{patient_id}",
+        regimen=getattr(patient, "regimen", "Chemotherapy") if patient else "Chemotherapy",
+        cycle=getattr(patient, "cycle", "Cycle 1") if patient else "Cycle 1",
+        diagnosis=getattr(patient, "diagnosis", "Oncology Inpatient") if patient else "Oncology Inpatient",
+        baseline_anc=float(getattr(patient, "baseline_anc", 2000.0) if patient else 2000.0),
+        rounds=[],
+    )
+

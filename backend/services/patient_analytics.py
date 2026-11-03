@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 
 
 from backend.models.analytics import (
+    AiAnalyticsInsight,
     CTCAEToxicity,
     GuidelineConcordance,
     HistoricalRound,
@@ -16,6 +17,7 @@ from backend.models.analytics import (
     PatientAnalyticsResponse,
     SafetyAlertSummary,
 )
+from backend.services.gemini_analytics import generate_ai_analytics_insight
 from backend.services.patient_service import get_patient
 
 logger = logging.getLogger(__name__)
@@ -843,6 +845,41 @@ def _enrich_analytics_with_recorded_rounds(
             f"Active safety review flags: {len(safety_alerts)}. For clinician review."
         )
 
+    # Build structured rounds dictionaries for AI analytics
+    rounds_dicts = []
+    anc_traj = next((t for t in trajectories if "ANC" in t.lab_name.upper()), None)
+    plt_traj = next((t for t in trajectories if "PLATELET" in t.lab_name.upper()), None)
+    for rh in rounds_history:
+        anc_pt = next((p for p in (anc_traj.data_points if anc_traj else []) if p.date == rh.date), None)
+        plt_pt = next((p for p in (plt_traj.data_points if plt_traj else []) if p.date == rh.date), None)
+        rounds_dicts.append({
+            "date": rh.date,
+            "notes": rh.summary,
+            "anc": anc_pt.value if anc_pt else 0,
+            "platelets": plt_pt.value if plt_pt else 0,
+            "ctcae_grade": anc_pt.ctcae_grade if anc_pt else 0,
+        })
+
+    # If no recorded round yet, create baseline point
+    if not rounds_dicts and getattr(base_resp.patient, "baseline_anc", None):
+        rounds_dicts.append({
+            "date": "Admission Baseline",
+            "notes": "Admission baseline laboratory findings",
+            "anc": float(base_resp.patient.baseline_anc),
+            "platelets": 220000,
+            "ctcae_grade": 0,
+        })
+
+    ai_insight = generate_ai_analytics_insight(
+        patient_id=str(base_resp.patient.id),
+        patient_name=base_resp.patient.name,
+        regimen=getattr(base_resp.patient, "regimen", "Chemotherapy") or "Chemotherapy",
+        cycle=getattr(base_resp.patient, "cycle", "Cycle 1") or "Cycle 1",
+        diagnosis=getattr(base_resp.patient, "diagnosis", "Oncology Inpatient") or "Oncology Inpatient",
+        baseline_anc=float(getattr(base_resp.patient, "baseline_anc", 2000.0) or 2000.0),
+        rounds=rounds_dicts,
+    )
+
     return PatientAnalyticsResponse(
         patient=base_resp.patient,
         demo_mode=base_resp.demo_mode,
@@ -854,6 +891,7 @@ def _enrich_analytics_with_recorded_rounds(
         guidelines=base_resp.guidelines,
         rounds_history=rounds_history,
         clinical_synthesis=synthesis,
+        ai_insight=ai_insight,
     )
 
 

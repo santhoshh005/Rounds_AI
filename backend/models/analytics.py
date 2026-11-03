@@ -65,6 +65,20 @@ class GuidelineConcordance(BaseModel):
     concordance: str = Field("Concordant", description="Concordant | Requires Action | Review Recommended")
 
 
+class AiAnalyticsInsight(BaseModel):
+    engine: str = Field(description="Engine or model that generated this insight (e.g. gemini-2.5-flash or deterministic fallback)")
+    patient_id: str
+    patient_name: str
+    risk_level: str = Field("Moderate", description="Low | Moderate | High | Critical")
+    confidence_score: int = Field(95, ge=0, le=100)
+    executive_summary: str = Field(..., description="High-impact clinical trajectory and recovery prognosis")
+    nadir_and_kinetics: str = Field(..., description="Myelosuppression depth, recovery velocity, and bone marrow kinetics")
+    toxicity_stratification: str = Field(..., description="CTCAE v5.0 toxicities breakdown and acute complications risk")
+    dose_and_cycle_guidance: str = Field(..., description="Actionable protocol dose adjustments and supportive care")
+    surveillance_milestones: list[str] = Field(default_factory=list, description="Actionable clinical checkpoints for next cycle")
+    generated_at: str = Field(..., description="ISO timestamp")
+
+
 class PatientAnalyticsResponse(BaseModel):
     patient: Patient
     demo_mode: bool = Field(default=False, description="True if populated with synthetic demo data")
@@ -76,4 +90,6 @@ class PatientAnalyticsResponse(BaseModel):
     guidelines: list[GuidelineConcordance] = Field(default_factory=list)
     rounds_history: list[HistoricalRound] = Field(default_factory=list)
     clinical_synthesis: str
+    ai_insight: Optional[AiAnalyticsInsight] = None
+
 

@@ -94,6 +94,11 @@ const paths: Record<string, React.ReactNode> = {
       <path d="m4 16-1 5 5-1L19 9l-4-4L4 16ZM13.5 6.5l4 4" />
     </>
   ),
+  plus: (
+    <>
+      <path d="M12 5v14M5 12h14" />
+    </>
+  ),
   refresh: (
     <>
       <path d="M20 6v5h-5M4 18v-5h5M18.5 9A7 7 0 0 0 6 6M5.5 15A7 7 0 0 0 18 18" />
@@ -176,5 +181,6 @@ export const FileTextIcon = (props: IconProps) => <Icon name="file" {...props} /
 export const RefreshIcon = (props: IconProps) => <Icon name="refresh" {...props} />
 export const UndoIcon = (props: IconProps) => <Icon name="undo" {...props} />
 export const ClipboardIcon = (props: IconProps) => <Icon name="clipboard" {...props} />
+export const PlusIcon = (props: IconProps) => <Icon name="plus" {...props} />
 export const ChevronRightIcon = (props: IconProps) => <Icon name="chevron" {...props} />
 export const ChevronDownIcon = (props: IconProps) => <Icon name="chevron" style={{ transform: "rotate(90deg)" }} {...props} />

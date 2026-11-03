@@ -1096,7 +1096,8 @@ function Census({
   onClose?: () => void
   onResetCensus?: () => void
 }) {
-  const activePatients = patientsList && patientsList.length > 0 ? patientsList : (patientsList ? [] : patients)
+  const isDemo = typeof localStorage !== "undefined" && localStorage.getItem("rounds-auth") === "demo"
+  const activePatients = patientsList && patientsList.length > 0 ? patientsList : (patientsList ? [] : (isDemo ? patients : []))
   const [filter, setFilter] = useState("All")
   const [query, setQuery] = useState("")
   const shown = activePatients.filter((patient) => {
@@ -1263,10 +1264,12 @@ function useVoiceDictation({
   onAppendText,
   onError,
   clinicalAutoCorrect = true,
+  onDeviceAudio = true,
 }: {
   onAppendText: (chunk: string) => void
   onError?: (msg: string) => void
   clinicalAutoCorrect?: boolean
+  onDeviceAudio?: boolean
 }) {
   const [engine, setEngine] = useState<SttEngine>("live-asr")
   const [recording, setRecording] = useState(false)
@@ -1488,7 +1491,10 @@ function useVoiceDictation({
               const corrected = clinicalAutoCorrect
                 ? autocorrectOncologyTranscript(formatSpokenClinicalPunctuation(transcriptText.trim())).correctedText
                 : formatSpokenClinicalPunctuation(transcriptText.trim())
-              onAppendText(`\n[Whisper On-Device STT · Zero Audio Egress]: ${corrected}`)
+              const prefix = onDeviceAudio
+                ? "\n[Whisper On-Device STT · Zero Audio Egress]: "
+                : "\n[Speech Dictation · STT]: "
+              onAppendText(prefix + corrected)
             } else {
               onError?.("Whisper STT: No speech detected during recording. Please speak into your microphone or enter notes directly.")
             }
@@ -2039,6 +2045,7 @@ function CaptureStep({
     onAppendText: (chunk) => setTranscript((prev) => prev + chunk),
     onError: (msg) => onToast?.(msg),
     clinicalAutoCorrect,
+    onDeviceAudio,
   })
 
   const handleApplyAutoCorrect = (newText: string, count: number, avgConfidence: number) => {
@@ -2141,8 +2148,8 @@ function CaptureStep({
           <div className="whisper-status-card recording" role="status" aria-live="polite">
             <span className="whisper-pulse-dot" />
             <div>
-              <strong>🎙️ Recording Audio for Local Whisper ({whisperSeconds}s)</strong>
-              <small>Local audio capture · Actual speech transcribed on stop · Zero cloud egress</small>
+              <strong>🎙️ Recording Audio for {onDeviceAudio ? "Local Whisper" : "Cloud STT"} ({whisperSeconds}s)</strong>
+              <small>{onDeviceAudio ? "Local audio capture · Actual speech transcribed on stop · Zero cloud egress" : "Audio capture for speech-to-text transcription"}</small>
             </div>
           </div>
         )}
@@ -2164,6 +2171,32 @@ function CaptureStep({
         )}
 
         <div className="capture-toolbar">
+          <button
+            type="button"
+            className="attach-plus-btn"
+            onClick={() => fileInputRef.current?.click()}
+            title="Attach scanned lab report or document (Multimodal Vision OCR)"
+            aria-label="Attach clinical document or lab report"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "6px",
+              padding: "0 12px",
+              height: "36px",
+              minHeight: "36px",
+              borderRadius: "8px",
+              border: "1px solid var(--border)",
+              background: "var(--surface)",
+              color: "var(--text)",
+              fontWeight: 600,
+              fontSize: "13px",
+              cursor: "pointer",
+            }}
+          >
+            <Icon name="plus" size={15} />
+            <span>Attach</span>
+          </button>
+
           <div className="stt-engine-toggle">
             <button
               className={`engine-chip ${sttEngine === "live-asr" ? "active" : ""}`}
@@ -2222,13 +2255,6 @@ function CaptureStep({
             <Icon name="refresh" />
             Clinical auto-correct
           </button>
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            title="Attach scanned lab report or PDF to perform OCR"
-          >
-            <Icon name="file" />
-            Attach lab scan / document
-          </button>
           <input
             ref={fileInputRef}
             type="file"
@@ -2236,10 +2262,12 @@ function CaptureStep({
             style={{ display: "none" }}
             onChange={handleFileUpload}
           />
-          <em>
-            <Icon name="shield" />
-            Speech runs locally · 0 egress
-          </em>
+          {onDeviceAudio && (
+            <em>
+              <Icon name="shield" />
+              Speech runs locally · 0 egress
+            </em>
+          )}
         </div>
       </article>
 
@@ -2736,7 +2764,8 @@ function Station({
   onToast?: (msg: string, type?: "info" | "success" | "warning" | "alert") => void
   clinicianProfile?: ClinicianProfile
 }) {
-  const activePatients = patientsList && patientsList.length > 0 ? patientsList : patients
+  const isDemo = typeof localStorage !== "undefined" && localStorage.getItem("rounds-auth") === "demo"
+  const activePatients = patientsList && patientsList.length > 0 ? patientsList : (patientsList ? [] : (isDemo ? patients : []))
   const patient =
     activePatients.find((item) => item.id === selectedPatientId) || activePatients[0] || patients[0]
   const patientCase = patientCases[patient.id] || {
@@ -2974,6 +3003,41 @@ function Station({
     addEventListener("keydown", keys)
     return () => removeEventListener("keydown", keys)
   }, [])
+
+  if (activePatients.length === 0) {
+    return (
+      <main className="station-page page-shell" style={{ padding: "60px 24px", maxWidth: "800px", margin: "40px auto", textAlign: "center" }}>
+        <div style={{ width: "64px", height: "64px", borderRadius: "50%", background: "var(--brand-tint)", color: "var(--brand)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px" }}>
+          <Icon name="bed" size={32} />
+        </div>
+        <h2 style={{ fontSize: "24px", fontWeight: 700, marginBottom: "8px" }}>No Patients on Inpatient Service</h2>
+        <p style={{ color: "var(--secondary)", fontSize: "15px", maxWidth: "520px", margin: "0 auto 28px", lineHeight: "1.6" }}>
+          Your ward census is currently empty. Go to the <strong>Ward Roster</strong> to admit an oncology patient to your service, or load sample demo cases to explore the station features.
+        </p>
+        <div style={{ display: "flex", justifyContent: "center", gap: "12px", flexWrap: "wrap" }}>
+          {go && (
+            <Button
+              variant="primary"
+              onClick={() => go("roster")}
+              style={{ display: "inline-flex", alignItems: "center", gap: "8px", padding: "12px 24px", fontSize: "15px" }}
+            >
+              <Icon name="plus" size={18} />
+              <span>Admit Patient to Service</span>
+            </Button>
+          )}
+          {onResetCensus && (
+            <Button
+              onClick={onResetCensus}
+              style={{ display: "inline-flex", alignItems: "center", gap: "8px", padding: "12px 20px", fontSize: "14px" }}
+            >
+              <Icon name="refresh" size={16} />
+              <span>Load Sample Demo Patients</span>
+            </Button>
+          )}
+        </div>
+      </main>
+    )
+  }
 
   return (
     <main className="station-page page-shell">
@@ -3709,21 +3773,26 @@ function Roster({
 }
 
 function MobileCompanion({
-  patientsList = patients,
+  patientsList,
   selectedPatientId,
   onSelectPatient,
   onToast,
   onOcrExtracted,
+  go,
+  onResetCensus,
 }: {
   patientsList?: typeof patients
   selectedPatientId?: string
   onSelectPatient?: (id: string) => void
   onToast?: (msg: string) => void
   onOcrExtracted?: (patientId: string, fileName: string, extracted: any) => void
+  go?: (screen: Screen) => void
+  onResetCensus?: () => void
 } = {}) {
-  const activePatients = patientsList && patientsList.length > 0 ? patientsList : patients
+  const isDemo = typeof localStorage !== "undefined" && localStorage.getItem("rounds-auth") === "demo"
+  const activePatients = patientsList && patientsList.length > 0 ? patientsList : (patientsList ? [] : (isDemo ? patients : []))
   const activeId = selectedPatientId || activePatients[0]?.id || "104"
-  const patient = activePatients.find((item) => item.id === activeId) || activePatients[0]
+  const patient = activePatients.find((item) => item.id === activeId) || activePatients[0] || patients[0]
   const patientCase = patientCases[patient.id] || patientCases["104"]
 
   const [transcript, setTranscript] = useState(patientCase.transcript)
@@ -3785,6 +3854,26 @@ const handleMobileScan = (e: React.ChangeEvent<HTMLInputElement>) => {
     "Neuropathy",
     "Post-Chemo Day 8",
   ]
+  if (activePatients.length === 0) {
+    return (
+      <main className="companion-background" style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "40px 16px" }}>
+        <div className="phone" style={{ textAlign: "center", padding: "40px 20px" }}>
+          <div style={{ width: "56px", height: "56px", borderRadius: "50%", background: "var(--brand-tint)", color: "var(--brand)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+            <Icon name="bed" size={28} />
+          </div>
+          <h2 style={{ fontSize: "20px", fontWeight: 700, marginBottom: "8px" }}>No Patients on Service</h2>
+          <p style={{ color: "var(--secondary)", fontSize: "14px", margin: "0 auto 24px", lineHeight: "1.5" }}>
+            Your ward census is empty. Admit a patient from the Ward Roster to capture bedside rounds.
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+            {go && <Button variant="primary" onClick={() => go("roster")}>Go to Roster</Button>}
+            {onResetCensus && <Button onClick={onResetCensus}>Load Demo Patients</Button>}
+          </div>
+        </div>
+      </main>
+    )
+  }
+
   return (
     <main className="companion-background">
       <section className="phone">
@@ -4297,24 +4386,29 @@ function RecoveryChart({ rounds = [] }: { rounds?: RoundRecord[] }) {
 }
 
 function Analytics({
-  patientsList = patients,
+  patientsList,
   selectedPatientId,
   onSelectPatient,
-  analyticsData = INITIAL_ANALYTICS,
+  analyticsData = {},
   onToast,
+  go,
+  onResetCensus,
 }: {
   patientsList?: typeof patients
   selectedPatientId?: string
   onSelectPatient?: (id: string) => void
   analyticsData?: Record<string, PatientAnalytics>
   onToast?: (msg: string, type?: "info" | "success" | "warning" | "alert") => void
+  go?: (screen: Screen) => void
+  onResetCensus?: () => void
 } = {}) {
-  const activePatients = patientsList && patientsList.length > 0 ? patientsList : patients
+  const isDemo = typeof localStorage !== "undefined" && localStorage.getItem("rounds-auth") === "demo"
+  const activePatients = patientsList && patientsList.length > 0 ? patientsList : (patientsList ? [] : (isDemo ? patients : []))
   const activeId = selectedPatientId || activePatients[0]?.id || "104"
   const [ascending, setAscending] = useState(false)
-  const patient = activePatients.find((item) => item.id === activeId) || activePatients[0]
+  const patient = activePatients.find((item) => item.id === activeId) || activePatients[0] || patients[0]
 
-  const patientAnalytics = analyticsData[activeId] || INITIAL_ANALYTICS[activeId] || {
+  const patientAnalytics = analyticsData[activeId] || (isDemo ? INITIAL_ANALYTICS[activeId] : null) || {
     patient_id: activeId,
     patient_name: patient.name,
     rounds: [],
@@ -4367,6 +4461,41 @@ function Analytics({
     a.click()
     setTimeout(() => URL.revokeObjectURL(url), 1000)
     if (onToast) onToast("Analytics JSON exported successfully", "success")
+  }
+
+  if (activePatients.length === 0) {
+    return (
+      <main className="analytics page-shell" style={{ padding: "60px 24px", maxWidth: "800px", margin: "40px auto", textAlign: "center" }}>
+        <div style={{ width: "64px", height: "64px", borderRadius: "50%", background: "var(--brand-tint)", color: "var(--brand)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px" }}>
+          <Icon name="activity" size={32} />
+        </div>
+        <h2 style={{ fontSize: "24px", fontWeight: 700, marginBottom: "8px" }}>No CTCAE Analytics Available</h2>
+        <p style={{ color: "var(--secondary)", fontSize: "15px", maxWidth: "520px", margin: "0 auto 28px", lineHeight: "1.6" }}>
+          No oncology patients are currently admitted to your ward service. Admit a patient from the Roster to track ANC nadirs, CTCAE toxicities, and dose modifications.
+        </p>
+        <div style={{ display: "flex", justifyContent: "center", gap: "12px", flexWrap: "wrap" }}>
+          {go && (
+            <Button
+              variant="primary"
+              onClick={() => go("roster")}
+              style={{ display: "inline-flex", alignItems: "center", gap: "8px", padding: "12px 24px", fontSize: "15px" }}
+            >
+              <Icon name="plus" size={18} />
+              <span>Admit Patient</span>
+            </Button>
+          )}
+          {onResetCensus && (
+            <Button
+              onClick={onResetCensus}
+              style={{ display: "inline-flex", alignItems: "center", gap: "8px", padding: "12px 20px", fontSize: "14px" }}
+            >
+              <Icon name="refresh" size={16} />
+              <span>Load Sample Demo Patients</span>
+            </Button>
+          )}
+        </div>
+      </main>
+    )
   }
 
   return (
@@ -4928,7 +5057,7 @@ function Login({
   onAuth,
 }: {
   go: (screen: Screen) => void
-  onAuth: () => void
+  onAuth: (mode?: "demo" | "account") => void
 }) {
   const [show, setShow] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -4942,7 +5071,7 @@ function Login({
     setLoading(true)
     setTimeout(() => {
       setLoading(false)
-      onAuth()
+      onAuth("account")
       go("station")
     }, 900)
   }
@@ -5035,7 +5164,7 @@ function Login({
           <Button
             className="full"
             onClick={() => {
-              onAuth()
+              onAuth("demo")
               go("station")
             }}
           >
@@ -5069,19 +5198,25 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
   const [online, setOnline] = useState(true)
   const [patientsList, setPatientsList] = useState<typeof patients>(() => {
     if (typeof localStorage !== "undefined") {
-      const saved = localStorage.getItem("rounds-patients-list")
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved)
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            const existingIds = new Set(parsed.map((p: any) => p.id))
-            const missing = patients.filter((p) => !existingIds.has(p.id))
-            if (missing.length > 0) {
-              return [...parsed, ...missing]
-            }
-            return parsed
-          }
-        } catch {}
+      const auth = localStorage.getItem("rounds-auth")
+      if (auth === "account") {
+        const saved = localStorage.getItem("rounds-account-patients-list")
+        if (saved) {
+          try {
+            return JSON.parse(saved)
+          } catch {}
+        }
+        return []
+      }
+      if (auth === "demo") {
+        const saved = localStorage.getItem("rounds-demo-patients-list")
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved)
+            if (Array.isArray(parsed) && parsed.length > 0) return parsed
+          } catch {}
+        }
+        return patients
       }
     }
     return patients
@@ -5089,10 +5224,30 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
 
   useEffect(() => {
     if (typeof localStorage !== "undefined") {
-      localStorage.setItem("rounds-patients-list", JSON.stringify(patientsList))
+      const auth = localStorage.getItem("rounds-auth")
+      if (auth === "account") {
+        localStorage.setItem("rounds-account-patients-list", JSON.stringify(patientsList))
+      } else if (auth === "demo") {
+        localStorage.setItem("rounds-demo-patients-list", JSON.stringify(patientsList))
+      }
     }
   }, [patientsList])
-  const [selectedPatientId, setSelectedPatientId] = useState("104")
+  const [selectedPatientId, setSelectedPatientId] = useState<string>(() => {
+    if (typeof localStorage !== "undefined") {
+      const auth = localStorage.getItem("rounds-auth")
+      if (auth === "account") {
+        const saved = localStorage.getItem("rounds-account-patients-list")
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved)
+            if (Array.isArray(parsed) && parsed.length > 0) return parsed[0].id
+          } catch {}
+        }
+        return ""
+      }
+    }
+    return "104"
+  })
   const [screen, setScreen] = useState<Screen>(initialScreen || "landing")
 
   const [clinicianProfile, setClinicianProfile] = useState<ClinicianProfile>(() => {
@@ -5115,19 +5270,25 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
 
   const [notifications, setNotifications] = useState<ClinicalNotification[]>(() => {
     if (typeof localStorage !== "undefined") {
-      const saved = localStorage.getItem("rounds-notifications")
-      if (saved !== null) {
-        try {
-          const parsed = JSON.parse(saved)
-          if (Array.isArray(parsed)) {
-            const existingIds = new Set(parsed.map((n: any) => n.id))
-            const missing = INITIAL_CLINICAL_NOTIFICATIONS.filter((n) => !existingIds.has(n.id))
-            if (missing.length > 0) {
-              return [...parsed, ...missing]
-            }
-            return parsed
-          }
-        } catch {}
+      const auth = localStorage.getItem("rounds-auth")
+      if (auth === "account") {
+        const saved = localStorage.getItem("rounds-account-notifications")
+        if (saved !== null) {
+          try {
+            return JSON.parse(saved)
+          } catch {}
+        }
+        return []
+      }
+      if (auth === "demo") {
+        const saved = localStorage.getItem("rounds-demo-notifications")
+        if (saved !== null) {
+          try {
+            const parsed = JSON.parse(saved)
+            if (Array.isArray(parsed)) return parsed
+          } catch {}
+        }
+        return INITIAL_CLINICAL_NOTIFICATIONS
       }
     }
     return INITIAL_CLINICAL_NOTIFICATIONS
@@ -5135,18 +5296,36 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
 
   useEffect(() => {
     if (typeof localStorage !== "undefined") {
-      localStorage.setItem("rounds-notifications", JSON.stringify(notifications))
+      const auth = localStorage.getItem("rounds-auth")
+      if (auth === "account") {
+        localStorage.setItem("rounds-account-notifications", JSON.stringify(notifications))
+      } else if (auth === "demo") {
+        localStorage.setItem("rounds-demo-notifications", JSON.stringify(notifications))
+      }
     }
   }, [notifications])
 
   const [analyticsData, setAnalyticsData] = useState<Record<string, PatientAnalytics>>(() => {
     if (typeof localStorage !== "undefined") {
-      const saved = localStorage.getItem("rounds-analytics-data")
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved)
-          return { ...INITIAL_ANALYTICS, ...parsed }
-        } catch {}
+      const auth = localStorage.getItem("rounds-auth")
+      if (auth === "account") {
+        const saved = localStorage.getItem("rounds-account-analytics-data")
+        if (saved) {
+          try {
+            return JSON.parse(saved)
+          } catch {}
+        }
+        return {}
+      }
+      if (auth === "demo") {
+        const saved = localStorage.getItem("rounds-demo-analytics-data")
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved)
+            return { ...INITIAL_ANALYTICS, ...parsed }
+          } catch {}
+        }
+        return INITIAL_ANALYTICS
       }
     }
     return INITIAL_ANALYTICS
@@ -5154,7 +5333,12 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
 
   useEffect(() => {
     if (typeof localStorage !== "undefined") {
-      localStorage.setItem("rounds-analytics-data", JSON.stringify(analyticsData))
+      const auth = localStorage.getItem("rounds-auth")
+      if (auth === "account") {
+        localStorage.setItem("rounds-account-analytics-data", JSON.stringify(analyticsData))
+      } else if (auth === "demo") {
+        localStorage.setItem("rounds-demo-analytics-data", JSON.stringify(analyticsData))
+      }
     }
   }, [analyticsData])
 
@@ -5454,17 +5638,27 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
   const handleResetCensus = () => {
     setPatientsList(patients)
     setAnalyticsData(INITIAL_ANALYTICS)
+    setNotifications(INITIAL_CLINICAL_NOTIFICATIONS)
     if (typeof localStorage !== "undefined") {
-      localStorage.removeItem("rounds-patients-list")
-      localStorage.removeItem("rounds-analytics-data")
+      const mode = localStorage.getItem("rounds-auth")
+      if (mode === "account") {
+        localStorage.setItem("rounds-account-patients-list", JSON.stringify(patients))
+        localStorage.setItem("rounds-account-analytics-data", JSON.stringify(INITIAL_ANALYTICS))
+        localStorage.setItem("rounds-account-notifications", JSON.stringify(INITIAL_CLINICAL_NOTIFICATIONS))
+      } else {
+        localStorage.setItem("rounds-demo-patients-list", JSON.stringify(patients))
+        localStorage.setItem("rounds-demo-analytics-data", JSON.stringify(INITIAL_ANALYTICS))
+        localStorage.setItem("rounds-demo-notifications", JSON.stringify(INITIAL_CLINICAL_NOTIFICATIONS))
+      }
     }
     setSelectedPatientId("104")
-    showToast("Ward 4B census and analytics reset to 3 admitted demo patients")
+    showToast("Ward 4B census and analytics populated with 5 demo patient cases (Grades 0 to 4)")
   }
 
   useEffect(() => {
     if (typeof localStorage !== "undefined") {
-      const isAuth = localStorage.getItem("rounds-auth") === "demo"
+      const auth = localStorage.getItem("rounds-auth")
+      const isAuth = auth === "demo" || auth === "account"
       setSignedIn(isAuth)
       const target = getRoute()
       if (!isAuth && ["station", "roster", "analytics", "mobile"].includes(target)) {
@@ -5485,12 +5679,9 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
       "analytics",
       "mobile",
     ].includes(next)
-    const destination =
-      protectedRoute &&
-      !signedIn &&
-      (typeof localStorage !== "undefined" && localStorage.getItem("rounds-auth") !== "demo")
-        ? "login"
-        : next
+    const auth = typeof localStorage !== "undefined" ? localStorage.getItem("rounds-auth") : null
+    const isAuth = auth === "demo" || auth === "account"
+    const destination = protectedRoute && !signedIn && !isAuth ? "login" : next
     history.pushState(
       {},
       "",
@@ -5500,18 +5691,40 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
     window.scrollTo(0, 0)
   }
 
-  const authenticate = () => {
-    localStorage.setItem("rounds-auth", "demo")
+  const authenticate = (mode: "demo" | "account" = "demo") => {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem("rounds-auth", mode)
+    }
     setSignedIn(true)
+    if (mode === "demo") {
+      const savedPatients = typeof localStorage !== "undefined" ? localStorage.getItem("rounds-demo-patients-list") : null
+      setPatientsList(savedPatients ? JSON.parse(savedPatients) : patients)
+      const savedNotifs = typeof localStorage !== "undefined" ? localStorage.getItem("rounds-demo-notifications") : null
+      setNotifications(savedNotifs ? JSON.parse(savedNotifs) : INITIAL_CLINICAL_NOTIFICATIONS)
+      const savedAnalytics = typeof localStorage !== "undefined" ? localStorage.getItem("rounds-demo-analytics-data") : null
+      setAnalyticsData(savedAnalytics ? JSON.parse(savedAnalytics) : INITIAL_ANALYTICS)
+      setSelectedPatientId("104")
+    } else {
+      const savedPatients = typeof localStorage !== "undefined" ? localStorage.getItem("rounds-account-patients-list") : null
+      const parsedPatients = savedPatients ? JSON.parse(savedPatients) : []
+      setPatientsList(parsedPatients)
+      const savedNotifs = typeof localStorage !== "undefined" ? localStorage.getItem("rounds-account-notifications") : null
+      setNotifications(savedNotifs ? JSON.parse(savedNotifs) : [])
+      const savedAnalytics = typeof localStorage !== "undefined" ? localStorage.getItem("rounds-account-analytics-data") : null
+      setAnalyticsData(savedAnalytics ? JSON.parse(savedAnalytics) : {})
+      setSelectedPatientId(parsedPatients.length > 0 ? parsedPatients[0].id : "")
+    }
   }
 
   const handleTryDemo = () => {
-    authenticate()
+    authenticate("demo")
     go("station")
   }
 
   const signOut = () => {
-    localStorage.removeItem("rounds-auth")
+    if (typeof localStorage !== "undefined") {
+      localStorage.removeItem("rounds-auth")
+    }
     setSignedIn(false)
     history.pushState({}, "", "/")
     setScreen("landing")
@@ -5622,6 +5835,8 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
           onSelectPatient={setSelectedPatientId}
           onToast={showToast}
           onOcrExtracted={handleOcrExtracted}
+          go={go}
+          onResetCensus={handleResetCensus}
         />
       ) : (
         <Analytics
@@ -5630,6 +5845,8 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
           onSelectPatient={setSelectedPatientId}
           analyticsData={analyticsData}
           onToast={showToast}
+          go={go}
+          onResetCensus={handleResetCensus}
         />
       )}
       <footer className="quiet-footer">
