@@ -32,8 +32,11 @@ Inpatient oncology ward rounds represent one of the most cognitively taxing envi
   - **Grade 2**: Robert Chen (`#107`, Bed 18) — Moderate myelosuppression & fatigue (ANC 1,250 /µL, pre-infusion CBC surveillance)
   - **Grade 1**: Emily Watson (`#108`, Bed 20) — Mild myelosuppression & sensory neuropathy (ANC 1,750 /µL, full dose cleared)
   - **Grade 0 (Stable)**: Elena Rostova (`#106`, Bed 16) — Normal bone marrow recovery (ANC 1,620 /µL, 100% RDI continuation)
+- **4-Tier Model Fallback & AI Provenance**: Resilient cascading fallback hierarchy (`Gemini Flash` → `Gemini Flash-Lite` → `Gemini Pro` → `Deterministic Clinical Rule Engine`) with transparent visual badges (`[🤖 AI Model: Gemini 2.5 Flash]`, `[⚙️ Deterministic Clinical Rule Engine]`) identifying the exact generation engine on every alert, trajectory, and note.
+- **Mandatory Clinician Verification Guardrails**: Clear `[CLINICIAN VERIFICATION REQUIRED]` callouts on decision support alerts and concise doctor verification checkpoints across SOAP attestation, phonetic autocorrect, OCR lab review, and protocol dose modification recommendations.
 - **Demo Mode vs. Clean Hospital Account Isolation**: Evaluators can enter instant demo mode with 1 click ("Try demo") to explore all features across seeded cases, while credentialed staff login starts completely from scratch with zero demo data traces for admitting real patients.
 - **Multimodal Document Attachment**: Quick `+` attach button on the capture toolbar allowing rapid upload and Multimodal Vision OCR extraction of paper lab sheets directly into the note draft.
+- **Human-Centered Bedside Care Visuals**: Modernized landing experience featuring an arched hospital bedside scene, concentric orbit rings, and Listen / Understand / Support workflow signals.
 - **Clinical Notification Center**: Surfaces active ward alerts, warnings, and recovery notes by CTCAE urgency with 1-click mark as read and clear all.
 - **Assistive Safety Sentinels**: Evaluates high-risk criteria (e.g. **Febrile Neutropenia** per IDSA/ASCO 2018) as `"Criterion met, for clinician review"` with neutral guideline citations.
 - **Longitudinal Patient Analytics (`/analytics`)**: Charts ANC/WBC/Platelet nadirs across chemotherapy cycles, predicts recovery windows, and surfaces guideline-concordant dose modifications.
@@ -213,6 +216,7 @@ sequenceDiagram
 │   │   ├── patient.py                  # Patient demographic & lab schemas
 │   │   └── round.py                    # Round request/response schemas
 │   ├── services/
+│   │   ├── ai_fallback.py              # 4-tier AI model selection & fallback cascade
 │   │   ├── voice_transcriber.py        # Local faster-whisper base-int8 pipeline
 │   │   ├── clinical_autocorrect.py     # 120+ oncology phonetic regex normalizer
 │   │   ├── clinical_negation.py        # Deterministic acute vs historical negation engine
@@ -240,6 +244,7 @@ sequenceDiagram
 │   └── verify_live_api.py              # End-to-end integration verification script
 ├── tests/
 │   ├── conftest.py                     # Pytest fixtures and network guardrails
+│   ├── test_ai_fallback.py             # 4-tier fallback model hierarchy tests (7 tests)
 │   ├── test_api_pytest.py              # API contract, CORS, SSE & auth tests (20 tests)
 │   ├── test_clinical_accuracy.py       # Clinical accuracy & CTCAE v5.0 tests (61 tests)
 │   └── test_full_system.py             # Live integration test suite (8 tests)

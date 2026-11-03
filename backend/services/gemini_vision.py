@@ -13,6 +13,7 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 from backend.models.round import ImageAttachment
+from backend.services.ai_fallback import get_candidate_models, is_transient_error
 
 logger = logging.getLogger(__name__)
 
@@ -64,13 +65,8 @@ def analyze_clinical_images(images: list[ImageAttachment]) -> list[VisionObserva
         return _local_vision_fallback(images)
 
     import time
-    model_name = os.getenv("GEMINI_MODEL_VISION", "gemini-2.5-flash")
-    fallback_model = os.getenv("GEMINI_MODEL_VISION_FALLBACK", "gemini-1.5-flash")
-    # 4-model cascading fallback hierarchy: 2.5-flash -> 1.5-flash -> 1.5-pro -> 2.5-pro
-    candidate_models: list[str] = []
-    for m in (model_name, fallback_model, "gemini-1.5-pro", "gemini-2.5-pro"):
-        if m and m not in candidate_models:
-            candidate_models.append(m)
+    candidate_models = get_candidate_models("vision")
+    model_name = candidate_models[0]
 
     try:
         from google import genai
@@ -111,7 +107,7 @@ def analyze_clinical_images(images: list[ImageAttachment]) -> list[VisionObserva
                         break
                     except Exception as call_exc:
                         last_exc = call_exc
-                        if _is_transient_503(call_exc) and attempt == 0:
+                        if is_transient_error(call_exc) and attempt == 0:
                             time.sleep(1.0)
                             continue
                         break

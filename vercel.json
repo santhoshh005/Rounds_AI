@@ -26,7 +26,7 @@
         },
         {
           "key": "Content-Security-Policy-Report-Only",
-          "value": "default-src 'self' 'unsafe-inline' 'unsafe-eval' https: data: blob:; img-src 'self' data: blob: https:; connect-src 'self' https://rounds-ai-backend.onrender.com https://*.googleapis.com https://*.firebaseio.com; frame-ancestors 'none';"
+          "value": "default-src 'self' 'unsafe-inline' 'unsafe-eval' https: data: blob:; img-src 'self' data: blob: https:; connect-src 'self' https://rounds-ai-backend.onrender.com https://roundsai-backend.onrender.com https://*.onrender.com https://*.googleapis.com https://*.firebaseio.com; frame-ancestors 'none';"
         }
       ]
     }

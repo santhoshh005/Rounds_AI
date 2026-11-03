@@ -16,6 +16,7 @@ import re
 from typing import Any, Optional
 
 from backend.models.analytics import AiAnalyticsInsight
+from backend.services.ai_fallback import get_candidate_models, is_transient_error
 
 logger = logging.getLogger(__name__)
 
@@ -212,11 +213,8 @@ def generate_ai_analytics_insight(
             rounds=active_rounds,
         )
 
-    model_name = os.getenv("GEMINI_MODEL_DRAFT", "gemini-2.5-flash")
-    candidate_models: list[str] = []
-    for m in (model_name, "gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.5-pro"):
-        if m and m not in candidate_models:
-            candidate_models.append(m)
+    candidate_models = get_candidate_models("analytics")
+    model_name = candidate_models[0]
 
     # Format clinical data payload for prompt
     rounds_summary_lines = []

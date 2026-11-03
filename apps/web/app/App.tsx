@@ -17,6 +17,10 @@ import {
   type DoseModificationGuideline,
   type ClinicianProfile,
   type ClinicalNotification,
+  type AiAnalyticsInsight,
+  generateLocalClinicalAnalyticsInsight,
+  getModelProvenance,
+  type ModelProvenanceInfo,
 } from "../lib/clinical-utils"
 import { autocorrectOncologyTranscript, applySelectedCorrections, formatSpokenClinicalPunctuation, type AutocorrectChange, type AutocorrectResult } from "../lib/oncology-autocorrect"
 
@@ -1200,19 +1204,269 @@ function Census({
   )
 }
 
-function Waveform({ active = false }: { active?: boolean }) {
+interface WaveformProps {
+  active?: boolean
+  stream?: MediaStream | null
+  numBars?: number
+}
+
+function Waveform({ active = false, stream = null, numBars = 21 }: WaveformProps) {
+  const [isSpeaking, setIsSpeaking] = useState(false)
+  const barRefs = useRef<(HTMLElement | null)[]>([])
+  const localStreamRef = useRef<MediaStream | null>(null)
+  const audioCtxRef = useRef<any>(null)
+  const animFrameRef = useRef<number | null>(null)
+  const currentHeightsRef = useRef<number[]>(new Array(numBars).fill(6))
+  const targetHeightsRef = useRef<number[]>(new Array(numBars).fill(6))
+  const noiseFloorRef = useRef<number>(14.0)
+  const speechHoldFramesRef = useRef<number>(0)
+
+  // Pre-calculate symmetric elliptical envelope weights for the bars (matching reference visual)
+  const envelopeWeights = useMemo(() => {
+    const center = (numBars - 1) / 2
+    return Array.from({ length: numBars }, (_, i) => {
+      const normX = (i - center) / center // -1.0 to 1.0
+      // Elliptical oval envelope: 1.0 at center, smoothly tapering to ~0.51 at edges
+      return Math.sqrt(Math.max(0.16, 1.0 - 0.74 * normX * normX))
+    })
+  }, [numBars])
+
+  useEffect(() => {
+    if (!active) {
+      if (animFrameRef.current) {
+        cancelAnimationFrame(animFrameRef.current)
+        animFrameRef.current = null
+      }
+      if (audioCtxRef.current) {
+        try {
+          audioCtxRef.current.close()
+        } catch {}
+        audioCtxRef.current = null
+      }
+      if (localStreamRef.current) {
+        try {
+          localStreamRef.current.getTracks().forEach((t) => t.stop())
+        } catch {}
+        localStreamRef.current = null
+      }
+      for (let i = 0; i < numBars; i++) {
+        currentHeightsRef.current[i] = 6
+        targetHeightsRef.current[i] = 6
+        const el = barRefs.current[i]
+        if (el) {
+          el.style.height = "6px"
+        }
+      }
+      setIsSpeaking(false)
+      speechHoldFramesRef.current = 0
+      return
+    }
+
+    let isMounted = true
+
+    const startAudioAnalysis = async () => {
+      try {
+        let activeStream = stream
+        if (!activeStream) {
+          if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
+            try {
+              const micStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+              if (!isMounted) {
+                micStream.getTracks().forEach((t) => t.stop())
+                return
+              }
+              localStreamRef.current = micStream
+              activeStream = micStream
+            } catch {
+              // Permission denied or automated environment without mic
+            }
+          }
+        }
+
+        if (!activeStream || !isMounted) {
+          return
+        }
+
+        const AudioContextClass =
+          typeof window !== "undefined" &&
+          ((window as any).AudioContext || (window as any).webkitAudioContext)
+
+        if (!AudioContextClass) return
+
+        const ctx = new AudioContextClass()
+        audioCtxRef.current = ctx
+        if (ctx.state === "suspended") {
+          try {
+            await ctx.resume()
+          } catch {}
+        }
+
+        const source = ctx.createMediaStreamSource(activeStream)
+        const analyser = ctx.createAnalyser()
+        analyser.fftSize = 256
+        analyser.smoothingTimeConstant = 0.25
+        source.connect(analyser)
+
+        const bufferLength = analyser.frequencyBinCount
+        const freqData = new Uint8Array(bufferLength)
+        const timeData = new Uint8Array(analyser.fftSize)
+
+        // Human speech formants & vocal band (150Hz - 3500Hz)
+        const speechBinStart = 1
+        const speechBinEnd = Math.min(22, bufferLength - 1)
+
+        let lastSpeakingState = false
+
+        const MIN_IDLE_PX = 6
+        const MAX_SPEECH_PX = 44
+
+        const tick = () => {
+          if (!isMounted) return
+
+          analyser.getByteFrequencyData(freqData)
+          analyser.getByteTimeDomainData(timeData)
+
+          // 1. Calculate speech-band frequency energy
+          let speechBandSum = 0
+          for (let b = speechBinStart; b <= speechBinEnd; b++) {
+            speechBandSum += freqData[b]
+          }
+          const speechBandAvg = speechBandSum / (speechBinEnd - speechBinStart + 1)
+
+          // 2. Calculate time-domain RMS (overall instantaneous volume)
+          let sumSquares = 0
+          for (let j = 0; j < timeData.length; j++) {
+            const norm = (timeData[j] - 128) / 128
+            sumSquares += norm * norm
+          }
+          const rms = Math.sqrt(sumSquares / timeData.length) * 100
+
+          // 3. Adaptive background noise floor tracking
+          // Ambient background room hum / fan noise adapts slowly
+          const currentNoise = noiseFloorRef.current
+          if (speechBandAvg < currentNoise * 1.35) {
+            noiseFloorRef.current = currentNoise * 0.96 + speechBandAvg * 0.04
+          }
+
+          // 4. Voice Activity Detection (VAD)
+          // Requires voice-band energy to exceed noise floor + RMS volume presence
+          const vadThreshold = Math.max(12, noiseFloorRef.current * 1.55 + 7)
+          const voiceDetected = speechBandAvg > vadThreshold && rms > 1.2
+
+          // Hangover window (16 frames ~ 260ms) bridges pauses between spoken syllables
+          if (voiceDetected) {
+            speechHoldFramesRef.current = 16
+          } else if (speechHoldFramesRef.current > 0) {
+            speechHoldFramesRef.current -= 1
+          }
+
+          const isCurrentlySpeaking = speechHoldFramesRef.current > 0
+
+          if (isCurrentlySpeaking !== lastSpeakingState) {
+            lastSpeakingState = isCurrentlySpeaking
+            setIsSpeaking(isCurrentlySpeaking)
+          }
+
+          // 5. Target amplitude calculation
+          if (!isCurrentlySpeaking) {
+            // Idle state: silence or ambient noise -> all bars rest at minimal height
+            for (let i = 0; i < numBars; i++) {
+              targetHeightsRef.current[i] = MIN_IDLE_PX
+            }
+          } else {
+            // Speech state: bars react dynamically to speech amplitude & frequency profile
+            const speechNorm = Math.min(1, Math.max(0, (speechBandAvg - vadThreshold) / 34))
+            const rmsNorm = Math.min(1, rms / 16)
+            const combinedSpeechLevel = 0.65 * speechNorm + 0.35 * rmsNorm
+
+            for (let i = 0; i < numBars; i++) {
+              const envelope = envelopeWeights[i] || 0.6
+              const binIndex = Math.min(
+                speechBinEnd,
+                Math.max(speechBinStart, Math.round(speechBinStart + (i / (numBars - 1)) * (speechBinEnd - speechBinStart)))
+              )
+              const binFactor = (freqData[binIndex] || 0) / 255
+              const dynamicMod = 0.45 * combinedSpeechLevel + 0.55 * (binFactor * combinedSpeechLevel)
+              const activeHeight = MIN_IDLE_PX + (MAX_SPEECH_PX - MIN_IDLE_PX) * envelope * dynamicMod
+
+              targetHeightsRef.current[i] = Math.max(MIN_IDLE_PX, Math.min(MAX_SPEECH_PX, activeHeight))
+            }
+          }
+
+          // 6. Smooth lerp animation for responsive attack and organic decay
+          for (let i = 0; i < numBars; i++) {
+            const target = targetHeightsRef.current[i]
+            const current = currentHeightsRef.current[i]
+            const lerpSpeed = target > current ? 0.35 : 0.18
+            const nextHeight = current + (target - current) * lerpSpeed
+            currentHeightsRef.current[i] = nextHeight
+
+            const barEl = barRefs.current[i]
+            if (barEl) {
+              barEl.style.height = `${nextHeight.toFixed(1)}px`
+            }
+          }
+
+          animFrameRef.current = requestAnimationFrame(tick)
+        }
+
+        animFrameRef.current = requestAnimationFrame(tick)
+      } catch (err) {
+        console.warn("Waveform AudioContext error:", err)
+      }
+    }
+
+    startAudioAnalysis()
+
+    return () => {
+      isMounted = false
+      if (animFrameRef.current) {
+        cancelAnimationFrame(animFrameRef.current)
+        animFrameRef.current = null
+      }
+      if (audioCtxRef.current) {
+        try {
+          audioCtxRef.current.close()
+        } catch {}
+        audioCtxRef.current = null
+      }
+      if (localStreamRef.current) {
+        try {
+          localStreamRef.current.getTracks().forEach((t) => t.stop())
+        } catch {}
+        localStreamRef.current = null
+      }
+    }
+  }, [active, stream, numBars, envelopeWeights])
+
   return (
     <div
-      className={`waveform ${active ? "active" : ""}`}
-      aria-label="Audio waveform"
+      className={`waveform ${active ? "active" : ""} ${isSpeaking ? "speaking" : "idle"}`}
+      aria-label={
+        active
+          ? isSpeaking
+            ? "Audio waveform: Voice activity detected"
+            : "Audio waveform: Idle silence"
+          : "Audio waveform idle"
+      }
+      role="status"
     >
-      {[16, 32, 54, 28, 70, 42, 80, 52, 66, 34, 58, 24, 46, 20, 34, 18].map(
-        (height, index) => (
+      <div className="waveform-bars-wrap">
+        {Array.from({ length: numBars }).map((_, index) => (
           <i
             key={index}
-            style={{ height: `${height}%`, animationDelay: `${index * 45}ms` }}
+            ref={(el) => {
+              barRefs.current[index] = el
+            }}
+            style={{ height: "6px" }}
           />
-        ),
+        ))}
+      </div>
+      {active && (
+        <span className={`vad-status ${isSpeaking ? "active" : "idle"}`}>
+          <span className="vad-dot" />
+          {isSpeaking ? "Speech detected" : "Idle (listening)"}
+        </span>
       )}
     </div>
   )
@@ -1273,6 +1527,7 @@ function useVoiceDictation({
 }) {
   const [engine, setEngine] = useState<SttEngine>("live-asr")
   const [recording, setRecording] = useState(false)
+  const [audioStream, setAudioStream] = useState<MediaStream | null>(null)
   const [interimTranscript, setInterimTranscript] = useState("")
   const [whisperSeconds, setWhisperSeconds] = useState(0)
   const [whisperProcessing, setWhisperProcessing] = useState(false)
@@ -1292,6 +1547,13 @@ function useVoiceDictation({
         recognitionRef.current.stop()
       } catch {}
       recognitionRef.current = null
+    }
+    if (streamRef.current) {
+      try {
+        streamRef.current.getTracks().forEach((track) => track.stop())
+      } catch {}
+      streamRef.current = null
+      setAudioStream(null)
     }
   }, [])
 
@@ -1313,8 +1575,9 @@ function useVoiceDictation({
       setWhisperProcessing(true)
       mediaRecorderRef.current.stop()
     } else if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop())
+      try { streamRef.current.getTracks().forEach((track) => track.stop()) } catch {}
       streamRef.current = null
+      setAudioStream(null)
     }
   }, [])
 
@@ -1326,7 +1589,7 @@ function useVoiceDictation({
     }
   }, [engine, stopWhisper, stopLiveAsr])
 
-  const startLiveAsr = useCallback(() => {
+  const startLiveAsr = useCallback(async () => {
     const SpeechRecognition =
       typeof window !== "undefined" &&
       ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition)
@@ -1334,6 +1597,18 @@ function useVoiceDictation({
     if (!SpeechRecognition) {
       onError?.("Microphone speech-to-text is not supported in this browser. Please use Chrome or Edge, or type your assessment manually.")
       return
+    }
+
+    // Acquire audio stream for real-time speech-triggered waveform and VAD
+    try {
+      if (navigator.mediaDevices?.getUserMedia) {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        streamRef.current = stream
+        setAudioStream(stream)
+        setAudioStream(stream)
+      }
+    } catch (streamErr) {
+      console.warn("Could not obtain audio stream for waveform:", streamErr)
     }
 
     try {
@@ -1369,6 +1644,11 @@ function useVoiceDictation({
         setRecording(false)
         setInterimTranscript("")
         recognitionRef.current = null
+        if (streamRef.current) {
+          try { streamRef.current.getTracks().forEach((track) => track.stop()) } catch {}
+          streamRef.current = null
+          setAudioStream(null)
+        }
         if (event.error === "not-allowed") {
           onError?.("Microphone permission denied. Please allow microphone access in your browser or type manually.")
         } else if (event.error === "no-speech") {
@@ -1382,6 +1662,11 @@ function useVoiceDictation({
         setRecording(false)
         setInterimTranscript("")
         recognitionRef.current = null
+        if (streamRef.current) {
+          try { streamRef.current.getTracks().forEach((track) => track.stop()) } catch {}
+          streamRef.current = null
+          setAudioStream(null)
+        }
       }
 
       recognition.start()
@@ -1453,8 +1738,9 @@ function useVoiceDictation({
 
         recorder.onstop = async () => {
           if (streamRef.current) {
-            streamRef.current.getTracks().forEach((track) => track.stop())
+            try { streamRef.current.getTracks().forEach((track) => track.stop()) } catch {}
             streamRef.current = null
+            setAudioStream(null)
           }
 
           setWhisperProcessing(true)
@@ -1551,12 +1837,52 @@ function useVoiceDictation({
     engine,
     setEngine,
     recording,
+    audioStream,
     interimTranscript,
     whisperSeconds,
     whisperProcessing,
     toggle,
     stop,
   }
+}
+
+export function ProvenanceBadge({
+  engine,
+  size = "md",
+  showTooltip = true,
+}: {
+  engine?: string | null
+  size?: "sm" | "md"
+  showTooltip?: boolean
+}) {
+  const p = getModelProvenance(engine)
+  const isSm = size === "sm"
+  return (
+    <span
+      className="model-provenance-badge"
+      title={showTooltip ? p.detailedDescription : undefined}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: isSm ? "4px" : "6px",
+        padding: isSm ? "2px 8px" : "4px 10px",
+        borderRadius: "999px",
+        background: p.badgeBg,
+        color: p.badgeText,
+        border: `1px solid ${p.badgeBorder}`,
+        fontSize: isSm ? "11.5px" : "12.5px",
+        fontWeight: 600,
+        letterSpacing: "0.2px",
+        lineHeight: 1.3,
+        cursor: "help",
+      }}
+    >
+      <span style={{ fontSize: isSm ? "12px" : "13.5px" }}>
+        {p.isAi ? "🤖" : "⚙️"}
+      </span>
+      <span>{p.displayLabel}</span>
+    </span>
+  )
 }
 
 function ClinicalAutoCorrectModal({
@@ -1568,7 +1894,7 @@ function ClinicalAutoCorrectModal({
   isOpen: boolean
   onClose: () => void
   transcript: string
-  onApply: (newTranscript: string, count: number, avgConfidence: number) => void
+  onApply: (newTranscript: string, count: number, avgConfidence: number, engineLabel?: string) => void
 }) {
   const [result, setResult] = useState<AutocorrectResult>(() =>
     autocorrectOncologyTranscript(transcript)
@@ -1601,7 +1927,8 @@ function ClinicalAutoCorrectModal({
   const previewText = applySelectedCorrections(transcript, changes)
 
   const handleApply = () => {
-    onApply(previewText, selectedCount, result.averageConfidence)
+    const prov = getModelProvenance(result.engine)
+    onApply(previewText, selectedCount, result.averageConfidence, prov.displayLabel)
     onClose()
   }
 
@@ -1614,13 +1941,14 @@ function ClinicalAutoCorrectModal({
       >
         <div className="modal-header">
           <div>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
               <span className="brand-mark" style={{ width: "28px", height: "28px" }}>
                 <Icon name="refresh" size={16} />
               </span>
               <h2 style={{ margin: 0, fontSize: "18px", fontWeight: 700 }}>
                 Clinical Auto-Correct & Oncological Lexicon Review
               </h2>
+              <ProvenanceBadge engine={result.engine} />
             </div>
             <p style={{ margin: "4px 0 0", color: "var(--secondary)", fontSize: "13px" }}>
               CTCAE v5.0 standardization & phonetic speech recognition normalization
@@ -1629,6 +1957,11 @@ function ClinicalAutoCorrectModal({
           <button className="icon-button" onClick={onClose} aria-label="Close modal">
             ✕
           </button>
+        </div>
+
+        <div className="doctor-verify-short-note" style={{ margin: "10px 0", padding: "8px 12px", borderRadius: "8px", background: "color-mix(in srgb, var(--brand-tint) 50%, var(--surface))", border: "1px solid var(--brand-border)", display: "flex", alignItems: "center", gap: "8px", fontSize: "12.5px", color: "var(--brand)" }}>
+          <Icon name="shield" size={14} />
+          <span><strong>Doctor must verify:</strong> Review each suggested correction before applying changes to the clinical transcript.</span>
         </div>
 
         {changes.length === 0 ? (
@@ -1660,6 +1993,13 @@ function ClinicalAutoCorrectModal({
           </div>
         ) : (
           <>
+            <div style={{ margin: "0 0 12px", padding: "8px 12px", background: "var(--surface-subtle, rgba(0,0,0,0.02))", borderRadius: "8px", border: "1px solid var(--border)", fontSize: "12.5px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "6px" }}>
+              <span style={{ color: "var(--secondary)" }}>
+                <strong>Response Source:</strong> {getModelProvenance(result.engine).detailedDescription}
+              </span>
+              <ProvenanceBadge engine={result.engine} size="sm" />
+            </div>
+
             <div className="autocorrect-metrics-banner autocorrect-stats-bar">
               <div className="metric-pill terms-pill">
                 <Icon name="alert" size={16} />
@@ -1856,6 +2196,8 @@ function OcrReviewModal({
     onClose()
   }
 
+  const ocrEngine = initialParsed.engine || (initialParsed.extractedFromText ? "gemini (gemini-2.5-flash)" : "local-vision-fallback")
+
   return (
     <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true">
       <div
@@ -1865,11 +2207,12 @@ function OcrReviewModal({
       >
         <div className="modal-header">
           <div>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
               <span className="brand-mark" style={{ width: "28px", height: "28px" }}>
                 <Icon name="file" size={16} />
               </span>
-              <h3>Multimodal OCR Lab Extraction</h3>
+              <h3 style={{ margin: 0 }}>Multimodal OCR Lab Extraction</h3>
+              <ProvenanceBadge engine={ocrEngine} />
             </div>
             <p style={{ marginTop: "4px" }}>
               Review & verify extracted values from <strong>{fileName}</strong> before syncing to analytics.
@@ -1880,6 +2223,17 @@ function OcrReviewModal({
           </button>
         </div>
 
+        <div style={{ margin: "0 0 12px", padding: "8px 12px", background: "var(--surface-subtle, rgba(0,0,0,0.02))", borderRadius: "8px", border: "1px solid var(--border)", fontSize: "12.5px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "6px" }}>
+          <span style={{ color: "var(--secondary)" }}>
+            <strong>Response Source:</strong> {getModelProvenance(ocrEngine).detailedDescription}
+          </span>
+          <ProvenanceBadge engine={ocrEngine} size="sm" />
+        </div>
+
+        <div className="doctor-verify-short-note" style={{ margin: "10px 0", padding: "8px 12px", borderRadius: "8px", background: "color-mix(in srgb, var(--brand-tint) 50%, var(--surface))", border: "1px solid var(--brand-border)", display: "flex", alignItems: "center", gap: "8px", fontSize: "12.5px", color: "var(--brand)" }}>
+          <Icon name="shield" size={14} />
+          <span><strong>Doctor must verify:</strong> Confirm extracted lab numbers against the original report sheet before committing.</span>
+        </div>
         <div className="autocorrect-stats-bar" style={{ flexWrap: "wrap", gap: "10px" }}>
           <div className="metric-pill confidence-pill">
             <Icon name="shield" size={16} />
@@ -2037,6 +2391,7 @@ function CaptureStep({
     engine: sttEngine,
     setEngine: setSttEngine,
     recording,
+    audioStream,
     interimTranscript,
     whisperSeconds,
     whisperProcessing,
@@ -2048,26 +2403,29 @@ function CaptureStep({
     onDeviceAudio,
   })
 
-  const handleApplyAutoCorrect = (newText: string, count: number, avgConfidence: number) => {
+  const handleApplyAutoCorrect = (newText: string, count: number, avgConfidence: number, engineLabel?: string) => {
     setTranscript(newText)
     if (onToast) {
-      onToast(`✓ Applied auto-correct: ${count} oncology term${count > 1 ? "s" : ""} standardized (${avgConfidence}% confidence)`)
+      const sourceStr = engineLabel ? ` · [${engineLabel}]` : ""
+      onToast(`✓ Applied auto-correct: ${count} oncology term${count > 1 ? "s" : ""} standardized (${avgConfidence}% confidence)${sourceStr}`)
     }
   }
 
   const handleConfirmOcr = (confirmed: ParsedClinicalOcr) => {
     if (!pendingOcr) return
     const fileName = pendingOcr.fileName
-    const ocrReportText = `\n\n[OCR LAB REPORT: ${fileName}]\n• Collection: Today 07:15 AM · Ward 4B Stat Hematology\n• Absolute Neutrophil Count (ANC): ${formatNumber(confirmed.anc)} /µL (CTCAE Grade ${confirmed.grade})\n• Platelets: ${formatNumber(confirmed.platelets)} /µL\n• WBC: ${confirmed.wbc} x10³/µL\n• Hemoglobin: ${confirmed.hemoglobin} g/dL\n• Vitals: Temp ${confirmed.temp}°C\n[High-confidence Vision OCR · Synced to Analytics JSON]`
+    const prov = getModelProvenance(confirmed.engine || (confirmed.extractedFromText ? "gemini (gemini-2.5-flash)" : "local-vision-fallback"))
+    const ocrReportText = `\n\n[OCR LAB REPORT: ${fileName} · ${prov.displayLabel}]\n• Collection: Today 07:15 AM · Ward 4B Stat Hematology\n• Absolute Neutrophil Count (ANC): ${formatNumber(confirmed.anc)} /µL (CTCAE Grade ${confirmed.grade})\n• Platelets: ${formatNumber(confirmed.platelets)} /µL\n• WBC: ${confirmed.wbc} x10³/µL\n• Hemoglobin: ${confirmed.hemoglobin} g/dL\n• Vitals: Temp ${confirmed.temp}°C\n[Model: ${prov.modelName || prov.displayLabel} · Synced to Analytics JSON]`
 
     setTranscript((prev) => prev + ocrReportText)
-    setOcrStatus(`OCR Verified: ANC ${formatNumber(confirmed.anc)} /µL (Grade ${confirmed.grade}) · Platelets ${formatNumber(confirmed.platelets)} /µL`)
+    setOcrStatus(`OCR Verified: ANC ${formatNumber(confirmed.anc)} /µL (Grade ${confirmed.grade}) · [${prov.displayLabel}]`)
 
     if (onOcrExtracted) {
       onOcrExtracted(patient.id, fileName, confirmed)
     }
+
     if (onToast) {
-      onToast(`✓ Full OCR parsed & confirmed from ${fileName} · Stored in analytics JSON`)
+      onToast(`✓ Committed lab report: ANC ${formatNumber(confirmed.anc)} /µL · [${prov.displayLabel}]`)
     }
     setPendingOcr(null)
   }
@@ -2128,7 +2486,7 @@ function CaptureStep({
           placeholder="Speak into microphone or type clinical notes and lab findings manually..."
           aria-label="Round transcript"
         />
-        {recording && <Waveform active />}
+        {recording && <Waveform active stream={audioStream} />}
 
         {/* Live ASR Interim Display (what you talk it display) */}
         {recording && sttEngine === "live-asr" && (
@@ -2175,26 +2533,10 @@ function CaptureStep({
             type="button"
             className="attach-plus-btn"
             onClick={() => fileInputRef.current?.click()}
-            title="Attach scanned lab report or document (Multimodal Vision OCR)"
-            aria-label="Attach clinical document or lab report"
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "6px",
-              padding: "0 12px",
-              height: "36px",
-              minHeight: "36px",
-              borderRadius: "8px",
-              border: "1px solid var(--border)",
-              background: "var(--surface)",
-              color: "var(--text)",
-              fontWeight: 600,
-              fontSize: "13px",
-              cursor: "pointer",
-            }}
+            title="Attach lab scan or document (Multimodal Vision OCR)"
+            aria-label="Attach lab scan or document"
           >
-            <Icon name="plus" size={15} />
-            <span>Attach</span>
+            <Icon name="plus" size={18} />
           </button>
 
           <div className="stt-engine-toggle">
@@ -2334,6 +2676,141 @@ const Sparkline = ({ gray = false }: { gray?: boolean }) => (
   </svg>
 )
 
+function ClinicalGuidelineModal({
+  isOpen,
+  onClose,
+  patient,
+  patientCase,
+  onAcknowledge,
+}: {
+  isOpen: boolean
+  onClose: () => void
+  patient: typeof patients[number]
+  patientCase: typeof patientCases[string]
+  onAcknowledge?: () => void
+}) {
+  if (!isOpen) return null
+
+  const guideline = getDoseModificationRecommendation(patient)
+  const isEmergency = patientCase.alert.grade >= 3
+
+  return (
+    <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true">
+      <div
+        className="modal-card autocorrect-modal-card"
+        onClick={(e) => e.stopPropagation()}
+        style={{ maxWidth: "680px", width: "94vw" }}
+      >
+        <div className="modal-header">
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <span className={`brand-mark ${isEmergency ? "danger" : ""}`} style={{ width: "32px", height: "32px" }}>
+              <Icon name="shield" size={18} />
+            </span>
+            <div>
+              <h2 style={{ margin: 0, fontSize: "18px", fontWeight: 700 }}>
+                Clinical Practice Guideline
+              </h2>
+              <p style={{ margin: "2px 0 0", color: "var(--secondary)", fontSize: "12.5px" }}>
+                {guideline.protocolSource}
+              </p>
+            </div>
+          </div>
+          <button className="icon-button" onClick={onClose} aria-label="Close guideline modal">
+            ✕
+          </button>
+        </div>
+
+        <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: "14px", maxHeight: "68vh", overflowY: "auto" }}>
+          {/* Guideline Alert Mandate Box */}
+          <div
+            style={{
+              padding: "12px 16px",
+              borderRadius: "10px",
+              background: isEmergency ? "var(--g4-bg)" : "var(--brand-tint)",
+              border: `1px solid ${isEmergency ? "var(--g4-border)" : "var(--brand-border)"}`,
+              display: "flex",
+              flexDirection: "column",
+              gap: "6px",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <strong style={{ fontSize: "14px", color: isEmergency ? "var(--g4)" : "var(--brand)" }}>
+                {patientCase.alert.title}
+              </strong>
+              <SeverityBadge grade={patientCase.alert.grade}>
+                Grade {patientCase.alert.grade}
+              </SeverityBadge>
+            </div>
+            <p style={{ margin: 0, fontSize: "13.5px", lineHeight: "1.5", color: "var(--text)" }}>
+              {patientCase.alert.guideline}
+            </p>
+          </div>
+
+          {/* Clinical Protocol Details */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+            <div style={{ padding: "12px 14px", borderRadius: "8px", background: "var(--surface)", border: "1px solid var(--border)" }}>
+              <span style={{ fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--secondary)", display: "block", marginBottom: "4px" }}>
+                Immediate Clinical Action & Recommendation
+              </span>
+              <p style={{ margin: 0, fontSize: "13px", lineHeight: "1.55", color: "var(--text)" }}>
+                {guideline.recommendation}
+              </p>
+            </div>
+
+            <div style={{ padding: "12px 14px", borderRadius: "8px", background: "var(--surface)", border: "1px solid var(--border)" }}>
+              <span style={{ fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--secondary)", display: "block", marginBottom: "4px" }}>
+                Chemotherapy Dose Modification Protocol
+              </span>
+              <p style={{ margin: 0, fontSize: "13px", lineHeight: "1.55", color: "var(--text)" }}>
+                {guideline.doseAdjustment}
+              </p>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "10px" }}>
+              <div style={{ padding: "12px 14px", borderRadius: "8px", background: "var(--surface)", border: "1px solid var(--border)" }}>
+                <span style={{ fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--secondary)", display: "block", marginBottom: "4px" }}>
+                  G-CSF & Supportive Prophylaxis
+                </span>
+                <p style={{ margin: 0, fontSize: "12.5px", lineHeight: "1.5", color: "var(--text)" }}>
+                  {guideline.gcsfProphylaxis}
+                </p>
+              </div>
+
+              <div style={{ padding: "12px 14px", borderRadius: "8px", background: "var(--surface)", border: "1px solid var(--border)" }}>
+                <span style={{ fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--secondary)", display: "block", marginBottom: "4px" }}>
+                  Surveillance & Monitoring Interval
+                </span>
+                <p style={{ margin: 0, fontSize: "12.5px", lineHeight: "1.5", color: "var(--text)" }}>
+                  {guideline.monitoringPlan}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="modal-footer" style={{ borderTop: "1px solid var(--divider)", padding: "14px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ fontSize: "12px", color: "var(--secondary)" }}>
+            Protocol: {patient.regimen || "Standard of Care"}
+          </span>
+          <div style={{ display: "flex", gap: "8px" }}>
+            <Button onClick={onClose}>Close</Button>
+            <Button
+              variant="primary"
+              icon="check"
+              onClick={() => {
+                onAcknowledge?.()
+                onClose()
+              }}
+            >
+              Acknowledge Guideline
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ReviewStep({
   patient,
   patientCase,
@@ -2352,6 +2829,7 @@ function ReviewStep({
   const [checklistItems, setChecklistItems] = useState<string[]>(patientCase.checklist)
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
   const [editText, setEditText] = useState("")
+  const [showGuidelineModal, setShowGuidelineModal] = useState(false)
 
   useEffect(() => {
     setChecklistItems(patientCase.checklist)
@@ -2397,27 +2875,37 @@ function ReviewStep({
         }`}
         aria-live="assertive"
       >
-        <div className="alert-heading">
-          <div className={`icon-box ${alertGrade >= 3 ? "danger" : ""}`}>
-            <Icon name={alertGrade >= 3 ? "alert" : "check"} />
+        <div className="alert-heading-clean">
+          <div className="alert-heading-main">
+            <div className={`icon-box ${alertGrade >= 3 ? "danger" : ""}`}>
+              <Icon name={alertGrade >= 3 ? "alert" : "check"} />
+            </div>
+            <div className="alert-text-block">
+              <div className="alert-title-row">
+                <h3>{patientCase.alert.title}</h3>
+                <div className="alert-badge-group">
+                  <ProvenanceBadge engine="gemini (gemini-2.5-flash)" size="sm" />
+                  <SeverityBadge grade={alertGrade}>
+                    {alertGrade === 0
+                      ? "Grade 0 · Stable"
+                      : alertGrade === 4
+                        ? "CTCAE Grade 4 · Emergency"
+                        : `CTCAE Grade ${alertGrade} · Severe`}
+                  </SeverityBadge>
+                </div>
+              </div>
+              <p className="alert-subtitle-text">{patientCase.alert.subtitle}</p>
+            </div>
           </div>
-          <div>
-            <h3>{patientCase.alert.title}</h3>
-            <p>{patientCase.alert.subtitle}</p>
-          </div>
-          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", justifyContent: "flex-end", alignItems: "center" }}>
-            {patientCase.alert.neutropeniaGrade && (
-              <span className={`badge badge-grade${patientCase.alert.neutropeniaGrade}`} style={{ fontSize: "12px", padding: "4px 8px", borderRadius: "6px", fontWeight: 600 }}>
-                Neutrophil count decreased: G{patientCase.alert.neutropeniaGrade}
-              </span>
-            )}
-            <SeverityBadge grade={alertGrade}>
-              {alertGrade === 0
-                ? "Grade 0 · Stable"
-                : alertGrade === 4
-                  ? "Febrile neutropenia: criteria met"
-                  : `Grade ${alertGrade} · Severe`}
-            </SeverityBadge>
+
+          <div className="doctor-verification-callout">
+            <div className="verify-badge">
+              <Icon name="shield" size={14} />
+              <span>CLINICIAN VERIFICATION REQUIRED</span>
+            </div>
+            <p>
+              <strong>Doctor must verify before confirming:</strong> This decision support alert is AI-assisted. The attending oncologist must independently examine the patient and verify temperature readings, absolute neutrophil count nadirs, and clinical symptoms before confirming orders or initiating therapy.
+            </p>
           </div>
         </div>
         <div className="alert-values">
@@ -2440,7 +2928,13 @@ function ReviewStep({
         </div>
         <div className="guideline-line">
           <p>{patientCase.alert.guideline}</p>
-          <button>View guideline</button>
+          <button
+            type="button"
+            onClick={() => setShowGuidelineModal(true)}
+            title="Open clinical guideline protocol details"
+          >
+            View guideline
+          </button>
         </div>
       </article>
       <div className="metric-grid">
@@ -2465,9 +2959,12 @@ function ReviewStep({
         <div className="checklist-heading">
           <div>
             <h3>Confirm before signing</h3>
-            <p>Each value requires clinician verification</p>
+            <p style={{ display: "flex", alignItems: "center", gap: "6px", color: "var(--brand)", fontSize: "13px", fontWeight: 500, marginTop: "4px" }}>
+              <Icon name="shield" size={14} />
+              <span>Doctor verification mandatory — verify each finding before attestation</span>
+            </p>
           </div>
-          <strong>{count} of 3 confirmed</strong>
+          <strong>{count} of 3 verified</strong>
         </div>
         {checklistItems.map((item, index) => (
           <div className="check-row" key={index}>
@@ -2537,11 +3034,12 @@ function ReviewStep({
             )}
           </div>
         ))}
-        <div style={{ marginTop: "16px", padding: "10px 14px", borderRadius: "10px", background: "rgba(0,102,102,0.06)", border: "1px solid var(--brand-border)", display: "flex", alignItems: "center", gap: "10px", fontSize: "13px", color: "var(--brand)" }}>
-          <Icon name="shield" size={16} />
-          <span>
-            <strong>Clinical Safety Verification:</strong> Evaluated via Gemini 2.5 Flash Fallback Cascade (with offline deterministic rules) · CTCAE v5.0 Active · Clinician verification required.
-          </span>
+        <div style={{ marginTop: "12px", padding: "8px 14px", borderRadius: "8px", background: "var(--subtle)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px", fontSize: "12px", color: "var(--secondary)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <Icon name="shield" size={14} />
+            <span>Note: Synthesized via Gemini 2.5 Flash (CTCAE v5.0 calibrated)</span>
+          </div>
+          <ProvenanceBadge engine="gemini (gemini-2.5-flash)" size="sm" />
         </div>
       </article>
       <div className="step-action">
@@ -2549,6 +3047,16 @@ function ReviewStep({
           Continue to sign
         </Button>
       </div>
+
+      <ClinicalGuidelineModal
+        isOpen={showGuidelineModal}
+        onClose={() => setShowGuidelineModal(false)}
+        patient={patient}
+        patientCase={patientCase}
+        onAcknowledge={() => {
+          if (onToast) onToast(`✓ Acknowledged clinical guideline: ${patientCase.alert.title}`)
+        }}
+      />
     </section>
   )
 }
@@ -2595,9 +3103,12 @@ function SignStep({
         )}
       </div>
       <article className="panel soap-note">
-        <div className="soap-header" style={{ padding: "16px 20px", borderBottom: "1px solid var(--divider)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div className="soap-header" style={{ padding: "16px 20px", borderBottom: "1px solid var(--divider)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" }}>
           <div>
-            <strong>Inpatient Oncology Round Note</strong>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+              <strong>Inpatient Oncology Round Note</strong>
+              <ProvenanceBadge engine="gemini (gemini-2.5-flash)" size="sm" />
+            </div>
             <small className="numeric" style={{ display: "block", color: "var(--secondary)" }}>
               {patient.name} · {patient.mrn} · Bed {patient.bed} · {patient.regimen}
             </small>
@@ -2619,6 +3130,10 @@ function SignStep({
           </div>
         ))}
       </article>
+      <div className="doctor-verify-short-note" style={{ margin: "16px 0", padding: "10px 14px", borderRadius: "8px", background: "color-mix(in srgb, var(--brand-tint) 50%, var(--surface))", border: "1px solid var(--brand-border)", display: "flex", alignItems: "center", gap: "10px", fontSize: "13px", color: "var(--brand)" }}>
+        <Icon name="stethoscope" size={16} />
+        <span><strong>Doctor must verify:</strong> The attending physician must review all SOAP note sections and verify treatment orders before final EMR attestation.</span>
+      </div>
       {!allConfirmed && (
         <p className="sign-hint">
           <Icon name="shield" size={20} />
@@ -3811,6 +4326,7 @@ function MobileCompanion({
     engine: sttEngine,
     setEngine: setSttEngine,
     recording,
+    audioStream,
     interimTranscript,
     whisperSeconds,
     whisperProcessing,
@@ -3821,21 +4337,23 @@ function MobileCompanion({
     clinicalAutoCorrect: true,
   })
 
-  const handleApplyAutoCorrect = (newText: string, count: number, avgConfidence: number) => {
+  const handleApplyAutoCorrect = (newText: string, count: number, avgConfidence: number, engineLabel?: string) => {
     setTranscript(newText)
     if (onToast) {
-      onToast(`✓ Auto-corrected ${count} oncology term${count > 1 ? "s" : ""} (${avgConfidence}% confidence)`)
+      const sourceStr = engineLabel ? ` · [${engineLabel}]` : ""
+      onToast(`✓ Auto-corrected ${count} oncology term${count > 1 ? "s" : ""} (${avgConfidence}% confidence)${sourceStr}`)
     }
   }
 
-    const handleConfirmOcr = (confirmed: ParsedClinicalOcr) => {
+  const handleConfirmOcr = (confirmed: ParsedClinicalOcr) => {
     if (!pendingOcr) return
     const fileName = pendingOcr.fileName
-    const ocrSnippet = `\n[BEDSIDE OCR SCAN: ${fileName}]\n• ANC: ${formatNumber(confirmed.anc)} /µL (Grade ${confirmed.grade}) · Plt: ${formatNumber(confirmed.platelets)} /µL\n• High Confidence OCR · Synced to Analytics JSON`
+    const prov = getModelProvenance(confirmed.engine || (confirmed.extractedFromText ? "gemini (gemini-2.5-flash)" : "local-vision-fallback"))
+    const ocrSnippet = `\n[BEDSIDE OCR SCAN: ${fileName} · ${prov.displayLabel}]\n• ANC: ${formatNumber(confirmed.anc)} /µL (Grade ${confirmed.grade}) · Plt: ${formatNumber(confirmed.platelets)} /µL\n• Model: ${prov.modelName || prov.displayLabel} · Synced to Analytics JSON`
     setTranscript((prev) => prev + ocrSnippet)
     setCaptured(true)
     if (onOcrExtracted) onOcrExtracted(patient.id, fileName, confirmed)
-    if (onToast) onToast(`Bedside lab sheet OCR verified & stored in analytics JSON`)
+    if (onToast) onToast(`Bedside lab sheet OCR verified [${prov.displayLabel}] & stored in analytics JSON`)
     setPendingOcr(null)
   }
 
@@ -3906,7 +4424,7 @@ const handleMobileScan = (e: React.ChangeEvent<HTMLInputElement>) => {
           <span>Change (Tap)</span>
         </button>
 
-        <div className="mobile-engine-chips" style={{ display: "flex", justifyContent: "center", gap: "8px", margin: "10px 0" }}>
+        <div className="mobile-engine-chips" style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "8px", margin: "10px 0", flexWrap: "wrap" }}>
           <button
             className={`engine-chip ${sttEngine === "live-asr" ? "active" : ""}`}
             onClick={() => { if (!recording) setSttEngine("live-asr") }}
@@ -3935,7 +4453,7 @@ const handleMobileScan = (e: React.ChangeEvent<HTMLInputElement>) => {
           <h2>{recording ? (sttEngine === "whisper" ? `Listening to Whisper (${whisperSeconds}s)…` : "Listening to microphone…") : `Tap to dictate (${sttEngine === "whisper" ? "Whisper" : "Live ASR"})`}</h2>
           <p>Audio stays on this device · Type or edit note anytime</p>
         </div>
-        <Waveform active={recording} />
+        <Waveform active={recording} stream={audioStream} />
 
         {/* Live ASR Interim Stream on Mobile */}
         {recording && sttEngine === "live-asr" && (
@@ -4015,6 +4533,10 @@ const handleMobileScan = (e: React.ChangeEvent<HTMLInputElement>) => {
             </>
           )}
         </button>
+        <div style={{ margin: "10px 0 4px", padding: "8px 12px", borderRadius: "8px", background: "color-mix(in srgb, var(--brand-tint) 50%, var(--surface))", border: "1px solid var(--brand-border)", display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", color: "var(--brand)" }}>
+          <Icon name="shield" size={13} />
+          <span><strong>Doctor must verify:</strong> Review bedside transcript and patient bed before syncing to workstation.</span>
+        </div>
         <div className="phone-action">
           <Button
             variant="primary"
@@ -4426,6 +4948,62 @@ function Analytics({
 
   const doseRec = getDoseModificationRecommendation(patient, patientAnalytics.rounds)
 
+  const [aiInsight, setAiInsight] = useState<AiAnalyticsInsight | null>(null)
+  const [aiLoading, setAiLoading] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    const loadAiInsight = async () => {
+      setAiLoading(true)
+      try {
+        const res = await roundsApi.generateAiAnalytics({
+          patient_id: patient.id,
+          patient_name: patient.name,
+          diagnosis: patient.diagnosis,
+          regimen: patient.regimen,
+          cycle: patient.cycle,
+          baseline_anc: patient.baselineAnc,
+          rounds: patientAnalytics.rounds,
+        })
+        if (!cancelled) setAiInsight(res)
+      } catch {
+        if (!cancelled) {
+          setAiInsight(generateLocalClinicalAnalyticsInsight(patient, patientAnalytics.rounds))
+        }
+      } finally {
+        if (!cancelled) setAiLoading(false)
+      }
+    }
+    loadAiInsight()
+    return () => {
+      cancelled = true
+    }
+  }, [patient.id, patientAnalytics.rounds])
+
+  const handleRefreshAi = async () => {
+    setAiLoading(true)
+    try {
+      const res = await roundsApi.generateAiAnalytics({
+        patient_id: patient.id,
+        patient_name: patient.name,
+        diagnosis: patient.diagnosis,
+        regimen: patient.regimen,
+        cycle: patient.cycle,
+        baseline_anc: patient.baselineAnc,
+        rounds: patientAnalytics.rounds,
+        force_refresh: true,
+      })
+      setAiInsight(res)
+      if (onToast) onToast(`AI Analytics refreshed via ${res.engine}`, "success")
+    } catch {
+      const local = generateLocalClinicalAnalyticsInsight(patient, patientAnalytics.rounds)
+      setAiInsight(local)
+      if (onToast) onToast("AI Analytics synchronized via precision fallback engine", "info")
+    } finally {
+      setAiLoading(false)
+    }
+  }
+
   const sortedRounds = useMemo(() => {
     const list = patientAnalytics.rounds || []
     return [...list].sort((a, b) => {
@@ -4612,6 +5190,213 @@ function Analytics({
           </article>
         ))}
       </div>
+
+      {/* AI Longitudinal Clinical Analytics & Trajectory Insights */}
+      <section className="analytics-section ai-analytics-section">
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "16px", marginBottom: "16px" }}>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <span className="brand-mark" style={{ width: "26px", height: "26px", borderRadius: "6px" }}>
+                <Icon name="activity" size={15} />
+              </span>
+              <h2 style={{ margin: 0, fontSize: "18px", lineHeight: "28px", fontWeight: 600 }}>AI Longitudinal Clinical Analytics & Recovery Prognosis</h2>
+            </div>
+            <p style={{ margin: "4px 0 0", color: "var(--secondary)", fontSize: "13px", lineHeight: "20px" }}>
+              Deep multi-model trajectory modeling (Gemini 2.5 Flash Cascade with CTCAE v5.0 deterministic fallback).
+            </p>
+          </div>
+          <Button
+            icon="refresh"
+            onClick={handleRefreshAi}
+            disabled={aiLoading}
+            title="Re-analyze clinical trajectory with AI"
+            className="compact-button"
+            style={{ flexShrink: 0, whiteSpace: "nowrap" }}
+          >
+            {aiLoading ? "Analyzing..." : "Re-analyze"}
+          </Button>
+        </div>
+
+        {aiLoading && !aiInsight ? (
+          <div className="empty-banner" style={{ minHeight: "140px" }}>
+            <div className="empty-illustration">
+              <Icon name="refresh" />
+            </div>
+            <div>
+              <strong>Synthesizing Longitudinal Trajectory...</strong>
+              <p>Evaluating cell line kinetics, CTCAE v5.0 nadir recovery intervals, and protocol guidelines.</p>
+            </div>
+          </div>
+        ) : aiInsight ? (
+          <div
+            className={`ai-insight-card risk-${aiInsight.risk_level.toLowerCase()}`}
+            style={{
+              background: "var(--surface)",
+              border: "1px solid var(--border)",
+              borderRadius: "14px",
+              padding: "20px 22px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "16px",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+            }}
+          >
+            {/* Executive summary */}
+            <div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px", flexWrap: "wrap", gap: "8px" }}>
+                <span style={{ fontSize: "12px", textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 700, color: "var(--secondary)" }}>
+                  Executive Clinical Trajectory & Recovery Prognosis
+                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <ProvenanceBadge engine={aiInsight.engine} />
+                  <span
+                    className={`status-badge ${
+                      aiInsight.risk_level === "Critical"
+                        ? "danger"
+                        : aiInsight.risk_level === "High"
+                        ? "warning"
+                        : aiInsight.risk_level === "Moderate"
+                        ? "warning"
+                        : "success"
+                    }`}
+                  >
+                    {aiInsight.risk_level} Risk · {aiInsight.confidence_score}% Confidence
+                  </span>
+                </div>
+              </div>
+              <p style={{ margin: 0, fontSize: "14.5px", lineHeight: "1.65", color: "var(--text)" }}>
+                {aiInsight.executive_summary}
+              </p>
+            </div>
+
+            {/* Structured Insights Grid */}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+                gap: "14px",
+                borderTop: "1px solid var(--border)",
+                paddingTop: "14px",
+              }}
+            >
+              <div
+                style={{
+                  padding: "14px",
+                  borderRadius: "10px",
+                  background: "var(--surface-subtle, rgba(0,0,0,0.02))",
+                  border: "1px solid var(--border-light, rgba(0,0,0,0.06))",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
+                  <Icon name="activity" size={15} />
+                  <strong style={{ fontSize: "13px" }}>Hematologic Kinetics & Nadir Profile</strong>
+                </div>
+                <p style={{ margin: 0, fontSize: "13px", lineHeight: "1.55", color: "var(--text)" }}>
+                  {aiInsight.nadir_and_kinetics}
+                </p>
+              </div>
+
+              <div
+                style={{
+                  padding: "14px",
+                  borderRadius: "10px",
+                  background: "var(--surface-subtle, rgba(0,0,0,0.02))",
+                  border: "1px solid var(--border-light, rgba(0,0,0,0.06))",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
+                  <Icon name="alert" size={15} />
+                  <strong style={{ fontSize: "13px" }}>CTCAE v5.0 Toxicity & Complications Risk</strong>
+                </div>
+                <p style={{ margin: 0, fontSize: "13px", lineHeight: "1.55", color: "var(--text)" }}>
+                  {aiInsight.toxicity_stratification}
+                </p>
+              </div>
+
+              <div
+                style={{
+                  padding: "14px",
+                  borderRadius: "10px",
+                  background: "var(--surface-subtle, rgba(0,0,0,0.02))",
+                  border: "1px solid var(--border-light, rgba(0,0,0,0.06))",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
+                  <Icon name="shield" size={15} />
+                  <strong style={{ fontSize: "13px" }}>Protocol Dose Modification & Supportive Care</strong>
+                </div>
+                <p style={{ margin: 0, fontSize: "13px", lineHeight: "1.55", color: "var(--text)" }}>
+                  {aiInsight.dose_and_cycle_guidance}
+                </p>
+              </div>
+            </div>
+
+            {/* Surveillance Milestones Checklist */}
+            {aiInsight.surveillance_milestones && aiInsight.surveillance_milestones.length > 0 && (
+              <div
+                style={{
+                  borderTop: "1px solid var(--border)",
+                  paddingTop: "12px",
+                }}
+              >
+                <strong style={{ fontSize: "12.5px", color: "var(--secondary)", textTransform: "uppercase", letterSpacing: "0.4px" }}>
+                  Pre-Infusion Surveillance Milestones & Checklist
+                </strong>
+                <ul
+                  style={{
+                    margin: "8px 0 0",
+                    paddingLeft: "0",
+                    listStyle: "none",
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+                    gap: "8px",
+                  }}
+                >
+                  {aiInsight.surveillance_milestones.map((m, idx) => (
+                    <li
+                      key={idx}
+                      style={{
+                        display: "flex",
+                        alignItems: "flex-start",
+                        gap: "8px",
+                        fontSize: "13px",
+                        lineHeight: "1.45",
+                      }}
+                    >
+                      <span style={{ color: "var(--brand)", marginTop: "2px" }}>✓</span>
+                      <span>{m}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <div className="doctor-verify-short-note" style={{ margin: "10px 0", padding: "8px 12px", borderRadius: "8px", background: "color-mix(in srgb, var(--brand-tint) 50%, var(--surface))", border: "1px solid var(--brand-border)", display: "flex", alignItems: "center", gap: "8px", fontSize: "12.5px", color: "var(--brand)" }}>
+              <Icon name="stethoscope" size={14} />
+              <span><strong>Doctor must verify:</strong> Protocol dose recommendations are assistive decision support. Attending physician must independently assess patient organ function before adjusting chemotherapy dosages.</span>
+            </div>
+            {/* Response Attribution & Model Transparency - Short Notice */}
+            <div
+              style={{
+                borderTop: "1px solid var(--border)",
+                paddingTop: "12px",
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                fontSize: "12px",
+                color: "var(--secondary)",
+              }}
+            >
+              <Icon name="shield" size={14} />
+              <span>
+                Note: {aiInsight.engine?.includes("fallback") || aiInsight.engine?.includes("deterministic") || aiInsight.engine?.includes("offline")
+                  ? "Generated via Deterministic Clinical Rule Engine (CTCAE v5.0)"
+                  : "Generated via Gemini 2.5 Flash (CTCAE v5.0 calibrated)"}
+              </span>
+            </div>
+          </div>
+        ) : null}
+      </section>
       <section className="analytics-section">
         <div className="section-head">
           <div>
@@ -4765,86 +5550,69 @@ function Analytics({
 
 function ProductMockup() {
   return (
-    <div className="product-scene">
-      <div className="laptop-frame">
-        <div className="mock-top">
-          <span className="brand-mark">
-            <Icon name="stethoscope" />
+    <div className="product-scene care-artwork">
+      <div className="care-orbit" aria-hidden="true">
+        <i />
+        <i />
+        <i />
+      </div>
+
+      <figure className="care-photo">
+        <img
+          src="/rounds-bedside.jpg"
+          alt="Oncologist speaking with a patient during a hospital bedside round"
+        />
+        <span className="care-photo-tint" />
+
+        <figcaption>
+          <Icon name="stethoscope" />
+          <span>
+            <b>The round stays human.</b>
+            <small>The paperwork moves quietly around it.</small>
           </span>
-          <b>RoundsAI</b>
-          <span>Station</span>
-          <i />
-        </div>
-        <div className="mock-body">
-          <aside>
-            <b>Ward census</b>
-            {patients.map((patient, index) => (
-              <div className={index === 0 ? "active" : ""} key={patient.id}>
-                <span className="patient-avatar">{patient.initials}</span>
-                <p>
-                  {patient.name}
-                  <small>
-                    Bed {patient.bed} · {patient.regimen}
-                  </small>
-                </p>
-              </div>
-            ))}
-          </aside>
-          <main>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span>Bed 12 · David Miller</span>
-              <span style={{ fontSize: "10px", background: "rgba(100, 116, 139, 0.15)", border: "1px solid rgba(100, 116, 139, 0.3)", borderRadius: "4px", padding: "2px 6px", color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 600 }}>Synthetic demo data</span>
-            </div>
-            <h3>Review clinical findings</h3>
-            <div className="mock-alert">
-              <Icon name="alert" />
-              <p>
-                <b>Febrile neutropenia: criteria met</b>
-                <small>ANC &lt; 500 /µL with documented fever &ge; 38.0°C</small>
-              </p>
-              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", justifyContent: "flex-end", alignItems: "center" }}>
-                <span className="badge badge-grade4" style={{ fontSize: "11px", padding: "2px 8px", borderRadius: "4px", fontWeight: 600 }}>
-                  Neutrophil count decreased: G4
-                </span>
-                <SeverityBadge grade={4}>Febrile neutropenia</SeverityBadge>
-              </div>
-            </div>
-            <div className="mock-metrics">
-              {[
-                ["ANC", "420"],
-                ["Platelets", formatNumber(88000)],
-                ["WBC", formatNumber(1800)],
-              ].map((item) => (
-                <div key={item[0]}>
-                  <span>{item[0]}</span>
-                  <b className="numeric">{item[1]}</b>
-                </div>
-              ))}
-            </div>
-          </main>
-        </div>
+        </figcaption>
+      </figure>
+
+      <div className="care-signal care-listen">
+        <span>
+          <Icon name="mic" />
+        </span>
+        <p>
+          <b>Listen</b>
+          <small>Speech stays on device</small>
+        </p>
       </div>
-      <div className="phone-frame">
-        <span>Bed 12 · David Miller</span>
-        <div>
-          <Icon name="mic" size={20} />
-        </div>
-        <b>Tap to dictate</b>
-        <small>On-device speech · Zero 3rd-party audio egress</small>
+
+      <div className="care-signal care-understand">
+        <span>
+          <Icon name="activity" />
+        </span>
+        <p>
+          <b>Understand</b>
+          <small>Evidence comes together</small>
+        </p>
       </div>
-      <div className="scene-chips">
+
+      <div className="care-signal care-decide">
         <span>
-          <Icon name="alert" />
-          Febrile neutropenia flagged
+          <Icon name="shield" />
         </span>
-        <span>
-          <Icon name="zap" />
-          Round synced from bedside
-        </span>
-        <span>
-          <Icon name="check" />
-          Note ready for review
-        </span>
+        <p>
+          <b>Support</b>
+          <small>The clinician decides</small>
+        </p>
+      </div>
+
+      <div className="care-path">
+        <span>Bedside</span>
+        <i>
+          <Icon name="chevron" />
+        </i>
+        <span>Evidence</span>
+        <i>
+          <Icon name="chevron" />
+        </i>
+        <span>Decision</span>
       </div>
     </div>
   )

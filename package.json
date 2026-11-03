@@ -1,0 +1,7 @@
+{
+  "name": "roundsai-monorepo",
+  "private": true,
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

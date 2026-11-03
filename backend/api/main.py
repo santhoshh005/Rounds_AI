@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 import json
 import logging
 import os
+from typing import Optional, Any
 import warnings
 warnings.filterwarnings("ignore", category=PendingDeprecationWarning)
 warnings.filterwarnings("ignore", message=".*allowed_objects.*")
@@ -26,6 +27,7 @@ from backend.models.round import ExtractRoundRequest, ExtractRoundResponse
 from backend.models.patient import Patient, PatientCreate, PatientUpdate
 from backend.models.analytics import PatientAnalyticsResponse, AiAnalyticsInsight
 from backend.services.gemini_analytics import generate_ai_analytics_insight
+from backend.services.ai_fallback import get_candidate_models
 from backend.services.voice_transcriber import (
     transcribe_audio_with_details,
     get_transcription_mode,
@@ -119,7 +121,7 @@ allowed_origins = [o.strip() for o in allowed_origins_raw.split(",") if o.strip(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    allow_origin_regex=r"^https://rounds-ai(-[a-z0-9\-]+)?\.vercel\.app$",
+    allow_origin_regex=r"^https://rounds-?ai(-[a-z0-9\-]+)?\.vercel\.app$",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
@@ -173,9 +175,10 @@ app.add_middleware(ApiKeyAuthMiddleware)
 # ── Startup Model & Pipeline Verification ─────────────────────────────
 @app.on_event("startup")
 def startup_checks():
-    v_model = os.getenv("GEMINI_MODEL_VISION", "gemini-3.5-flash")
-    d_model = os.getenv("GEMINI_MODEL_DRAFT", "gemini-3.5-flash")
-    p_model = os.getenv("GEMINI_MODEL_POLISH", "gemini-3.5-flash-lite")
+    v_models = get_candidate_models("vision")
+    d_models = get_candidate_models("extraction")
+    p_models = get_candidate_models("polish")
+    a_models = get_candidate_models("analytics")
     stt_mode = get_transcription_mode()
     req_auth = os.getenv("REQUIRE_AUTH", "false").lower() in ("true", "1", "yes")
     test_mode_active = os.getenv("TEST_MODE", "false").strip().lower() in ("true", "1", "yes")
@@ -183,13 +186,14 @@ def startup_checks():
     logger.info("==================================================")
     logger.info("       ROUNDSAI CLINICAL BACKEND INITIALIZED      ")
     logger.info("==================================================")
-    logger.info("Vision OCR Model:       %s", v_model)
-    logger.info("Draft / Extract Model:  %s", d_model)
-    logger.info("Grammar Polish Model:   %s", p_model)
-    logger.info("Transcription Mode:     %s (Default: local/zero-egress)", stt_mode)
-    logger.info("Authentication Active:  %s", req_auth)
-    logger.info("Allowed CORS Origins:   %s", allowed_origins)
-    logger.info("CTCAE Standard:         %s", CTCAE_V5_CONFIG["version"])
+    logger.info("Vision OCR Models:       %s", " → ".join(v_models))
+    logger.info("Draft / Extract Models:  %s", " → ".join(d_models))
+    logger.info("Grammar Polish Models:   %s", " → ".join(p_models))
+    logger.info("Analytics AI Models:     %s", " → ".join(a_models))
+    logger.info("Transcription Mode:      %s (Default: local/zero-egress)", stt_mode)
+    logger.info("Authentication Active:   %s", req_auth)
+    logger.info("Allowed CORS Origins:    %s", allowed_origins)
+    logger.info("CTCAE Standard:          %s", CTCAE_V5_CONFIG["version"])
     if test_mode_active:
         logger.warning("==================================================")
         logger.warning("  ⚠  TEST_MODE=true: ALL SUPABASE DB WRITES ARE  ")
@@ -523,8 +527,11 @@ class AiAnalyticsRequest(BaseModel):
     regimen: Optional[str] = None
     cycle: Optional[str] = None
     baseline_anc: Optional[float] = 2000.0
-    rounds: Optional[list[dict]] = None
+    rounds: Optional[list[dict[str, Any]]] = None
     force_refresh: bool = False
+
+
+AiAnalyticsRequest.model_rebuild()
 
 
 @app.post("/api/v1/analytics/ai-insights", response_model=AiAnalyticsInsight)

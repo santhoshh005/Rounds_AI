@@ -21,6 +21,7 @@ export interface AutocorrectResult {
   correctedText: string
   changes: AutocorrectChange[]
   averageConfidence: number
+  engine?: string
 }
 
 type OncologyRule = {
@@ -849,6 +850,7 @@ export function autocorrectOncologyTranscript(text: string): AutocorrectResult {
     correctedText: corrected,
     changes,
     averageConfidence: avgConfidence,
+    engine: "rule_based_oncology (offline deterministic rules)",
   }
 }
 

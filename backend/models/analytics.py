@@ -93,3 +93,13 @@ class PatientAnalyticsResponse(BaseModel):
     ai_insight: Optional[AiAnalyticsInsight] = None
 
 
+LabDataPoint.model_rebuild()
+LabTrajectory.model_rebuild()
+CTCAEToxicity.model_rebuild()
+SafetyAlertSummary.model_rebuild()
+HistoricalRound.model_rebuild()
+GuidelineConcordance.model_rebuild()
+AiAnalyticsInsight.model_rebuild()
+PatientAnalyticsResponse.model_rebuild()
+
+

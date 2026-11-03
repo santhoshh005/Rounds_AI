@@ -12,6 +12,8 @@ import logging
 import os
 import re
 
+from backend.services.ai_fallback import get_candidate_models, is_transient_error
+
 logger = logging.getLogger(__name__)
 
 # Context words indicating clinical/laboratory context
@@ -301,13 +303,8 @@ def correct_clinical_transcript(raw_text: str, use_gemini: bool = True) -> dict:
 
     # Step 2: Gemini contextual medical polish with 4-model fallback cascade
     import time
-    model_name = os.getenv("GEMINI_MODEL_POLISH", "gemini-2.5-flash")
-    fallback_model = os.getenv("GEMINI_MODEL_DRAFT", "gemini-1.5-flash")
-    # 4-model cascading fallback hierarchy: 2.5-flash -> 1.5-flash -> 1.5-pro -> 2.5-pro
-    candidate_models: list[str] = []
-    for m in (model_name, fallback_model, "gemini-1.5-pro", "gemini-2.5-pro"):
-        if m and m not in candidate_models:
-            candidate_models.append(m)
+    candidate_models = get_candidate_models("polish")
+    model_name = candidate_models[0]
 
     try:
         from google import genai

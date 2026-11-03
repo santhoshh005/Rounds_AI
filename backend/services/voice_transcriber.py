@@ -14,6 +14,7 @@ import tempfile
 from typing import Optional
 
 from backend.services.clinical_autocorrect import correct_clinical_transcript
+from backend.services.ai_fallback import get_candidate_models, is_transient_error
 
 logger = logging.getLogger(__name__)
 
@@ -48,8 +49,8 @@ def _transcribe_with_gemini(audio_bytes: bytes, mime_type: str) -> Optional[str]
     if not api_key:
         return None
 
-    model_name = os.getenv("GEMINI_MODEL_DRAFT", "gemini-2.5-flash")
-    candidate_models = list(dict.fromkeys([m for m in (model_name, "gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.5-pro") if m]))
+    candidate_models = get_candidate_models("audio")
+    model_name = candidate_models[0]
 
     try:
         from google import genai
@@ -168,7 +169,12 @@ def transcribe_audio_with_details(audio_bytes: bytes, filename: str = "recording
         engine_name = "faster-whisper-on-device (zero egress)"
     elif mode == "cloud":
         raw_transcript = _transcribe_with_gemini(audio_bytes, mime_type)
-        engine_name = f"gemini-audio ({os.getenv('GEMINI_MODEL_DRAFT', 'gemini-2.5-flash')})"
+        if raw_transcript:
+            engine_name = f"gemini-audio ({os.getenv('GEMINI_MODEL_DRAFT', 'gemini-2.5-flash')})"
+        else:
+            logger.warning("Gemini cloud transcription unavailable or timed out; falling back to local faster-whisper.")
+            raw_transcript = _transcribe_with_faster_whisper(audio_bytes, filename)
+            engine_name = "faster-whisper-on-device (cloud fallback)"
     else:  # hybrid
         raw_transcript = _transcribe_with_gemini(audio_bytes, mime_type)
         if raw_transcript:

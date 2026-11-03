@@ -71,8 +71,8 @@ def request_json(url, method="GET", data=None, headers=None, retries=3):
 def skip_if_gemini_503(status: int, resp_body):
     """Skip Gemini-dependent test with a clear message if Gemini API remains 503 after backoff retries."""
     body_str = str(resp_body).lower()
-    if status in (503, 504) or "503" in body_str or "high demand" in body_str:
-        pytest.skip(f"Gemini API returned 503 UNAVAILABLE after backoff retries: {resp_body}")
+    if status in (503, 504) or any(t in body_str for t in ("503", "high demand", "timed out", "quota", "resource_exhausted")):
+        pytest.skip(f"Gemini API rate limited or unavailable: {resp_body}")
 
 
 
@@ -236,6 +236,7 @@ def test_e2e_note_approval_and_auth_honesty():
         "images": [],
     }
     status, r_extract, _ = request_json(f"{BASE_BACKEND}/api/v1/rounds/extract", method="POST", data=payload)
+    skip_if_gemini_503(status, r_extract)
     assert status == 200
     round_id = r_extract.get("round_id")
 

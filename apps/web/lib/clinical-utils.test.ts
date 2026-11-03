@@ -5,6 +5,7 @@ import {
   getSentinelSeverityTheme,
   analyzeLabTrend,
   formatProvenanceBadge,
+  getModelProvenance,
   extractOncologyTriad,
   formatEmrClipboardNote,
   parseClinicalLabReport,
@@ -15,6 +16,7 @@ import {
   deriveDoctorInitials,
   DEFAULT_CLINICIAN_PROFILE,
   INITIAL_CLINICAL_NOTIFICATIONS,
+  generateLocalClinicalAnalyticsInsight,
 } from "./clinical-utils.ts";
 
 
@@ -123,6 +125,53 @@ describe("Clinical Utilities — TDD Suite", () => {
 
     it("falls back to Clinical Record for unknown or empty string", () => {
       assert.equal(formatProvenanceBadge(null).label, "Clinical Record");
+    });
+  });
+
+  describe("getModelProvenance — AI Model & Fallback Transparency", () => {
+    it("identifies primary Google Gemini AI models and specifies exact model", () => {
+      const p = getModelProvenance("gemini (gemini-2.5-flash)");
+      assert.equal(p.isAi, true);
+      assert.equal(p.isFallback, false);
+      assert.equal(p.modelName, "gemini-2.5-flash");
+      assert.ok(p.displayLabel.includes("Gemini 2.5 Flash"));
+      assert.equal(p.badgeType, "ai-primary");
+    });
+
+    it("identifies cascading fallback AI models and identifies tier and model name", () => {
+      const p2 = getModelProvenance("gemini (gemini-2.0-flash)");
+      assert.equal(p2.isAi, true);
+      assert.equal(p2.isFallback, true);
+      assert.equal(p2.modelName, "gemini-2.0-flash");
+      assert.ok(p2.displayLabel.includes("AI Fallback: Gemini 2.0 Flash"));
+      assert.equal(p2.badgeType, "ai-fallback");
+
+      const p3 = getModelProvenance("gemini (gemini-1.5-flash)");
+      assert.equal(p3.isAi, true);
+      assert.equal(p3.isFallback, true);
+      assert.equal(p3.modelName, "gemini-1.5-flash");
+      assert.ok(p3.displayLabel.includes("Tier 3"));
+    });
+
+    it("identifies deterministic clinical rule engine fallback with zero hallucination", () => {
+      const p = getModelProvenance("deterministic-clinical-rules (high-precision fallback)");
+      assert.equal(p.isAi, false);
+      assert.equal(p.isFallback, true);
+      assert.equal(p.modelName, null);
+      assert.ok(p.displayLabel.includes("Deterministic Clinical Rule Engine"));
+      assert.ok(p.detailedDescription.includes("zero AI hallucination"));
+      assert.equal(p.badgeType, "deterministic-fallback");
+    });
+
+    it("identifies on-device Whisper STT model and browser Live ASR", () => {
+      const pw = getModelProvenance("faster-whisper-on-device (zero egress)");
+      assert.equal(pw.isAi, true);
+      assert.equal(pw.modelName, "whisper-base-int8");
+      assert.ok(pw.displayLabel.includes("On-Device Whisper"));
+
+      const pasr = getModelProvenance("live-asr");
+      assert.equal(pasr.isAi, false);
+      assert.ok(pasr.displayLabel.includes("Browser ASR"));
     });
   });
 
@@ -408,6 +457,28 @@ describe("Clinical Utilities — TDD Suite", () => {
       assert.ok(grade4Notif);
       assert.match(grade4Notif.title, /Grade 4/);
       assert.equal(grade4Notif.read, false);
+    });
+  });
+
+  describe("generateLocalClinicalAnalyticsInsight", () => {
+    it("generates critical risk insight with 20% dose reduction for David Miller (Grade 4)", () => {
+      const p = { id: "104", name: "David Miller", regimen: "mFOLFOX6", cycle: "Cycle 3", baselineAnc: 1400 };
+      const rounds = [{ anc: 420, platelets: 88000, ctcae_grade: 4, date: "24 Oct" }];
+      const res = generateLocalClinicalAnalyticsInsight(p, rounds);
+      assert.equal(res.risk_level, "Critical");
+      assert.match(res.engine, /fallback/);
+      assert.match(res.executive_summary, /420/);
+      assert.match(res.dose_and_cycle_guidance, /20%/);
+      assert.ok(res.surveillance_milestones.length >= 3);
+    });
+
+    it("generates stable low-risk insight for Elena Rostova (Grade 0)", () => {
+      const p = { id: "106", name: "Elena Rostova", regimen: "AC-T", cycle: "Cycle 4", baselineAnc: 1650 };
+      const rounds = [{ anc: 1620, platelets: 215000, ctcae_grade: 0, date: "27 Oct" }];
+      const res = generateLocalClinicalAnalyticsInsight(p, rounds);
+      assert.equal(res.risk_level, "Low");
+      assert.match(res.dose_and_cycle_guidance, /100%/);
+      assert.match(res.toxicity_stratification, /Grade 0/);
     });
   });
 });

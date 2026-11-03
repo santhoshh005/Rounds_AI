@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from backend.models.round import ClinicalExtraction, LabValue, Sex
 from backend.services.local_extractor import extract_clinical_facts as local_extract
+from backend.services.ai_fallback import get_candidate_models, is_transient_error
 
 logger = logging.getLogger(__name__)
 
@@ -60,13 +61,8 @@ def extract_clinical_facts_gemini(text: str) -> ClinicalExtraction:
         return local_extract(text)
 
     import time
-    model_name = os.getenv("GEMINI_MODEL_DRAFT", "gemini-2.5-flash")
-    fallback_model = os.getenv("GEMINI_MODEL_EXTRACT_FALLBACK", "gemini-1.5-flash")
-    # 4-model cascading fallback hierarchy: 2.5-flash -> 1.5-flash -> 1.5-pro -> 2.5-pro
-    candidate_models: list[str] = []
-    for m in (model_name, fallback_model, "gemini-1.5-pro", "gemini-2.5-pro"):
-        if m and m not in candidate_models:
-            candidate_models.append(m)
+    candidate_models = get_candidate_models("extraction")
+    model_name = candidate_models[0]
 
     try:
         from google import genai
@@ -95,7 +91,7 @@ def extract_clinical_facts_gemini(text: str) -> ClinicalExtraction:
                     break
                 except Exception as call_exc:
                     last_exc = call_exc
-                    if _is_transient_503(call_exc) and attempt == 0:
+                    if is_transient_error(call_exc) and attempt == 0:
                         time.sleep(1.0)
                         continue
                     break
