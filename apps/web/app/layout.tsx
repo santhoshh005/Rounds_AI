@@ -6,6 +6,36 @@ export const metadata: Metadata = {
   description: "AI-assisted clinical decision support, bedside rounds capture, and CTCAE v5.0 grading for medical oncology.",
   applicationName: "RoundsAI",
   keywords: ["oncology", "ward rounds", "CTCAE v5.0", "clinical copilot", "febrile neutropenia"],
+  metadataBase: new URL("https://rounds-ai-umber.vercel.app"),
+  alternates: {
+    canonical: "/",
+  },
+  openGraph: {
+    title: "RoundsAI — Inpatient Oncology Ward Copilot",
+    description: "Deterministic CTCAE v5.0 myelosuppression grading, bedside rounds capture, and clinician-attested SOAP documentation.",
+    url: "https://rounds-ai-umber.vercel.app",
+    siteName: "RoundsAI",
+    images: [
+      {
+        url: "/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "RoundsAI — Inpatient Oncology Ward Copilot",
+      },
+    ],
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "RoundsAI — Inpatient Oncology Ward Copilot",
+    description: "Deterministic CTCAE v5.0 myelosuppression grading, bedside rounds capture, and clinician-attested SOAP documentation.",
+    images: ["/og-image.png"],
+  },
+  icons: {
+    icon: "/favicon.ico",
+    apple: "/apple-touch-icon.png",
+  },
 };
 
 export const viewport: Viewport = {

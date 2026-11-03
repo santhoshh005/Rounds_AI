@@ -22,8 +22,8 @@ Inpatient oncology ward rounds represent one of the most cognitively taxing envi
 
 **RoundsAI** is a multimodal clinical intelligence copilot built specifically for the oncology inpatient ward:
 - **Bedside Mobile Companion (`/mobile`)**: Clinicians dictate observations on the move or scan printed lab sheets using their mobile camera.
-- **Privacy-First On-Device Whisper AI**: Voice dictation is transcribed 100% locally on CPU via `faster-whisper` (base int8) or native browser Web Speech API, ensuring **zero audio egress** and **₹0 cloud API billing**.
-- **Specialized Oncology Normalizer**: A clinical phonetic engine corrects 120+ oncology acoustic homophones (*"fall fox"* $\rightarrow$ **mFOLFOX6**, *"anc nine hundred"* $\rightarrow$ **ANC 900 /µL**).
+- **Privacy-Preserving Speech Architecture**: Voice dictation is transcribed via local dedicated server CPU inference (`faster-whisper` base int8) or native browser Web Speech API, with **zero third-party audio egress to commercial LLM APIs** and **₹0 audio API fees**.
+- **Specialized Oncology Normalizer**: A clinical phonetic engine corrects 120+ oncology acoustic homophones (*"fall fox"* $\rightarrow$ **mFOLFOX6**, *"anc nine hundred"* $\rightarrow$ **ANC 900 /µL**), with strict safeguards protecting negation terms (e.g. *"a febrile episode"* is never inverted).
 - **Instant Bedside-to-Desktop Synchronization**: 1-tap transmission immediately triggers a live Server-Sent Events (SSE) notification on the desktop workstation with 1-click encounter loading.
 - **Automated CTCAE v5.0 Toxicity Grading**: Calculates baseline-to-current lab deltas and detects Grade 1–4 myelosuppression.
 - **Comprehensive Grade 0–4 Demo Cases**: Seeded ward census includes complete clinical trajectories representing every CTCAE grade:
@@ -305,23 +305,25 @@ RoundsAI includes a comprehensive, dual-stack test suite ensuring strict clinica
 # Run the complete clinical accuracy and API suite
 pytest
 ```
-- **61 Clinical Accuracy Tests** (`tests/test_clinical_accuracy.py`):
+- **63 Clinical Accuracy Tests** (`tests/test_clinical_accuracy.py`):
   - CTCAE v5.0 myelosuppression grading across boundary conditions (e.g. ANC 499 vs 500 /µL).
   - Acute fever vs. historical/negated fever differentiation (`"no fever"`, `"afebrile"`).
   - 120+ oncology phonetic regex corrections and Gemini polish diff verification guard.
   - Biological plausibility range checks.
+  - Audit regression tests protecting *"a febrile episode"* from negation inversion, spoken Fahrenheit conversion, and chills extraction.
 - **20 API & Live Sync Tests** (`tests/test_api_pytest.py`):
   - CORS header validation across allowed origins.
   - Server-Sent Events (SSE) framing, keepalive, and real-time round broadcast delivery.
   - Unverified clinician attestation fallback headers.
   - Zero-key fallback behavior.
+- **8 Full-System Integration Tests** (`tests/test_full_system.py`)
 
 ### Frontend Test Suite
 ```bash
 cd apps/web
 npm test
 ```
-- **53 Unit Tests** (`apps/web/lib/clinical-utils.test.ts` & `oncology-autocorrect.test.ts`):
+- **57 Unit & Safety Tests** (`apps/web/lib/clinical-utils.test.ts` & `oncology-autocorrect.test.ts`):
   - Executes in **~1.3s** via Node.js native test runner.
   - Verifies CTCAE badge styles, lab trend calculation, source provenance badges, oncology triad extraction, bed occupancy validation, Grade 0–4 dose modification recommendations, toast cleanups, doctor initials, and clinical notification center defaults.
 
@@ -330,10 +332,11 @@ npm test
 ## 🔒 Clinical Safety, Privacy & Accuracy Safeguards
 
 ### 1. Privacy Modes & Audio Egress Controls
-RoundsAI is engineered with a strict privacy-first architecture controlled via `TRANSCRIPTION_MODE`:
-- **`local` (Default — Zero Audio Egress)**: Voice recordings are processed entirely on-device on CPU via `faster-whisper` (int8 quantized) or in-browser Web Speech API. Zero audio bytes leave the clinician's workstation or device firewall, ensuring **₹0 cloud API fees**.
-- **`cloud`**: Utilizes Google Gemini audio processing (`gemini-2.5-flash`) when cloud processing is explicitly authorized by hospital policy.
-- **`hybrid`**: Attempts low-latency cloud transcription with seamless local on-device fallback if network connectivity drops.
+RoundsAI is engineered with a transparent privacy-first architecture controlled via `TRANSCRIPTION_MODE`:
+- **`local` (Default — Zero Third-Party Audio Egress)**: Voice recordings are processed on the dedicated application backend via CPU `faster-whisper` (int8 quantized) or in-browser Web Speech API. Audio bytes are never uploaded or streamed to third-party commercial LLM providers, ensuring **zero third-party audio egress** and **₹0 audio API fees**.
+- **`cloud`**: Utilizes Google Gemini audio processing (`gemini-2.5-flash`) only when cloud processing is explicitly configured and authorized by institutional policy.
+- **`hybrid`**: Attempts low-latency cloud transcription with seamless local fallback if network connectivity drops.
+- **Multimodal Lab OCR Privacy**: Physical lab reports are processed by Google Gemini Vision (`gemini-2.5-flash`) solely when an authorized clinician explicitly captures and submits a lab document. Extracted lab metrics must be human-verified before being committed into the encounter record.
 
 ### 2. Clinical Accuracy & Hallucination Prevention
 - **Zero Invented Clinical Values**: The system never invents or hallucinates clinical metrics. Missing, ambiguous, or out-of-range values are flagged as `needs_confirmation` and surfaced in the interactive **"Confirm Before Signing"** review queue.

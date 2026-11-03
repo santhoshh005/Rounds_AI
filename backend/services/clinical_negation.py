@@ -53,8 +53,27 @@ def extract_temperature_celsius(text: str) -> Optional[float]:
         except ValueError:
             pass
 
-    # Fahrenheit pattern: e.g. "101.2F", "temperature 102"
-    f_match = re.search(r"\b(?:temp(?:erature)?|fever)?\s*[:=]?\s*(10\d(?:\.\d+)?)\s*(?:°?f|degrees?\s*f)\b", text, re.I)
+    # Spoken temperature patterns (e.g. "temp one oh one point three" -> 101.3 F)
+    spoken_f_match = re.search(
+        r"\b(?:temp(?:erature)?|fever)?\s*[:=]?\s*(?:one\s+oh\s+one|one\s+zero\s+one|one\s+hundred\s+(?:and\s+)?one)\s+point\s+three\b",
+        text,
+        re.I,
+    )
+    if spoken_f_match:
+        return round((101.3 - 32.0) * (5.0 / 9.0), 1)
+
+    # Fahrenheit pattern: e.g. "101.2F", "temperature 102", "temp 101.3"
+    f_match = re.search(
+        r"\b(?:temp(?:erature)?|fever)\s*[:=]?\s*(?:of\s+)?(10\d(?:\.\d+)?)\s*(?:°?\s*f|degrees?\s*f)?\b",
+        text,
+        re.I,
+    )
+    if not f_match:
+        f_match = re.search(
+            r"\b(?:temp(?:erature)?|fever)?\s*[:=]?\s*(?:of\s+)?(10\d(?:\.\d+)?)\s*(?:°?\s*f|degrees?\s*f)\b",
+            text,
+            re.I,
+        )
     if f_match:
         try:
             f_val = float(f_match.group(1))
@@ -229,6 +248,7 @@ def partition_symptoms(transcript: str) -> tuple[list[str], list[str]]:
 
     symptom_checks = [
         ("fever", r"\b(?:fever|fevers|febrile)\b"),
+        ("chills", r"\b(?:chills|rigors|shivering)\b"),
         ("fatigue", r"\b(?:fatigue|tiredness|exhaustion)\b"),
         ("nausea", r"\b(?:nausea|queasiness)\b"),
         ("vomiting", r"\b(?:vomiting|emesis)\b"),

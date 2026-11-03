@@ -252,6 +252,7 @@ const patientCases: Record<
       title: string
       subtitle: string
       grade: number
+      neutropeniaGrade?: number
       temp: string
       anc: string
       timer: string
@@ -273,9 +274,10 @@ const patientCases: Record<
     caseLabel: "Case 1: #104 David Miller, ANC 420 + fever 38.4°C → Grade 4 Febrile Neutropenia",
     transcript: `Patient on mFOLFOX6 cycle 3, day 8. Febrile overnight to 38.4°C with chills and fatigue. ANC 420 cells/µL, platelets ${formatNumber(88000)}/µL, WBC ${formatNumber(1800)} cells/µL. Denies cough, dysuria, or focal pain.`,
     alert: {
-      title: "Possible febrile neutropenia",
-      subtitle: "Immediate clinical review recommended",
+      title: "Febrile Neutropenia (Criteria Met)",
+      subtitle: "Neutrophil count decreased: Grade 4 (ANC 420 /µL) with documented fever 38.4°C",
       grade: 4,
+      neutropeniaGrade: 4,
       temp: "38.4°C",
       anc: "420 /µL",
       timer: "58:12",
@@ -418,7 +420,7 @@ const patientCases: Record<
     transcript: `Emily Watson, Bed 20. Cycle 2 Cisplatin and Pemetrexed Day 14. Afebrile at 36.9°C, ECOG Performance Status 0. Reports mild Grade 1 sensory neuropathy in fingertips and mild nausea. Labs show ANC 1,750 cells/µL, Platelets ${formatNumber(175000)}/µL, WBC ${formatNumber(4200)} cells/µL, Hemoglobin 11.8 g/dL.`,
     alert: {
       title: "Mild Myelosuppression & Sensory Neuropathy",
-      subtitle: "Protocol adherence & routine supportive care",
+      subtitle: "CTCAE Grade 1: Mild sensory neuropathy (fingertip paresthesias) + ANC 1,750 /µL below lab LLN (2,000 /µL)",
       grade: 1,
       temp: "36.9°C",
       anc: "1,750 /µL",
@@ -2375,13 +2377,20 @@ function ReviewStep({
             <h3>{patientCase.alert.title}</h3>
             <p>{patientCase.alert.subtitle}</p>
           </div>
-          <SeverityBadge grade={alertGrade}>
-            {alertGrade === 0
-              ? "Grade 0 · Stable"
-              : alertGrade === 4
-                ? "Grade 4 · Life-threatening"
-                : `Grade ${alertGrade} · Severe`}
-          </SeverityBadge>
+          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", justifyContent: "flex-end", alignItems: "center" }}>
+            {patientCase.alert.neutropeniaGrade && (
+              <span className={`badge badge-grade${patientCase.alert.neutropeniaGrade}`} style={{ fontSize: "12px", padding: "4px 8px", borderRadius: "6px", fontWeight: 600 }}>
+                Neutrophil count decreased: G{patientCase.alert.neutropeniaGrade}
+              </span>
+            )}
+            <SeverityBadge grade={alertGrade}>
+              {alertGrade === 0
+                ? "Grade 0 · Stable"
+                : alertGrade === 4
+                  ? "Febrile neutropenia: criteria met"
+                  : `Grade ${alertGrade} · Severe`}
+            </SeverityBadge>
+          </div>
         </div>
         <div className="alert-values">
           <div>
@@ -4653,15 +4662,23 @@ function ProductMockup() {
             ))}
           </aside>
           <main>
-            <span>Bed 12 · David Miller</span>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span>Bed 12 · David Miller</span>
+              <span style={{ fontSize: "10px", background: "rgba(100, 116, 139, 0.15)", border: "1px solid rgba(100, 116, 139, 0.3)", borderRadius: "4px", padding: "2px 6px", color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 600 }}>Synthetic demo data</span>
+            </div>
             <h3>Review clinical findings</h3>
             <div className="mock-alert">
               <Icon name="alert" />
               <p>
-                <b>Possible febrile neutropenia</b>
-                <small>Immediate clinical review recommended</small>
+                <b>Febrile neutropenia: criteria met</b>
+                <small>ANC &lt; 500 /µL with documented fever &ge; 38.0°C</small>
               </p>
-              <SeverityBadge grade={4}>Grade 4</SeverityBadge>
+              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", justifyContent: "flex-end", alignItems: "center" }}>
+                <span className="badge badge-grade4" style={{ fontSize: "11px", padding: "2px 8px", borderRadius: "4px", fontWeight: 600 }}>
+                  Neutrophil count decreased: G4
+                </span>
+                <SeverityBadge grade={4}>Febrile neutropenia</SeverityBadge>
+              </div>
             </div>
             <div className="mock-metrics">
               {[
@@ -4679,12 +4696,12 @@ function ProductMockup() {
         </div>
       </div>
       <div className="phone-frame">
-        <span>Bed 12 · David</span>
+        <span>Bed 12 · David Miller</span>
         <div>
           <Icon name="mic" size={20} />
         </div>
         <b>Tap to dictate</b>
-        <small>Audio stays on device</small>
+        <small>On-device speech · Zero 3rd-party audio egress</small>
       </div>
       <div className="scene-chips">
         <span>
@@ -4728,7 +4745,7 @@ function Landing({
     ],
     [
       "Does audio leave the device?",
-      "No. The prototype's speech workflow is designed for local processing with zero audio upload.",
+      "No third-party audio egress. In-browser speech uses local Web Speech recognition, and our dedicated server pipeline runs a self-hosted faster-whisper model. Raw bedside audio is never sent to third-party commercial LLM providers.",
     ],
     [
       "Which guidelines does it use?",
@@ -4799,7 +4816,7 @@ function Landing({
             </Button>
           </div>
           <small>
-            On-device speech <i /> CTCAE v5.0 <i /> Clinician approves every
+            Local speech processing <i /> CTCAE v5.0 deterministic grading <i /> Clinician approves every
             note
           </small>
         </div>
@@ -4866,11 +4883,16 @@ function Landing({
               <button
                 onClick={() => setOpenFaq(openFaq === index ? -1 : index)}
                 aria-expanded={openFaq === index}
+                aria-controls={`faq-answer-${index}`}
               >
                 <span>{question}</span>
                 <b>{openFaq === index ? "-" : "+"}</b>
               </button>
-              {openFaq === index && <p>{answer}</p>}
+              {openFaq === index && (
+                <p id={`faq-answer-${index}`} role="region">
+                  {answer}
+                </p>
+              )}
             </article>
           ))}
         </div>

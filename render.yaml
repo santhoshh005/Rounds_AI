@@ -4,10 +4,13 @@ services:
     runtime: python
     buildCommand: pip install -r backend/requirements.txt
     startCommand: uvicorn backend.api.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
     envVars:
       - key: PYTHONPATH
         value: .
       - key: GEMINI_API_KEY
         sync: false
       - key: ALLOWED_ORIGINS
-        value: "*"
+        value: "https://rounds-ai-umber.vercel.app,http://localhost:3000"
+      - key: REQUIRE_AUTH
+        value: "false"

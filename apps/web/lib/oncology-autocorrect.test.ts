@@ -90,4 +90,40 @@ describe("Oncology Terms Auto-Correction Engine", () => {
     assert.ok(formatted.includes("comma") === false);
     assert.ok(formatted.includes("\n"));
   });
+
+  describe("Clinical Safety & Negation Safeguards (Audit Regression Suite)", () => {
+    it("safeguards 'a febrile episode' against dangerous 'afebrile' inversion (T4)", () => {
+      const input = "Patient has a febrile episode overnight, ANC four twenty, temp one oh one.";
+      const result = autocorrectOncologyTranscript(input);
+
+      // CRITICAL: Must NEVER invert 'a febrile episode' to 'afebrile episode'
+      assert.ok(
+        !result.correctedText.toLowerCase().includes("afebrile episode"),
+        "CRITICAL BUG: 'a febrile episode' was inverted to 'afebrile episode'"
+      );
+      assert.ok(result.correctedText.toLowerCase().includes("a febrile episode"));
+      assert.ok(result.correctedText.includes("420"));
+      assert.ok(result.correctedText.includes("101°F"));
+    });
+
+    it("does not rewrite 'patient was a febrile' to afebrile", () => {
+      const input = "Patient was a febrile neutropenia risk.";
+      const result = autocorrectOncologyTranscript(input);
+      assert.ok(!result.correctedText.toLowerCase().includes("was afebrile neutropenia risk"));
+    });
+
+    it("preserves 'afebrile since yesterday' and normalizes spoken 'nine hundred'", () => {
+      const input = "No fever, afebrile since yesterday, and see nine hundred.";
+      const result = autocorrectOncologyTranscript(input);
+      assert.ok(result.correctedText.includes("afebrile since yesterday"));
+      assert.ok(result.correctedText.includes("ANC"));
+      assert.ok(result.correctedText.includes("900"));
+    });
+
+    it("normalizes spoken temperature 'temp one oh one point three' to 'temp 101.3°F'", () => {
+      const input = "Patient vitals temp one oh one point three degrees.";
+      const result = autocorrectOncologyTranscript(input);
+      assert.ok(result.correctedText.includes("101.3°F"));
+    });
+  });
 });

@@ -748,13 +748,30 @@ export const ONCOLOGY_RULES: OncologyRule[] = [
     baseConfidence: 98,
     reason: "Standard hematology unit",
   },
+  // ── Clinical Temperature & Spoken Numbers ───────────────────────────
+  {
+    id: "RULE_NUM_TEMP_101_3",
+    pattern: /\b(?:temp(?:erature)?|vitals?\s+temp)?\s*(?:one\s+oh\s+one|one\s+zero\s+one|one\s+hundred\s+(?:and\s+)?one)\s+point\s+three\b/gi,
+    replacement: "temp 101.3°F",
+    category: "Clinical Score / Unit",
+    baseConfidence: 99,
+    reason: "Spoken body temperature conversion",
+  },
+  {
+    id: "RULE_NUM_TEMP_101",
+    pattern: /\b(?:temp(?:erature)?|vitals?\s+temp)?\s*(?:one\s+oh\s+one|one\s+zero\s+one|one\s+hundred\s+(?:and\s+)?one)\b/gi,
+    replacement: "temp 101°F",
+    category: "Clinical Score / Unit",
+    baseConfidence: 98,
+    reason: "Spoken body temperature conversion",
+  },
   {
     id: "RULE_VITAL_AFEBRILE",
-    pattern: /\b(a\s+febrile|not\s+febrile)\b/gi,
+    pattern: /\b(not\s+febrile)\b/gi,
     replacement: "afebrile",
     category: "Clinical Score / Unit",
     baseConfidence: 98,
-    reason: "Standard afebrile vital sign documentation",
+    reason: "Standard afebrile vital sign documentation (never rewrites 'a febrile')",
   },
   {
     id: "RULE_VITAL_FEVER",

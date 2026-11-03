@@ -6,6 +6,9 @@ from backend.services.clinical_autocorrect import (
 from backend.services.clinical_negation import (
     detect_fever_status,
     partition_symptoms_by_negation,
+    evaluate_fever_status,
+    extract_temperature_celsius,
+    partition_symptoms,
 )
 from backend.services.lab_validation import (
     validate_and_normalize_lab,
@@ -846,4 +849,53 @@ def test_rag_evidence_neutral_reference_only_and_matches_fired_alert():
                     "description": f"Text containing {bad_term} in description.",
                 }
             ])
+
+
+# ============================================================================
+# Audit Report Appendix C Regression Tests (T4 & C1 Safeguards)
+# ============================================================================
+
+def test_appendix_c_fever_and_negation_safeguards():
+    """Verify Appendix C regression cases for fever, afebrile, and chills."""
+    # 1. "a febrile episode overnight" -> must NOT be classified as negated fever
+    eval_febrile_ep = evaluate_fever_status("Patient had a febrile episode overnight, temperature 38.5")
+    assert eval_febrile_ep["active_fever"] is True
+    assert eval_febrile_ep["status"] != "negated"
+
+    # 2. "afebrile since yesterday" -> no fever alert
+    eval_afebrile = evaluate_fever_status("Patient has been afebrile since yesterday")
+    assert eval_afebrile["active_fever"] is False
+    assert eval_afebrile["status"] == "negated"
+
+    # 3. "no fever but chills" -> no fever alert, chills recorded in active symptoms
+    eval_no_fever = evaluate_fever_status("Patient has no fever but chills and rigors")
+    assert eval_no_fever["active_fever"] is False
+    assert eval_no_fever["status"] == "negated"
+
+    active, negated = partition_symptoms("Patient has no fever but chills and rigors")
+    assert "chills" in active
+    assert any("fever" in s for s in negated)
+
+    # 4. "fever since yesterday, ANC 420" -> active fever confirmed
+    eval_ongoing_fever = evaluate_fever_status("Patient has fever since yesterday, ANC 420")
+    assert eval_ongoing_fever["active_fever"] is True
+
+
+def test_appendix_c_spoken_fahrenheit_conversion():
+    """Verify Fahrenheit temperature extraction converts accurately to Celsius."""
+    # Spoken words: "temp one oh one point three" -> 101.3 F -> ~38.5 C
+    temp_spoken = extract_temperature_celsius("temp one oh one point three")
+    assert temp_spoken is not None
+    assert abs(temp_spoken - 38.5) < 0.2
+
+    # Numeric Fahrenheit: "temp 101.3" -> 38.5 C
+    temp_numeric = extract_temperature_celsius("temp 101.3")
+    assert temp_numeric is not None
+    assert abs(temp_numeric - 38.5) < 0.2
+
+    # Verify 101.3 F triggers active fever (threshold >= 38.3 C)
+    status = evaluate_fever_status("patient vitals: temp 101.3")
+    assert status["active_fever"] is True
+    assert status["temperature"] is not None
+    assert abs(status["temperature"] - 38.5) < 0.2
 
