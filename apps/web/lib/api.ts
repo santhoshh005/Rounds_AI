@@ -113,6 +113,20 @@ export const roundsApi = {
       notes?: string | null
       engine: string
     }>("/api/v1/vision/lab-ocr", { method: "POST", body: JSON.stringify(image) }),
+  /** Relays a bedside draft to stations subscribed to this patient's SSE stream (no AI, not stored). */
+  bedsideSync: (body: {
+    patient_id: string
+    transcript: string
+    patient_name?: string
+    bed?: string
+    time_str?: string
+    word_count?: number
+    timestamp?: number
+  }) =>
+    request<{ status: string; listeners: number }>("/api/v1/rounds/bedside-sync", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   latest: () => request<ExtractRoundResponse>("/api/v1/rounds/latest"),
   stream: (
     patientId: string,

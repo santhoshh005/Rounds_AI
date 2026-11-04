@@ -59,3 +59,18 @@ def test_sse_manager_lock_is_lazy_and_listeners_are_cleaned_up():
         assert "104" not in manager._listeners
 
     asyncio.run(scenario())
+
+
+def test_bedside_sync_relays_without_ai_or_persistence():
+    from starlette.testclient import TestClient
+
+    from backend.api.main import app
+
+    client = TestClient(app)
+    res = client.post(
+        "/api/v1/rounds/bedside-sync",
+        json={"patient_id": "104", "transcript": "ANC 420. Temp 38.4 C.", "word_count": 5, "timestamp": 1},
+    )
+    assert res.status_code == 202
+    assert res.json()["status"] == "relayed"
+    assert client.post("/api/v1/rounds/bedside-sync", json={"patient_id": ""}).status_code == 422

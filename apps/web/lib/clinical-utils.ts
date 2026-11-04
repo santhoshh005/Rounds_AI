@@ -1029,7 +1029,7 @@ export const INITIAL_CLINICAL_NOTIFICATIONS: ClinicalNotification[] = [
   {
     id: "notif-init-5",
     title: "Hematologic Recovery · Bed 16",
-    message: "Elena Rostova: ANC 1,620/µL verified. Grade 0 stable.",
+    message: "Elena Rostova: ANC 2,150/µL verified. Grade 0 stable.",
     patientId: "106",
     patientName: "Elena Rostova",
     timestamp: 1728980000000,
@@ -1102,78 +1102,126 @@ export function generateLocalClinicalAnalyticsInsight(
     date?: string;
     anc: number;
     platelets?: number;
+    hemoglobin?: number;
     ctcae_grade?: number;
     notes?: string;
   }>
 ): AiAnalyticsInsight {
+  // Rounds are stored newest first. Every statement below is derived from recorded
+  // values only; anything not recorded is reported as such rather than assumed.
   const activeRounds = rounds || [];
-  const baselineAnc = patient.baselineAnc || 2000;
-  const regimen = patient.regimen || "Standard Chemotherapy";
-  const cycle = patient.cycle || "Cycle 1";
+  const baselineAnc = patient.baselineAnc && patient.baselineAnc > 0 ? patient.baselineAnc : null;
+  const regimen = patient.regimen || "the current regimen";
+  const cycle = patient.cycle || "current cycle";
+  const fmt = (v: number) => Math.round(v).toLocaleString("en-US");
+  const measured = (v: unknown, allowZero: boolean): v is number =>
+    typeof v === "number" && Number.isFinite(v) && (allowZero ? v >= 0 : v > 0);
 
-  const ancValues = activeRounds.map((r) => r.anc).filter((v) => typeof v === "number" && v > 0);
-  const pltValues = activeRounds.map((r) => r.platelets).filter((v): v is number => typeof v === "number" && v > 0);
-  const grades = activeRounds.map((r) => r.ctcae_grade ?? 0);
+  const ancSeries = activeRounds.map((r) => r.anc).filter((v): v is number => measured(v, true));
+  const pltSeries = activeRounds.map((r) => r.platelets).filter((v): v is number => measured(v, false));
+  const hgbSeries = activeRounds.map((r) => r.hemoglobin).filter((v): v is number => measured(v, false));
 
-  const lowestAnc = ancValues.length > 0 ? Math.min(...ancValues) : baselineAnc;
-  const lowestPlt = pltValues.length > 0 ? Math.min(...pltValues) : 215000;
-  const worstGrade = grades.length > 0
-    ? Math.max(...grades)
-    : (patient.grade ?? (lowestAnc < 500 ? 4 : lowestAnc < 1000 ? 3 : lowestAnc < 1500 ? 2 : lowestAnc < 2000 ? 1 : 0));
+  const nadirAnc = ancSeries.length ? Math.min(...ancSeries) : null;
+  const latestAnc = ancSeries.length ? ancSeries[0] : null;
+  const lowestPlt = pltSeries.length ? Math.min(...pltSeries) : null;
+  const lowestHgb = hgbSeries.length ? Math.min(...hgbSeries) : null;
 
-  const declinePct = baselineAnc > 0 ? Math.max(0, Math.round(((baselineAnc - lowestAnc) / baselineAnc) * 1000) / 10) : 0;
+  const ancGrade = (v: number | null) => (v === null ? 0 : v < 500 ? 4 : v < 1000 ? 3 : v < 1500 ? 2 : v < 2000 ? 1 : 0);
+  const pltGrade = (v: number | null) => (v === null ? 0 : v < 25000 ? 4 : v < 50000 ? 3 : v < 75000 ? 2 : v < 150000 ? 1 : 0);
+  const hgbGrade = (v: number | null) => (v === null ? 0 : v < 8 ? 3 : v < 10 ? 2 : v < 12 ? 1 : 0);
 
-  let riskLevel: "Low" | "Moderate" | "High" | "Critical" = "Low";
-  if (worstGrade >= 4 || lowestAnc < 500) {
-    riskLevel = "Critical";
-  } else if (worstGrade === 3 || lowestAnc < 1000) {
-    riskLevel = "High";
-  } else if (worstGrade === 2 || lowestAnc < 1500) {
-    riskLevel = "Moderate";
+  const referenceAnc = nadirAnc ?? baselineAnc;
+  const neutropeniaGrade = ancGrade(referenceAnc);
+  const thrombocytopeniaGrade = pltGrade(lowestPlt);
+  const anemiaGrade = hgbGrade(lowestHgb);
+  const recordedGrade = Math.max(0, ...activeRounds.map((r) => (measured(r.ctcae_grade, true) ? r.ctcae_grade : 0)));
+  const worstGrade = Math.max(neutropeniaGrade, thrombocytopeniaGrade, anemiaGrade, recordedGrade);
+
+  const riskLevel: AiAnalyticsInsight["risk_level"] =
+    worstGrade >= 4 ? "Critical" : worstGrade === 3 ? "High" : worstGrade === 2 ? "Moderate" : "Low";
+
+  const declinePct =
+    baselineAnc && nadirAnc !== null ? Math.max(0, Math.round(((baselineAnc - nadirAnc) / baselineAnc) * 1000) / 10) : null;
+  let trend = "";
+  if (latestAnc !== null && nadirAnc !== null && ancSeries.length > 1) {
+    trend =
+      latestAnc === nadirAnc
+        ? "the latest value is the lowest recorded (no recovery documented yet)"
+        : latestAnc >= nadirAnc * 1.1
+          ? `recovering from the nadir (latest ${fmt(latestAnc)} /µL)`
+          : `near the nadir (latest ${fmt(latestAnc)} /µL)`;
   }
 
-  let executiveSummary = "";
-  if (riskLevel === "Critical") {
-    executiveSummary = `Patient #${patient.id} (${patient.name}) on ${regimen} (${cycle}) has developed critical CTCAE Grade 4 myelosuppression. The absolute neutrophil count reached a nadir of ${lowestAnc.toLocaleString()} /µL (${declinePct}% drop from baseline ${baselineAnc.toLocaleString()} /µL). Immediate protective isolation, daily hematology surveillance, and protocol dose modification are indicated.`;
-  } else if (riskLevel === "High") {
-    executiveSummary = `Patient #${patient.id} (${patient.name}) receiving ${regimen} presents with severe CTCAE Grade 3 neutropenia. Current marrow nadir is documented at ${lowestAnc.toLocaleString()} /µL (down ${declinePct}% from baseline ${baselineAnc.toLocaleString()} /µL). Chemotherapy schedule delay and secondary growth factor support are warranted before cycle resumption.`;
-  } else if (riskLevel === "Moderate") {
-    executiveSummary = `Patient #${patient.id} (${patient.name}) receiving ${regimen} exhibits moderate CTCAE Grade 2 myelosuppression. The documented ANC nadir is ${lowestAnc.toLocaleString()} /µL (${declinePct}% decrease from baseline ${baselineAnc.toLocaleString()} /µL). Close surveillance and a repeat pre-cycle CBC diff are required prior to next infusion clearance.`;
-  } else {
-    executiveSummary = `Patient #${patient.id} (${patient.name}) receiving ${regimen} (${cycle}) demonstrates excellent hematologic tolerance. The ANC is sustained at ${lowestAnc.toLocaleString()} /µL (Grade 0/1), verifying robust bone marrow reserve. Cleared for scheduled full-dose chemotherapy continuation with routine outpatient follow-up.`;
-  }
+  const roundsText = `${activeRounds.length} recorded round${activeRounds.length === 1 ? "" : "s"}`;
+  const ancSentence =
+    nadirAnc !== null
+      ? `ANC nadir ${fmt(nadirAnc)} /µL (CTCAE Grade ${neutropeniaGrade}${declinePct !== null ? `, ${declinePct}% below baseline ${fmt(baselineAnc as number)} /µL` : ""})${trend ? `; ${trend}` : ""}.`
+      : baselineAnc
+        ? `No ANC recorded since admission; admission baseline ANC ${fmt(baselineAnc)} /µL (Grade ${neutropeniaGrade}).`
+        : "No ANC values recorded yet.";
+  const pltSentence =
+    lowestPlt !== null
+      ? `Lowest platelets ${fmt(lowestPlt)} /µL (Grade ${thrombocytopeniaGrade}).`
+      : "Platelets not recorded.";
 
-  const nadirAndKinetics = `Marrow suppression profile across ${activeRounds.length || 1} recorded round(s): Baseline ANC ${baselineAnc.toLocaleString()} /µL → Nadir ${lowestAnc.toLocaleString()} /µL (${declinePct}% reduction). Platelet reserve: lowest recorded ${lowestPlt.toLocaleString()} /µL. Kinetics demonstrate expected cytotoxic cell clearance; hematopoietic recovery anticipated within 7–10 days post-infusion.`;
+  const action =
+    riskLevel === "Critical"
+      ? `Grade 4 toxicity recorded: daily CBC with differential, neutropenic precautions and protocol dose-modification review are indicated.`
+      : riskLevel === "High"
+        ? `Grade 3 toxicity recorded: a cycle delay and secondary growth-factor support should be considered before the next infusion.`
+        : riskLevel === "Moderate"
+          ? `Grade 2 toxicity recorded: repeat CBC with differential before clearing the next cycle.`
+          : `No grade ≥ 2 hematologic toxicity recorded; continuation is supported if pre-cycle counts remain adequate.`;
 
-  let toxicityStratification = "";
-  if (worstGrade >= 4) {
-    toxicityStratification = `CTCAE v5.0 Grade 4 Life-threatening Neutropenia (ANC < 500 /µL). High risk for febrile neutropenia, bacteremia, and opportunistic infection. Platelet reserve: ${lowestPlt < 50000 ? "Grade 3/4 thrombocytopenia" : "Preserved hemostatic reserve"}. Absolute temperature screening (≥ 38.0°C) and broad-spectrum IV coverage protocol active.`;
-  } else if (worstGrade === 3) {
-    toxicityStratification = `CTCAE v5.0 Grade 3 Severe Neutropenia (ANC 500–999 /µL). Elevated susceptibility to infectious complications. Platelet reserve: ${lowestPlt.toLocaleString()} /µL. Mandatory daily vital sign monitoring and avoidance of myelosuppressive antipyretics without cultures.`;
-  } else if (worstGrade === 2) {
-    toxicityStratification = `CTCAE v5.0 Grade 2 Moderate Neutropenia (ANC 1,000–1,499 /µL). Mild fatigue or peripheral cold sensitivity consistent with antineoplastic exposure. Infection risk is moderate but patient remains afebrile.`;
-  } else {
-    toxicityStratification = `CTCAE v5.0 Grade 0–1 Stable (ANC ≥ 1,500 /µL). No life-threatening myelosuppression, bleeding diathesis, or active organ toxicities identified.`;
-  }
+  const executiveSummary = `${patient.name} (#${patient.id}) on ${regimen}, ${cycle} — ${roundsText}. ${ancSentence} ${pltSentence} ${action}`;
 
-  const regLower = regimen.toLowerCase();
+  const nadirAndKinetics = [
+    baselineAnc ? `Baseline ANC ${fmt(baselineAnc)} /µL` : "Baseline ANC not recorded",
+    nadirAnc !== null ? `nadir ${fmt(nadirAnc)} /µL${declinePct !== null ? ` (${declinePct}% decline)` : ""}` : "no ANC recorded since admission",
+    latestAnc !== null && ancSeries.length > 1 ? `latest ${fmt(latestAnc)} /µL` : "",
+  ]
+    .filter(Boolean)
+    .join(" → ")
+    .concat(
+      `. Platelets: ${lowestPlt !== null ? `lowest ${fmt(lowestPlt)} /µL` : "not recorded"}. Hemoglobin: ${lowestHgb !== null ? `lowest ${lowestHgb} g/dL` : "not recorded"}. `,
+      "After myelosuppressive chemotherapy the neutrophil nadir typically falls 7–14 days post-infusion with recovery over the following 1–2 weeks; confirm with serial CBCs.",
+    );
+
+  const lineages = [
+    `Neutropenia: Grade ${neutropeniaGrade}${referenceAnc !== null ? ` (ANC ${fmt(referenceAnc)} /µL)` : " (not recorded)"}`,
+    `Thrombocytopenia: Grade ${thrombocytopeniaGrade}${lowestPlt !== null ? ` (${fmt(lowestPlt)} /µL)` : " (not recorded)"}`,
+    `Anemia: Grade ${anemiaGrade}${lowestHgb !== null ? ` (${lowestHgb} g/dL)` : " (not recorded)"}`,
+  ];
+  const riskNote =
+    neutropeniaGrade >= 4
+      ? " ANC < 500 /µL carries a high risk of febrile neutropenia: any temperature ≥ 38.0°C requires immediate evaluation."
+      : neutropeniaGrade === 3
+        ? " ANC 500–999 /µL: elevated infection risk; monitor temperature closely."
+        : thrombocytopeniaGrade >= 3
+          ? " Platelets < 50,000 /µL: bleeding precautions apply."
+          : worstGrade <= 1
+            ? " Stable: no grade ≥ 2 hematologic toxicity recorded."
+            : "";
+  const toxicityStratification = `CTCAE v5.0 worst recorded grades — ${lineages.join("; ")}.${riskNote}`;
+
+  const regLower = (patient.regimen || "").toLowerCase();
   let doseAndCycleGuidance = "";
   if (worstGrade >= 4) {
     if (regLower.includes("folfox") || regLower.includes("oxaliplatin")) {
       doseAndCycleGuidance = "NCCN Colorectal Panel Guideline: Implement 20% dose reduction of Oxaliplatin (to 68 mg/m²) for subsequent cycles. Initiate G-CSF secondary prophylaxis with Filgrastim 300 mcg SC daily (Days 3–7 or until post-nadir recovery).";
     } else {
-      doseAndCycleGuidance = "Protocol Dose Adjustment: 20–25% cytotoxic dose reduction required for next cycle due to Grade 4 nadir. Initiate daily G-CSF growth factor support starting 24–48 hours post-chemotherapy until ANC recovery.";
+      doseAndCycleGuidance = "Protocol Dose Adjustment: 20–25% cytotoxic dose reduction for the next cycle after a Grade 4 nadir. Consider G-CSF support starting 24–48 hours post-chemotherapy until ANC recovery.";
     }
   } else if (worstGrade === 3) {
     if (regLower.includes("r-chop") || regLower.includes("chop")) {
       doseAndCycleGuidance = "NCCN Lymphoma Guideline: Delay initiation of next cycle by 7 days until absolute neutrophil count recovers to ≥ 1,500 /µL. Add secondary G-CSF prophylaxis with Pegfilgrastim 6 mg SC on Day 2 of subsequent cycles.";
     } else {
-      doseAndCycleGuidance = "Protocol Guidance: Hold or delay next infusion by 7 days until ANC ≥ 1,500 /µL and platelets ≥ 100,000 /µL. Prescribe secondary granulocyte colony-stimulating factor (G-CSF) prophylaxis.";
+      doseAndCycleGuidance = "Protocol Guidance: Hold or delay next infusion by 7 days until ANC ≥ 1,500 /µL and platelets ≥ 100,000 /µL. Consider secondary granulocyte colony-stimulating factor (G-CSF) prophylaxis.";
     }
   } else if (worstGrade === 2) {
-    doseAndCycleGuidance = "Protocol Guidance: Continue planned cycle at 100% dose intensity contingent on pre-cycle Day 1 CBC verifying ANC ≥ 1,500 /µL. Reinforce patient hydration and symptom self-monitoring.";
+    doseAndCycleGuidance = "Protocol Guidance: Continue planned cycle at 100% dose intensity contingent on pre-cycle Day 1 CBC verifying ANC ≥ 1,500 /µL and platelets ≥ 100,000 /µL.";
   } else {
-    doseAndCycleGuidance = "Protocol Guidance: Proceed with planned chemotherapy cycle at 100% relative dose intensity. No schedule delay or prophylactic growth factor dose reduction required.";
+    doseAndCycleGuidance = "Protocol Guidance: Proceed with planned chemotherapy cycle at 100% relative dose intensity if pre-cycle counts remain adequate. No schedule delay or dose reduction indicated by recorded counts.";
   }
 
   const surveillanceMilestones = [
@@ -1182,13 +1230,18 @@ export function generateLocalClinicalAnalyticsInsight(
     `Evaluate clinical recovery from acute toxicities (fatigue, GI, mucositis) to Grade ≤ 1 before cycle start`,
     `Verify renal/hepatic clearance markers (creatinine, AST/ALT, total bilirubin) within safe administration parameters`,
   ];
+  if (lowestPlt === null) surveillanceMilestones.unshift("Record a platelet count — none documented this admission");
+
+  // Deterministic rules have no model confidence; report how complete the recorded data is.
+  const lineagesRecorded = [ancSeries.length, pltSeries.length, hgbSeries.length].filter((n) => n > 0).length;
+  const dataCompleteness = Math.round(((lineagesRecorded / 3) * 0.7 + (Math.min(activeRounds.length, 3) / 3) * 0.3) * 100);
 
   return {
     engine: "deterministic-clinical-rules (client fallback)",
     patient_id: patient.id,
     patient_name: patient.name,
     risk_level: riskLevel,
-    confidence_score: 98,
+    confidence_score: dataCompleteness,
     executive_summary: executiveSummary,
     nadir_and_kinetics: nadirAndKinetics,
     toxicity_stratification: toxicityStratification,

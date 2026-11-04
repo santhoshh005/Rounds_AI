@@ -65,7 +65,51 @@ const safeLocalStorage = {
 type Screen = "landing" | "station" | "roster" | "mobile" | "analytics" | "login"
 type Step = 1 | 2 | 3
 
-const patients = [
+/** Recorded once at admission and never edited afterwards; later changes live in round notes. */
+type AdmissionBaseline = {
+  date: string
+  anc: number
+  wbc?: number
+  platelets?: number
+  hemoglobin?: number
+  temperatureC?: number
+  condition?: string
+}
+
+type Patient = {
+  id: string
+  bed: string
+  name: string
+  ageSex: string
+  mrn: string
+  diagnosis: string
+  regimen: string
+  cycle: string
+  baselineAnc: number
+  admission?: AdmissionBaseline
+  ecog: number
+  grade: number
+  initials: string
+}
+
+/** One attested ward round, kept as history so later rounds can refer back to it. */
+export type RoundNote = {
+  id: string
+  roundNumber: number
+  createdAt: string
+  clinician: string
+  transcript: string
+  soap: { s: string; o: string; a: string; p: string }
+  alertTitle: string
+  grade: number
+  labs: { anc: number | null; wbc: number | null; platelets: number | null; hemoglobin: number | null }
+  temperatureC: number | null
+  engine: string
+  /** Pre-loaded demo history, not a round attested in this session. */
+  seeded?: boolean
+}
+
+const patients: Patient[] = [
   {
     id: "104",
     bed: "12",
@@ -75,7 +119,8 @@ const patients = [
     diagnosis: "Colorectal cancer, Stage III",
     regimen: "mFOLFOX6",
     cycle: "Cycle 3 of 6",
-    baselineAnc: 1400,
+    baselineAnc: 2100,
+    admission: { date: "08 Oct 2026", anc: 2100, wbc: 6100, platelets: 220000, hemoglobin: 12.8, temperatureC: 36.8, condition: "Admitted for Cycle 3 mFOLFOX6. ECOG 1, afebrile, eating well." },
     ecog: 1,
     grade: 4,
     initials: "DM",
@@ -89,7 +134,8 @@ const patients = [
     diagnosis: "Diffuse large B-cell lymphoma",
     regimen: "R-CHOP",
     cycle: "Cycle 2",
-    baselineAnc: 2200,
+    baselineAnc: 2400,
+    admission: { date: "01 Oct 2026", anc: 2400, wbc: 6800, platelets: 260000, hemoglobin: 13.0, temperatureC: 36.9, condition: "Admitted for R-CHOP. ECOG 1, no B symptoms, afebrile." },
     ecog: 1,
     grade: 3,
     initials: "SJ",
@@ -104,6 +150,7 @@ const patients = [
     regimen: "FOLFIRINOX",
     cycle: "Cycle 3 of 12",
     baselineAnc: 2800,
+    admission: { date: "20 Sep 2026", anc: 2800, wbc: 6800, platelets: 250000, hemoglobin: 12.0, temperatureC: 36.7, condition: "Admitted for FOLFIRINOX. ECOG 1, mild fatigue, afebrile." },
     ecog: 1,
     grade: 2,
     initials: "RC",
@@ -118,6 +165,7 @@ const patients = [
     regimen: "Cisplatin + Pemetrexed",
     cycle: "Cycle 2 of 4",
     baselineAnc: 3100,
+    admission: { date: "15 Sep 2026", anc: 3100, wbc: 7200, platelets: 265000, hemoglobin: 12.5, temperatureC: 36.6, condition: "Admitted for Cisplatin + Pemetrexed. ECOG 0, afebrile." },
     ecog: 0,
     grade: 1,
     initials: "EW",
@@ -131,7 +179,8 @@ const patients = [
     diagnosis: "Invasive ductal breast carcinoma",
     regimen: "AC-T (doxorubicin/cyclophosphamide)",
     cycle: "Cycle 4",
-    baselineAnc: 1650,
+    baselineAnc: 2500,
+    admission: { date: "12 Sep 2026", anc: 2500, wbc: 5900, platelets: 230000, hemoglobin: 12.6, temperatureC: 36.8, condition: "Admitted for AC-T. ECOG 1, afebrile, no complaints." },
     ecog: 1,
     grade: 0,
     initials: "ER",
@@ -153,6 +202,8 @@ export type RoundRecord = {
   status: "OCR Verified" | "Approved" | "Verified" | "Draft" | "Admission Workup"
   source: string
   notes: string
+  /** Labs not measured this round whose value was carried forward from the previous round. */
+  carried?: ("anc" | "wbc" | "platelets" | "hemoglobin")[]
 }
 
 /**
@@ -162,10 +213,12 @@ export type RoundRecord = {
 function carryForwardMissing(record: RoundRecord, previous?: RoundRecord): RoundRecord {
   const missing = (v: number, zeroIsMissing: boolean) => !Number.isFinite(v) || (zeroIsMissing && v === 0)
   const carried: string[] = []
+  const carriedKeys: NonNullable<RoundRecord["carried"]> = []
   const pick = (key: "anc" | "wbc" | "platelets" | "hemoglobin", label: string, zeroIsMissing: boolean) => {
     if (!missing(record[key], zeroIsMissing)) return record[key]
     if (previous && !missing(previous[key], zeroIsMissing)) {
       carried.push(label)
+      carriedKeys.push(key)
       return previous[key]
     }
     return NaN
@@ -177,11 +230,63 @@ function carryForwardMissing(record: RoundRecord, previous?: RoundRecord): Round
     platelets: pick("platelets", "platelets", true),
     hemoglobin: pick("hemoglobin", "hemoglobin", true),
   }
-  if (carried.length) next.notes = `${record.notes} [Not measured this round; carried forward: ${carried.join(", ")}]`
+  if (carried.length) {
+    next.notes = `${record.notes} [Not measured this round; carried forward: ${carried.join(", ")}]`
+    next.carried = carriedKeys
+  }
   return next
 }
 
 const formatLab = (value: number) => (Number.isFinite(value) ? formatNumber(value) : "—")
+
+const gradeAncValue = (v: number) => (v < 500 ? 4 : v < 1000 ? 3 : v < 1500 ? 2 : v < 2000 ? 1 : 0)
+const gradePlateletValue = (v: number) => (v < 25000 ? 4 : v < 50000 ? 3 : v < 75000 ? 2 : v < 150000 ? 1 : 0)
+const gradeHemoglobinValue = (v: number) => (v < 8 ? 3 : v < 10 ? 2 : v < 12 ? 1 : 0)
+
+/** Analytics KPI tiles derived from the latest recorded round (rounds are newest first). */
+function computeAnalyticsKpis(rounds: RoundRecord[], baselineAnc: number): [string, string, string, string][] {
+  const latest = rounds[0]
+  const has = (v: number | undefined, allowZero = false): v is number =>
+    typeof v === "number" && Number.isFinite(v) && (allowZero ? v >= 0 : v > 0)
+  const grade = (g: number) => (g === 0 ? "Grade 0" : `Grade ${g}`)
+  if (!latest) {
+    return [
+      ["Absolute neutrophils", has(baselineAnc) ? formatNumber(baselineAnc) : "—", "/µL", "Admission baseline"],
+      ["Platelet reserve", "—", "", "Not recorded"],
+      ["Active graded toxicities", "0", "", "No rounds yet"],
+      ["Clinical risk level", "Pending", "", "No rounds yet"],
+    ]
+  }
+  const ancG = has(latest.anc, true) ? gradeAncValue(latest.anc) : 0
+  const pltG = has(latest.platelets) ? gradePlateletValue(latest.platelets) : 0
+  const hgbG = has(latest.hemoglobin) ? gradeHemoglobinValue(latest.hemoglobin) : 0
+  const graded = [
+    ancG && "neutropenia",
+    pltG && "thrombocytopenia",
+    hgbG && "anemia",
+  ].filter(Boolean) as string[]
+  const worst = Math.max(ancG, pltG, hgbG, Number.isFinite(latest.ctcae_grade) ? latest.ctcae_grade : 0)
+  return [
+    ["Absolute neutrophils", has(latest.anc, true) ? formatNumber(latest.anc) : "—", "/µL", has(latest.anc, true) ? grade(ancG) : "Not recorded"],
+    [
+      "Platelet reserve",
+      has(latest.platelets) ? formatNumber(latest.platelets) : "—",
+      "/µL",
+      !has(latest.platelets) ? "Not recorded" : latest.carried?.includes("platelets") ? `${grade(pltG)} · carried forward` : grade(pltG),
+    ],
+    ["Active graded toxicities", String(graded.length), "", graded.length ? graded.join(", ") : "None"],
+    ["Clinical risk level", worst >= 4 ? "Critical" : worst === 3 ? "High" : worst === 2 ? "Moderate" : "Low", "", `Worst grade ${worst} (latest round)`],
+  ]
+}
+
+/** "Cycle 3 of 6" -> { current: 3, total: 6 }; null when the total is not stated. */
+function parseCycleProgress(cycle: string): { current: number; total: number } | null {
+  const m = (cycle || "").match(/cycle\s*(\d+)\s*(?:of|\/)\s*(\d+)/i)
+  if (!m) return null
+  const current = parseInt(m[1], 10)
+  const total = parseInt(m[2], 10)
+  return total > 0 && current >= 0 ? { current: Math.min(current, total), total } : null
+}
 
 export type PatientAnalytics = {
   patient_id: string
@@ -196,10 +301,9 @@ const INITIAL_ANALYTICS: Record<string, PatientAnalytics> = {
     patient_id: "104",
     patient_name: "David Miller",
     rounds: [
-      { id: "r-1", date: "18 Mar 2025", doctor: "Dr. Amrut S Kadam", anc: 420, wbc: 1800, platelets: 88000, hemoglobin: 10.2, ctcae_grade: 4, status: "Approved", source: "Station Assessment", notes: "Febrile neutropenia Grade 4" },
-      { id: "r-2", date: "17 Mar 2025", doctor: "Dr. Wilson", anc: 610, wbc: 2200, platelets: 110000, hemoglobin: 10.8, ctcae_grade: 3, status: "Verified", source: "Bedside Round", notes: "Severe neutropenia" },
-      { id: "r-3", date: "12 Mar 2025", doctor: "Dr. Mehta", anc: 1400, wbc: 4800, platelets: 180000, hemoglobin: 12.0, ctcae_grade: 1, status: "Approved", source: "Cycle 3 Baseline", notes: "Stable baseline" },
-      { id: "r-4", date: "06 Mar 2025", doctor: "Dr. Rao", anc: 2100, wbc: 6100, platelets: 220000, hemoglobin: 12.8, ctcae_grade: 0, status: "Verified", source: "Admission Workup", notes: "Normal reserve" },
+      { id: "r-2", date: "27 Oct 2026", doctor: "Dr. Wilson", anc: 610, wbc: 2200, platelets: 110000, hemoglobin: 10.8, ctcae_grade: 3, status: "Verified", source: "Bedside Round", notes: "Severe neutropenia" },
+      { id: "r-3", date: "22 Oct 2026", doctor: "Dr. Mehta", anc: 1400, wbc: 4800, platelets: 180000, hemoglobin: 12.0, ctcae_grade: 2, status: "Approved", source: "Cycle 3 Baseline", notes: "Cycle 3 pre-infusion baseline" },
+      { id: "r-4", date: "08 Oct 2026", doctor: "Dr. Rao", anc: 2100, wbc: 6100, platelets: 220000, hemoglobin: 12.8, ctcae_grade: 0, status: "Verified", source: "Admission Workup", notes: "Normal reserve" },
     ],
     kpis: [
       ["Absolute neutrophils", "420", "/µL", "Grade 4"],
@@ -208,19 +312,18 @@ const INITIAL_ANALYTICS: Record<string, PatientAnalytics> = {
       ["Clinical risk level", "High", "", "Febrile neutropenia"],
     ],
     trajectory: [
-      { label: "Cycle 1", date: "06 Mar", value: 2100, grade: 0 },
-      { label: "Cycle 2", date: "12 Mar", value: 1400, grade: 1 },
-      { label: "Cycle 3 D5", date: "17 Mar", value: 610, grade: 3 },
-      { label: "Cycle 3 Nadir", date: "18 Mar", value: 420, grade: 4 },
+      { label: "Admission", date: "08 Oct", value: 2100, grade: 0 },
+      { label: "Cycle 3 D1", date: "22 Oct", value: 1400, grade: 2 },
+      { label: "Cycle 3 D7", date: "27 Oct", value: 610, grade: 3 },
+      { label: "Cycle 3 D8", date: "28 Oct", value: 420, grade: 4 },
     ],
   },
   "105": {
     patient_id: "105",
     patient_name: "Sarah Jenkins",
     rounds: [
-      { id: "r-105-3", date: "24 Oct 2026", doctor: "Dr. Amrut S Kadam", anc: 750, wbc: 2400, platelets: 110000, hemoglobin: 11.4, ctcae_grade: 3, status: "Approved", source: "Bedside Round", notes: "R-CHOP C2D10 neutropenia" },
       { id: "r-105-2", date: "14 Oct 2026", doctor: "Dr. Mehta", anc: 2200, wbc: 6500, platelets: 240000, hemoglobin: 12.5, ctcae_grade: 0, status: "Verified", source: "Cycle 2 Day 1", notes: "Baseline CBC" },
-      { id: "r-105-1", date: "10 Oct 2026", doctor: "Dr. Rao", anc: 1100, wbc: 4100, platelets: 190000, hemoglobin: 12.2, ctcae_grade: 1, status: "Approved", source: "Cycle 1 Nadir", notes: "Mild myelosuppression" },
+      { id: "r-105-1", date: "10 Oct 2026", doctor: "Dr. Rao", anc: 1100, wbc: 4100, platelets: 190000, hemoglobin: 12.2, ctcae_grade: 2, status: "Approved", source: "Cycle 1 Nadir", notes: "Mild myelosuppression" },
       { id: "r-105-0", date: "01 Oct 2026", doctor: "Dr. Wilson", anc: 2400, wbc: 6800, platelets: 260000, hemoglobin: 13.0, ctcae_grade: 0, status: "Verified", source: "Cycle 1 Day 1", notes: "Pre-treatment baseline" },
     ],
     kpis: [
@@ -231,7 +334,7 @@ const INITIAL_ANALYTICS: Record<string, PatientAnalytics> = {
     ],
     trajectory: [
       { label: "Cycle 1 D1", date: "01 Oct", value: 2400, grade: 0 },
-      { label: "Cycle 1 Nadir", date: "10 Oct", value: 1100, grade: 1 },
+      { label: "Cycle 1 Nadir", date: "10 Oct", value: 1100, grade: 2 },
       { label: "Cycle 2 D1", date: "14 Oct", value: 2200, grade: 0 },
       { label: "Cycle 2 D10", date: "24 Oct", value: 750, grade: 3 },
     ],
@@ -240,29 +343,27 @@ const INITIAL_ANALYTICS: Record<string, PatientAnalytics> = {
     patient_id: "106",
     patient_name: "Elena Rostova",
     rounds: [
-      { id: "r-106-3", date: "29 Oct 2026", doctor: "Dr. Amrut S Kadam", anc: 1620, wbc: 5400, platelets: 215000, hemoglobin: 12.1, ctcae_grade: 0, status: "Approved", source: "Station Assessment", notes: "Cycle 4 Day 14 follow-up. Tolerating well, afebrile." },
-      { id: "r-106-2", date: "15 Oct 2026", doctor: "Dr. Amrut S Kadam", anc: 1650, wbc: 5800, platelets: 220000, hemoglobin: 12.3, ctcae_grade: 0, status: "Verified", source: "Cycle 4 Day 1", notes: "Pre-infusion CBC stable" },
-      { id: "r-106-1", date: "01 Oct 2026", doctor: "Dr. Mehta", anc: 1720, wbc: 5600, platelets: 225000, hemoglobin: 12.4, ctcae_grade: 0, status: "Approved", source: "Cycle 3 Day 14", notes: "Good marrow reserve" },
-      { id: "r-106-0", date: "12 Sep 2026", doctor: "Dr. Rao", anc: 1800, wbc: 5900, platelets: 230000, hemoglobin: 12.6, ctcae_grade: 0, status: "Verified", source: "Cycle 2 Day 14", notes: "Normal hematologic recovery" },
+      { id: "r-106-2", date: "15 Oct 2026", doctor: "Dr. Amrut S Kadam", anc: 2300, wbc: 5800, platelets: 220000, hemoglobin: 12.3, ctcae_grade: 0, status: "Verified", source: "Cycle 4 Day 1", notes: "Pre-infusion CBC stable" },
+      { id: "r-106-1", date: "01 Oct 2026", doctor: "Dr. Mehta", anc: 2400, wbc: 5600, platelets: 225000, hemoglobin: 12.4, ctcae_grade: 0, status: "Approved", source: "Cycle 3 Day 14", notes: "Good marrow reserve" },
+      { id: "r-106-0", date: "12 Sep 2026", doctor: "Dr. Rao", anc: 2500, wbc: 5900, platelets: 230000, hemoglobin: 12.6, ctcae_grade: 0, status: "Verified", source: "Cycle 2 Day 14", notes: "Normal hematologic recovery" },
     ],
     kpis: [
-      ["Absolute neutrophils", formatNumber(1620), "/µL", "Grade 0"],
+      ["Absolute neutrophils", formatNumber(2150), "/µL", "Grade 0"],
       ["Platelet reserve", formatNumber(215000), "/µL", "Grade 0"],
       ["Active graded toxicities", "0", "", "Stable"],
       ["Clinical risk level", "Low", "", "Protocol cleared"],
     ],
     trajectory: [
-      { label: "Cycle 2 D14", date: "12 Sep", value: 1800, grade: 0 },
-      { label: "Cycle 3 D14", date: "01 Oct", value: 1720, grade: 0 },
-      { label: "Cycle 4 D1", date: "15 Oct", value: 1650, grade: 0 },
-      { label: "Cycle 4 D14", date: "29 Oct", value: 1620, grade: 0 },
+      { label: "Cycle 2 D14", date: "12 Sep", value: 2500, grade: 0 },
+      { label: "Cycle 3 D14", date: "01 Oct", value: 2400, grade: 0 },
+      { label: "Cycle 4 D1", date: "15 Oct", value: 2300, grade: 0 },
+      { label: "Cycle 4 D14", date: "29 Oct", value: 2150, grade: 0 },
     ],
   },
   "107": {
     patient_id: "107",
     patient_name: "Robert Chen",
     rounds: [
-      { id: "r-107-3", date: "28 Oct 2026", doctor: "Dr. Amrut S Kadam", anc: 1250, wbc: 3200, platelets: 135000, hemoglobin: 10.8, ctcae_grade: 2, status: "Approved", source: "Bedside Round", notes: "FOLFIRINOX C3D11 nadir" },
       { id: "r-107-2", date: "17 Oct 2026", doctor: "Dr. Mehta", anc: 2400, wbc: 6100, platelets: 220000, hemoglobin: 11.5, ctcae_grade: 0, status: "Verified", source: "Cycle 3 Day 1", notes: "Pre-infusion baseline" },
       { id: "r-107-1", date: "03 Oct 2026", doctor: "Dr. Wilson", anc: 1380, wbc: 3600, platelets: 155000, hemoglobin: 11.1, ctcae_grade: 2, status: "Approved", source: "Cycle 2 Nadir", notes: "Moderate nadir" },
       { id: "r-107-0", date: "20 Sep 2026", doctor: "Dr. Rao", anc: 2800, wbc: 6800, platelets: 250000, hemoglobin: 12.0, ctcae_grade: 0, status: "Verified", source: "Cycle 1 Day 1", notes: "Pre-treatment baseline" },
@@ -284,7 +385,6 @@ const INITIAL_ANALYTICS: Record<string, PatientAnalytics> = {
     patient_id: "108",
     patient_name: "Emily Watson",
     rounds: [
-      { id: "r-108-3", date: "27 Oct 2026", doctor: "Dr. Amrut S Kadam", anc: 1750, wbc: 4200, platelets: 175000, hemoglobin: 11.8, ctcae_grade: 1, status: "Approved", source: "Bedside Round", notes: "Cisplatin/Pemetrexed C2D14 mild nadir" },
       { id: "r-108-2", date: "13 Oct 2026", doctor: "Dr. Rao", anc: 2950, wbc: 6500, platelets: 240000, hemoglobin: 12.2, ctcae_grade: 0, status: "Verified", source: "Cycle 2 Day 1", notes: "Pre-infusion CBC" },
       { id: "r-108-1", date: "29 Sep 2026", doctor: "Dr. Mehta", anc: 1850, wbc: 4600, platelets: 190000, hemoglobin: 12.0, ctcae_grade: 1, status: "Approved", source: "Cycle 1 Nadir", notes: "Grade 1 mild myelosuppression" },
       { id: "r-108-0", date: "15 Sep 2026", doctor: "Dr. Wilson", anc: 3100, wbc: 7200, platelets: 265000, hemoglobin: 12.5, ctcae_grade: 0, status: "Verified", source: "Baseline Workup", notes: "Pre-treatment baseline" },
@@ -303,6 +403,79 @@ const INITIAL_ANALYTICS: Record<string, PatientAnalytics> = {
     ],
   },
 }
+
+/**
+ * Demo-only round history: each demo patient's previous recorded round, rendered by
+ * the same analysis engine the Station uses so grades and notes match the analytics.
+ */
+function buildDemoRoundHistory(): Record<string, RoundNote[]> {
+  const history: Record<string, RoundNote[]> = {}
+  for (const patient of patients) {
+    // The scripted case is the current (unattested) round; the latest seeded record is round 1.
+    const record = INITIAL_ANALYTICS[patient.id]?.rounds[0]
+    if (!record) continue
+    const transcript = `${record.source}: ANC ${formatNumber(record.anc)} cells/µL, platelets ${formatNumber(record.platelets)}/µL, WBC ${formatNumber(record.wbc)} cells/µL, Hgb ${record.hemoglobin} g/dL. ${record.notes}.`
+    const result = analyzeTranscriptLocally(transcript)
+    const review = buildReviewCase(patient, result)
+    const created = new Date(`${record.date} 09:00`)
+    history[patient.id] = [
+      {
+        id: `demo-round-${patient.id}-1`,
+        roundNumber: 1,
+        createdAt: Number.isNaN(created.getTime()) ? record.date : created.toISOString(),
+        clinician: record.doctor,
+        transcript,
+        soap: review.soapDraft,
+        alertTitle: review.alert.title,
+        grade: review.alert.grade,
+        labs: result.labs,
+        temperatureC: result.temperatureC,
+        engine: result.engine,
+        seeded: true,
+      },
+    ]
+  }
+  return history
+}
+
+/** Demo-only sample dictations, one per clinical situation the analysis handles. */
+const DEMO_SCENARIOS: { label: string; hint: string; text: string }[] = [
+  {
+    label: "Febrile neutropenia",
+    hint: "ANC < 500 with fever ≥ 38.3°C meets IDSA/ASCO criteria",
+    text: "Febrile overnight to 38.6°C with rigors. ANC 380 cells/µL, platelets 95,000/µL, WBC 900 cells/µL. Denies cough or dysuria.",
+  },
+  {
+    label: "Possible FN",
+    hint: "Fever with ANC 500–999: flagged, needs an expected-decline assessment",
+    text: "Temp 38.5°C this morning. ANC 780 cells/µL, platelets 140,000/µL. Reports mild fatigue.",
+  },
+  {
+    label: "Sustained 38.1°C",
+    hint: "38.0–38.2°C counts as fever only when sustained for 1 hour",
+    text: "Temp 38.1°C sustained for 1 hour. ANC 450 cells/µL, platelets 120,000/µL. Chills overnight.",
+  },
+  {
+    label: "Low platelets & Hgb",
+    hint: "Grade 3 thrombocytopenia and anemia without neutropenia",
+    text: "Afebrile at 36.9°C. ANC 1,900 cells/µL, platelets 38,000/µL, Hgb 7.6 g/dL. Reports gum bleeding. No melena.",
+  },
+  {
+    label: "Stable & afebrile",
+    hint: "All dictated values within CTCAE Grade 0",
+    text: "Afebrile at 36.7°C. ANC 2,600 cells/µL, platelets 210,000/µL, WBC 5,800 cells/µL, Hgb 12.4 g/dL. No complaints, eating well.",
+  },
+  {
+    label: "Labs pending",
+    hint: "No values dictated: nothing is invented, review asks for them",
+    text: "Patient comfortable this morning. Reports mild nausea, denies vomiting. Morning labs pending.",
+  },
+  {
+    label: "Speech errors",
+    hint: "Run Clinical auto-correct to fix misheard oncology terms",
+    text: "Patient on our chop cycle 2. Shen, Anarcho AMC, 1400 RPM. Given ox ally platin with phil grass tim. Patient is having fever.",
+  },
+]
 
 function parseClinicalLabOcr(fileName: string, textContent: string, patient: typeof patients[number]): ParsedClinicalOcr {
   return parseClinicalLabReport(fileName, textContent, patient)
@@ -449,36 +622,36 @@ const patientCases: Record<
   },
   "106": {
     patientId: "106",
-    caseLabel: "Case 3: #106 Elena Rostova, ANC 1,620 + afebrile 36.8°C → Grade 0 Stable",
-    transcript: `Elena Rostova, Bed 16. Cycle 4 AC-T day 14. Patient is afebrile at 36.8°C. Tolerating diet well, ECOG PS 0. Labs show ANC ${formatNumber(1620)} cells/µL, Platelets ${formatNumber(215000)}/µL, WBC ${formatNumber(5400)} cells/µL. No active complaints.`,
+    caseLabel: "Case 3: #106 Elena Rostova, ANC 2,150 + afebrile 36.8°C → Grade 0 Stable",
+    transcript: `Elena Rostova, Bed 16. Cycle 4 AC-T day 14. Patient is afebrile at 36.8°C. Tolerating diet well, ECOG PS 0. Labs show ANC ${formatNumber(2150)} cells/µL, Platelets ${formatNumber(215000)}/µL, WBC ${formatNumber(5400)} cells/µL. No active complaints.`,
     alert: {
       title: "Clinically Stable — No Acute CTCAE Toxicities",
       subtitle: "Routine inpatient chemotherapy monitoring",
       grade: 0,
       temp: "36.8°C",
-      anc: "1,620 /µL",
+      anc: "2,150 /µL",
       timer: "Routine",
       guideline: "All hematologic parameters within safe tolerance bounds for continued scheduled therapy.",
     },
     metrics: [
-      ["ANC", formatNumber(1620), "cells/µL", `Stable near baseline ${formatNumber(1650)}`, 0],
+      ["ANC", formatNumber(2150), "cells/µL", `Stable near baseline ${formatNumber(2300)}`, 0],
       ["Platelets", formatNumber(215000), "/µL", `Normal reserve (Baseline ${formatNumber(220000)})`, 0],
       ["WBC", formatNumber(5400), "cells/µL", `Normal range (Baseline ${formatNumber(5800)})`, 0],
     ],
     checklist: [
-      "Confirm ANC is 1,620 /µL (Adequate bone marrow reserve for therapy)",
+      "Confirm ANC is 2,150 /µL (Adequate bone marrow reserve for therapy)",
       "Confirm patient is afebrile (36.8°C) with no focal toxicity",
       "Verify readiness for planned chemotherapy cycle continuation",
     ],
     soapDraft: {
       s: "62F receiving adjuvant AC-T for invasive ductal breast cancer. Reports good appetite, minimal fatigue, no nausea or neuropathy.",
-      o: `T 36.8°C, BP 120/76, HR 72, RR 14. ANC 1,620/µL (Grade 0), WBC 5.4 K/µL, Plt ${formatNumber(215000)}/µL, Hgb 12.1 g/dL.`,
+      o: `T 36.8°C, BP 120/76, HR 72, RR 14. ANC 2,150/µL (Grade 0), WBC 5.4 K/µL, Plt ${formatNumber(215000)}/µL, Hgb 12.1 g/dL.`,
       a: "Stage II Breast Cancer post Cycle 4 AC-T, bone marrow recovery verified, clinically stable.",
       p: "Cleared for cycle continuation as scheduled. Routine hydration and discharge readiness evaluation.",
     },
     labReport: [
       ["WBC", "5.4", "x10³/µL"],
-      ["ANC", formatNumber(1620), "cells/µL"],
+      ["ANC", formatNumber(2150), "cells/µL"],
       ["Platelets", formatNumber(215000), "/µL"],
       ["Hemoglobin", "12.1", "g/dL"],
     ],
@@ -725,7 +898,7 @@ function ClinicianProfileModal({
                   required
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="e.g. Dr. Amrut S Kadam, MD"
+                  placeholder="e.g. Dr. Priya Sharma, MD"
                 />
               </div>
               <div className="profile-edit-field">
@@ -1017,8 +1190,8 @@ function Header({
                     <span />
                     All clinical systems online
                   </p>
-                  <p>Local CPU · zero audio egress</p>
-                  <p>CTCAE v5.0 active · Gemini 2.5 Flash Cascade</p>
+                  <p>Whisper speech-to-text on the RoundsAI server</p>
+                  <p>CTCAE v5.0 rules · Gemini cascade with rule-engine fallback</p>
                 </div>
               )}
             </div>
@@ -1156,6 +1329,26 @@ function Header({
           </div>
         </div>
       </header>
+      {/* Phones: the header tabs collapse, so primary navigation moves to a bottom bar. */}
+      <nav className="mobile-tabs" aria-label="Primary navigation">
+        {([
+          ["station", "Station", "stethoscope"],
+          ["roster", "Roster", "bed"],
+          ["analytics", "Analytics", "activity"],
+          ["mobile", "Bedside", "mic"],
+        ] as [Screen, string, string][]).map(([item, label, icon]) => (
+          <button
+            type="button"
+            className={screen === item ? "active" : ""}
+            aria-current={screen === item ? "page" : undefined}
+            onClick={() => go(item)}
+            key={item}
+          >
+            <Icon name={icon as never} size={20} />
+            <span>{label}</span>
+          </button>
+        ))}
+      </nav>
       <ClinicianProfileModal
         isOpen={profileModal}
         onClose={() => setProfileModal(false)}
@@ -2455,6 +2648,8 @@ function OcrReviewModal({
 function CaptureStep({
   patient,
   patientCase,
+  patientOptions,
+  roundNumber,
   onSelectPatient,
   complete,
   onContinue,
@@ -2465,6 +2660,8 @@ function CaptureStep({
 }: {
   patient: typeof patients[number]
   patientCase: typeof patientCases[string]
+  patientOptions: typeof patients
+  roundNumber: number
   onSelectPatient: (id: string) => void
   complete: boolean
   onContinue: () => void | Promise<void>
@@ -2475,6 +2672,7 @@ function CaptureStep({
 }) {
   const [analyzing, setAnalyzing] = useState(false)
   const [progress, setProgress] = useState(0)
+  const isDemoMode = safeLocalStorage.getItem("rounds-auth") === "demo"
   const [onDeviceAudio, setOnDeviceAudio] = useState(true)
   const [clinicalAutoCorrect, setClinicalAutoCorrect] = useState(true)
   const [autoCorrectModalOpen, setAutoCorrectModalOpen] = useState(false)
@@ -2571,24 +2769,46 @@ function CaptureStep({
         </div>
       </div>
       <label className="demo-case">
-        <span>Demo case</span>
+        <span>Patient</span>
         <select
           value={patient.id}
           onChange={(event) => onSelectPatient?.(event.target.value)}
         >
-          {patients.map((p) => (
+          {patientOptions.map((p) => (
             <option value={p.id} key={p.id}>
-              {patientCases[p.id]?.caseLabel || `${p.name} (Bed ${p.bed})`}
+              Bed {p.bed} · {p.name}
             </option>
           ))}
         </select>
       </label>
+      {isDemoMode && (
+        <div className="scenario-row" aria-label="Demo scenarios">
+          <span>Try a scenario</span>
+          {DEMO_SCENARIOS.map((scenario) => (
+            <button
+              type="button"
+              key={scenario.label}
+              title={scenario.hint}
+              onClick={() => {
+                setTranscript(scenario.text)
+                if (onToast) onToast(`Loaded "${scenario.label}" dictation — ${scenario.hint}`)
+              }}
+            >
+              {scenario.label}
+            </button>
+          ))}
+        </div>
+      )}
       <article className="panel capture-composer">
         <textarea
           className="capture-textarea"
           value={transcript}
           onChange={(event) => setTranscript(event.target.value)}
-          placeholder="Speak into microphone or type clinical notes and lab findings manually..."
+          placeholder={
+            roundNumber > 1
+              ? `Round ${roundNumber}: dictate the updated condition, vitals and labs. Earlier rounds are in Round history below.`
+              : "Speak into microphone or type clinical notes and lab findings manually..."
+          }
           aria-label="Round transcript"
         />
         {recording && <Waveform active stream={audioStream} />}
@@ -2709,12 +2929,10 @@ function CaptureStep({
             style={{ display: "none" }}
             onChange={handleFileUpload}
           />
-          {onDeviceAudio && (
-            <em>
-              <Icon name="shield" />
-              Speech runs locally · 0 egress
-            </em>
-          )}
+          <em title={sttEngine === "whisper" ? "Audio is sent only to your RoundsAI backend for transcription" : "Web Speech API: in Chrome, audio is processed by Google's speech service"}>
+            <Icon name="shield" />
+            {sttEngine === "whisper" ? "Whisper · audio stays on your server" : "Live ASR · browser speech service"}
+          </em>
         </div>
       </article>
 
@@ -3197,11 +3415,15 @@ function SignStep({
   attendingName,
   engine,
   checklistCount,
+  onNextRound,
+  roundNumber,
 }: {
   patient: typeof patients[number]
   patientCase: typeof patientCases[string]
   engine: string
   checklistCount: number
+  onNextRound: () => void
+  roundNumber: number
   allConfirmed: boolean
   locked: boolean
   soapSections: { s: string; o: string; a: string; p: string }
@@ -3242,7 +3464,7 @@ function SignStep({
             </small>
           </div>
           <span style={{ fontSize: "13px", color: "var(--brand)", fontWeight: 600 }}>
-            Attending: {attendingName || "Dr. Amrut S Kadam, MD"}
+            Attending: {attendingName || "Attending clinician"}
           </span>
         </div>
         {sections.map(([title, key]) => (
@@ -3288,6 +3510,17 @@ function SignStep({
           {locked ? "Note approved" : "Attest & approve"}
         </Button>
       </div>
+      {locked && (
+        <div className="next-round-callout">
+          <div>
+            <strong>Round {roundNumber} saved to history</strong>
+            <span>Start the next round to record {patient.name}'s updated condition. Earlier notes stay available for reference.</span>
+          </div>
+          <Button variant="primary" icon="plus" onClick={onNextRound}>
+            Start round {roundNumber + 1}
+          </Button>
+        </div>
+      )}
     </section>
   )
 }
@@ -3335,6 +3568,8 @@ function RoundSummary({
   confirmed,
   total,
   activeAlerts,
+  roundNumber,
+  onNextRound,
   attested,
   onCopy,
   onAttest,
@@ -3343,6 +3578,8 @@ function RoundSummary({
   confirmed: number
   total: number
   activeAlerts: number | null
+  roundNumber: number
+  onNextRound?: () => void
   attested: boolean
   onCopy: () => void
   onAttest: () => void
@@ -3351,6 +3588,10 @@ function RoundSummary({
     <aside className="round-summary">
       <h2>Round summary</h2>
       <div className="summary-list">
+        <div>
+          <span>Round</span>
+          <strong className="numeric">{roundNumber}</strong>
+        </div>
         <div>
           <span>Progress</span>
           <strong>Step {step} of 3</strong>
@@ -3393,8 +3634,176 @@ function RoundSummary({
         >
           {attested ? "Note attested" : "Attest note"}
         </Button>
+        {onNextRound && (
+          <Button variant="primary" icon="plus" onClick={onNextRound}>
+            Start round {roundNumber + 1}
+          </Button>
+        )}
       </div>
     </aside>
+  )
+}
+
+function DemoGuide({ go }: { go?: (screen: Screen) => void }) {
+  const [hidden, setHidden] = useState(() => safeLocalStorage.getItem("rounds-demo-guide-hidden") === "1")
+  if (hidden) {
+    return (
+      <button
+        type="button"
+        className="text-button"
+        style={{ marginBottom: "12px", fontSize: "13px" }}
+        onClick={() => {
+          safeLocalStorage.removeItem("rounds-demo-guide-hidden")
+          setHidden(false)
+        }}
+      >
+        Show demo guide
+      </button>
+    )
+  }
+  const link = (label: string, screen: Screen) =>
+    go ? (
+      <a href={`/${screen}`} onClick={(e) => { e.preventDefault(); go(screen) }}>
+        {label}
+      </a>
+    ) : (
+      label
+    )
+  return (
+    <aside className="demo-guide" aria-label="Demo guide">
+      <div className="demo-guide-head">
+        <strong>Demo guide · synthetic patients only</strong>
+        <button
+          type="button"
+          className="text-button"
+          onClick={() => {
+            safeLocalStorage.setItem("rounds-demo-guide-hidden", "1")
+            setHidden(true)
+          }}
+        >
+          Hide
+        </button>
+      </div>
+      <ol>
+        <li>Pick a patient in the census — each case is a different CTCAE grade, and Round 1 is already in Round history.</li>
+        <li><b>Analyze round</b> → review the alert, tick every checklist item → <b>Attest</b> → <b>Start next round</b> to record an update.</li>
+        <li>Use <b>Try a scenario</b> for other situations (febrile neutropenia, sustained 38.1°C, low platelets, labs pending…); “Speech errors” + <b>Clinical auto-correct</b> shows term correction.</li>
+        <li>Attach a lab report with <b>+</b>: <a href="/demo/sample-cbc-report.txt" download>sample text report</a> (read on-device) or <a href="/demo/sample-cbc-report.png" download>sample image</a> (read by Gemini Vision when the API is available).</li>
+        <li>Dictate with <b>Live ASR</b> (browser) or <b>Whisper STT</b> (on-device server model).</li>
+        <li>Open {link("Mobile", "mobile")} → send a bedside round → it appears here as a banner to load in one click.</li>
+        <li>See {link("Analytics", "analytics")} for the ANC trajectory, recovery curves and dose advice, and {link("Roster", "roster")} to admit a patient with a fixed admission baseline.</li>
+      </ol>
+    </aside>
+  )
+}
+
+function AdmissionBaselineCard({ patient }: { patient: typeof patients[number] }) {
+  const adm = patient.admission
+  const value = (v: number | undefined, unit: string, fmt = formatNumber) =>
+    typeof v === "number" && Number.isFinite(v) ? `${fmt(v)} ${unit}` : "Not recorded"
+  return (
+    <section className="admission-card" aria-label="Admission baseline">
+      <div className="admission-card-head">
+        <span>
+          <Icon name="lock" size={14} />
+          Admission baseline{adm?.date ? ` · ${adm.date}` : ""}
+        </span>
+        <small>Fixed at admission · updates go into round notes</small>
+      </div>
+      <dl>
+        <div>
+          <dt>ANC</dt>
+          <dd className="numeric">{value(adm?.anc ?? patient.baselineAnc, "/µL")}</dd>
+        </div>
+        <div>
+          <dt>Platelets</dt>
+          <dd className="numeric">{value(adm?.platelets, "/µL")}</dd>
+        </div>
+        <div>
+          <dt>WBC</dt>
+          <dd className="numeric">{value(adm?.wbc, "/µL")}</dd>
+        </div>
+        <div>
+          <dt>Hgb</dt>
+          <dd className="numeric">{value(adm?.hemoglobin, "g/dL", String)}</dd>
+        </div>
+        <div>
+          <dt>Temp</dt>
+          <dd className="numeric">{value(adm?.temperatureC, "°C", String)}</dd>
+        </div>
+        <div>
+          <dt>ECOG</dt>
+          <dd className="numeric">{patient.ecog}</dd>
+        </div>
+      </dl>
+      {adm?.condition && <p>{adm.condition}</p>}
+    </section>
+  )
+}
+
+function RoundHistory({ notes, currentRound }: { notes: RoundNote[]; currentRound: number }) {
+  const [open, setOpen] = useState<string | null>(null)
+  const ordered = [...notes].sort((a, b) => b.roundNumber - a.roundNumber)
+  return (
+    <section className="round-history panel" aria-label="Round history">
+      <div className="round-history-head">
+        <div>
+          <h3>Round history</h3>
+          <p>
+            {notes.length === 0
+              ? "No attested rounds yet — this is round 1."
+              : `${notes.length} attested round${notes.length === 1 ? "" : "s"} · now on round ${currentRound}`}
+          </p>
+        </div>
+      </div>
+      {ordered.map((note) => {
+        const expanded = open === note.id
+        const when = new Date(note.createdAt)
+        return (
+          <article className={`round-history-item ${expanded ? "open" : ""}`} key={note.id}>
+            <button type="button" onClick={() => setOpen(expanded ? null : note.id)} aria-expanded={expanded}>
+              <span className="round-number">R{note.roundNumber}</span>
+              <span className="round-meta">
+                <b>{note.alertTitle}</b>
+                <small>
+                  {Number.isNaN(when.getTime())
+                    ? note.createdAt
+                    : when.toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}{" "}
+                  · {note.clinician}
+                </small>
+              </span>
+              <SeverityBadge grade={note.grade}>{note.grade === 0 ? "Stable" : `Grade ${note.grade}`}</SeverityBadge>
+              <Icon name="chevron" size={16} />
+            </button>
+            {expanded && (
+              <div className="round-history-body">
+                <p className="numeric">
+                  ANC {note.labs.anc !== null ? formatNumber(note.labs.anc) : "—"} · Plt{" "}
+                  {note.labs.platelets !== null ? formatNumber(note.labs.platelets) : "—"} · WBC{" "}
+                  {note.labs.wbc !== null ? formatNumber(note.labs.wbc) : "—"} · Hgb {note.labs.hemoglobin ?? "—"} · T{" "}
+                  {note.temperatureC !== null ? `${note.temperatureC}°C` : "—"}
+                </p>
+                {([
+                  ["Subjective", note.soap.s],
+                  ["Objective", note.soap.o],
+                  ["Assessment", note.soap.a],
+                  ["Plan", note.soap.p],
+                ] as const).map(([label, text]) => (
+                  <div key={label}>
+                    <strong>{label}</strong>
+                    <p>{text || "—"}</p>
+                  </div>
+                ))}
+                <details>
+                  <summary>Dictation</summary>
+                  <p>{note.transcript}</p>
+                </details>
+              </div>
+            )}
+          </article>
+        )
+      })}
+    </section>
   )
 }
 
@@ -3408,6 +3817,8 @@ function Station({
   go,
   onToast,
   clinicianProfile,
+  roundHistory = {},
+  onSaveRoundNote,
 }: {
   patientsList?: typeof patients
   selectedPatientId: string
@@ -3418,6 +3829,8 @@ function Station({
   go?: (screen: Screen) => void
   onToast?: (msg: string, type?: "info" | "success" | "warning" | "alert") => void
   clinicianProfile?: ClinicianProfile
+  roundHistory?: Record<string, RoundNote[]>
+  onSaveRoundNote?: (patientId: string, note: RoundNote) => void
 }) {
   const isDemo = safeLocalStorage.getItem("rounds-auth") === "demo"
   const activePatients = patientsList && patientsList.length > 0 ? patientsList : (patientsList ? [] : (isDemo ? patients : []))
@@ -3448,8 +3861,17 @@ function Station({
     [patient.id, patient.name, patient.regimen],
   )
 
+  // Rounds are numbered from the saved history; a scripted demo dictation only seeds
+  // a patient's first round, later rounds start blank.
+  const history = roundHistory[patient.id] || []
+  const roundNumber = history.length + 1
+  const historyRef = useRef(roundHistory)
+  historyRef.current = roundHistory
+  const seedTranscript = (patientId: string) =>
+    (historyRef.current[patientId] || []).some((n) => !n.seeded) ? "" : patientCases[patientId]?.transcript || ""
+
   const [step, setStep] = useState<Step>(1)
-  const [stationTranscript, setStationTranscript] = useState(patientCase.transcript)
+  const [stationTranscript, setStationTranscript] = useState(() => seedTranscript(patient.id))
   const [bedsideDraft, setBedsideDraft] = useState<{ transcript: string; timeStr: string; wordCount?: number } | null>(null)
   const [sync, setSync] = useState(true)
   const [drawer, setDrawer] = useState(false)
@@ -3457,6 +3879,9 @@ function Station({
   const [attested, setAttested] = useState(false)
   const [analysis, setAnalysis] = useState<{ transcript: string; result: RoundAnalysis } | null>(null)
   const [soapSections, setSoapSections] = useState({ s: "", o: "", a: "", p: "" })
+
+  // Once attested the note is already in history, so the round on screen is the previous number.
+  const displayRound = attested ? roundNumber - 1 : roundNumber
 
   const reviewCase = useMemo(
     () => (analysis ? buildReviewCase(patient, analysis.result) : null),
@@ -3499,13 +3924,22 @@ function Station({
     setSoapSections((prev) => ({ ...prev, [sectionKey]: val }))
   }
 
-  useEffect(() => {
-    setStationTranscript(patientCase.transcript)
+  const resetRound = (transcript: string) => {
+    setStationTranscript(transcript)
     setAnalysis(null)
     setConfirmed([])
     setSoapSections({ s: "", o: "", a: "", p: "" })
     setAttested(false)
     setStep(1)
+  }
+
+  const startNextRound = () => {
+    resetRound("")
+    if (onToast) onToast(`Round ${roundNumber} started for ${patient.name} — previous notes are in Round history`, "info")
+  }
+
+  useEffect(() => {
+    resetRound(seedTranscript(patient.id))
 
     // Inspect localStorage for pending bedside sync from mobile companion
     if (typeof window !== "undefined") {
@@ -3521,7 +3955,27 @@ function Station({
         setBedsideDraft(null)
       }
     }
-  }, [selectedPatientId, patient.id, patientCase.transcript])
+  }, [selectedPatientId, patient.id])
+
+  // Cross-device bedside drafts arrive over the backend SSE stream for this patient.
+  const lastSyncRef = useRef<number | null>(null)
+  useEffect(() => {
+    return roundsApi.stream(
+      patient.id,
+      (event) => {
+        try {
+          const d = JSON.parse(event.data)
+          if (d?.type !== "bedside_draft" || d.patient_id !== patient.id) return
+          if (d.timestamp && d.timestamp === lastSyncRef.current) return
+          lastSyncRef.current = d.timestamp ?? null
+          setBedsideDraft({ transcript: d.transcript || "", timeStr: d.time_str || "just now", wordCount: d.word_count })
+          setSync(true)
+          if (onToast) onToast(`Bedside round received from Bed ${patient.bed} (${d.word_count || 0} words)`, "info")
+        } catch {}
+      },
+      () => {},
+    )
+  }, [patient.id, patient.bed, onToast])
 
   // Reactive listener for bedside-to-station sync events
   useEffect(() => {
@@ -3529,6 +3983,8 @@ function Station({
       const custom = event as CustomEvent
       const payload = custom.detail
       if (payload && payload.patientId === patient.id) {
+        if (payload.timestamp && payload.timestamp === lastSyncRef.current) return
+        lastSyncRef.current = payload.timestamp ?? null
         setBedsideDraft(payload)
         setSync(true)
         if (onToast) onToast(`Bedside round received from Bed ${patient.bed} (${payload.wordCount || 0} words)`, "info")
@@ -3610,7 +4066,7 @@ function Station({
       rawNote,
       `round-${patient.id}-active`,
       patient.id,
-      clinicianProfile?.name || "Dr. Amrut S Kadam, MD"
+      clinicianProfile?.name || "Attending clinician"
     )
     if (typeof navigator !== "undefined" && navigator.clipboard) {
       navigator.clipboard.writeText(noteText)
@@ -3634,7 +4090,7 @@ function Station({
     const newRecord: RoundRecord = {
       id: `attested-${Date.now()}`,
       date: new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }),
-      doctor: clinicianProfile?.name || "Dr. Amrut S Kadam, MD",
+      doctor: clinicianProfile?.name || "Attending clinician",
       anc: acuteAnc,
       wbc: acuteWbc,
       platelets: acutePlt,
@@ -3647,7 +4103,22 @@ function Station({
     if (onAttestRound) {
       onAttestRound(patient.id, newRecord)
     }
-    if (onToast) onToast(`Note for ${patient.name} attested and locked. Added to EMR history & analytics`, "success")
+    if (onSaveRoundNote && analysis && reviewCase) {
+      onSaveRoundNote(patient.id, {
+        id: `round-${patient.id}-${Date.now()}`,
+        roundNumber,
+        createdAt: new Date().toISOString(),
+        clinician: clinicianProfile?.name || "Attending clinician",
+        transcript: analysis.transcript,
+        soap: soapSections,
+        alertTitle: reviewCase.alert.title,
+        grade: reviewCase.alert.grade,
+        labs: analysis.result.labs,
+        temperatureC: analysis.result.temperatureC,
+        engine: analysis.result.engine,
+      })
+    }
+    if (onToast) onToast(`Round ${roundNumber} for ${patient.name} attested and saved to round history & analytics`, "success")
   }
 
   useEffect(() => {
@@ -3771,11 +4242,19 @@ function Station({
               {patient.grade === 0 ? "Stable" : `Grade ${patient.grade}`}
             </SeverityBadge>
           </div>
+          {isDemo && <DemoGuide go={go} />}
+          <AdmissionBaselineCard patient={patient} />
+          <div className="round-label">
+            <span>Round {displayRound}</span>
+            {displayRound > 1 && <small>{displayRound - 1} previous round{displayRound === 2 ? "" : "s"} below</small>}
+          </div>
           <Stepper step={step} setStep={setStep} maxStep={maxStep} />
           {step === 1 && (
             <CaptureStep
               patient={patient}
               patientCase={patientCase}
+              patientOptions={activePatients}
+              roundNumber={roundNumber}
               onSelectPatient={onSelectPatient}
               complete={false}
               onContinue={analyzeRound}
@@ -3808,15 +4287,20 @@ function Station({
               onSoapChange={handleSoapChange}
               onCopy={copyNote}
               onAttest={attestNote}
-              attendingName={clinicianProfile?.name || "Dr. Amrut S Kadam, MD"}
+              onNextRound={startNextRound}
+              roundNumber={displayRound}
+              attendingName={clinicianProfile?.name || "Attending clinician"}
             />
           )}
+          <RoundHistory notes={history} currentRound={displayRound} />
         </section>
         <RoundSummary
           step={step}
           confirmed={confirmed.filter(Boolean).length}
           total={confirmed.length}
           activeAlerts={reviewCase ? reviewCase.activeAlerts : null}
+          roundNumber={displayRound}
+          onNextRound={attested ? startNextRound : undefined}
           attested={attested}
           onCopy={copyNote}
           onAttest={attestNote}
@@ -3916,6 +4400,8 @@ function Roster({
       "cycle",
       "anc",
     ].filter((key) => !data.get(key))
+    const ancValue = Number(String(data.get("anc") ?? "").replace(/,/g, "").trim())
+    if (data.get("anc") && (!Number.isFinite(ancValue) || ancValue < 0)) missing.push("anc")
     if (missing.length) return setErrors(missing)
     setErrors([])
 
@@ -3938,13 +4424,17 @@ function Roster({
       .toUpperCase() || "PT"
 
     const rawAncStr = String(data.get("anc") ?? "").replace(/,/g, "").trim()
-    const baselineAnc = rawAncStr !== "" && !isNaN(Number(rawAncStr)) ? Number(rawAncStr) : 1500
+    const baselineAnc = rawAncStr !== "" && !isNaN(Number(rawAncStr)) ? Number(rawAncStr) : NaN
+    const optionalNumber = (field: string) => {
+      const raw = String(data.get(field) ?? "").replace(/,/g, "").trim()
+      return raw !== "" && Number.isFinite(Number(raw)) ? Number(raw) : undefined
+    }
 
     const rawEcogStr = String(data.get("ecog") ?? "").trim()
     const ecog = rawEcogStr !== "" && !isNaN(Number(rawEcogStr)) ? Number(rawEcogStr) : 1
 
     const newPatient = {
-      id: String(Date.now()).slice(-4),
+      id: `p-${Date.now().toString(36)}`,
       bed: rawBed.replace(/^bed\s*/i, "").trim() || "18",
       name,
       ageSex: `${data.get("age")}${String(data.get("sex") || "M")[0]}`,
@@ -3953,8 +4443,17 @@ function Roster({
       regimen: String(data.get("regimen") || "Standard Regimen"),
       cycle: String(data.get("cycle") || "Cycle 1"),
       baselineAnc,
+      admission: {
+        date: new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }),
+        anc: baselineAnc,
+        platelets: optionalNumber("platelets"),
+        wbc: optionalNumber("wbc"),
+        hemoglobin: optionalNumber("hemoglobin"),
+        temperatureC: optionalNumber("temperature"),
+        condition: String(data.get("condition") || "").trim() || undefined,
+      },
       ecog,
-      grade: 0,
+      grade: gradeAncValue(baselineAnc),
       initials,
     }
 
@@ -4273,6 +4772,31 @@ function Roster({
                   </select>
                 </label>
               </div>
+              <fieldset className="admission-fields">
+                <legend>Admission baseline (optional, fixed once saved)</legend>
+                <div className="form-grid">
+                  <label htmlFor="admit-platelets">
+                    Platelets /µL
+                    <input id="admit-platelets" name="platelets" inputMode="numeric" placeholder="220,000" />
+                  </label>
+                  <label htmlFor="admit-wbc">
+                    WBC /µL
+                    <input id="admit-wbc" name="wbc" inputMode="numeric" placeholder="6,100" />
+                  </label>
+                  <label htmlFor="admit-hemoglobin">
+                    Hemoglobin g/dL
+                    <input id="admit-hemoglobin" name="hemoglobin" inputMode="decimal" placeholder="12.8" />
+                  </label>
+                  <label htmlFor="admit-temperature">
+                    Temperature °C
+                    <input id="admit-temperature" name="temperature" inputMode="decimal" placeholder="36.8" />
+                  </label>
+                </div>
+                <label htmlFor="admit-condition">
+                  Condition at admission
+                  <textarea id="admit-condition" name="condition" rows={2} placeholder="ECOG 1, afebrile, eating well" />
+                </label>
+              </fieldset>
               <div className="drawer-actions">
                 <Button onClick={() => setDrawer(false)}>Cancel</Button>
                 <Button variant="primary" type="submit">
@@ -4464,9 +4988,10 @@ function MobileCompanion({
   const activePatients = patientsList && patientsList.length > 0 ? patientsList : (patientsList ? [] : (isDemo ? patients : []))
   const activeId = selectedPatientId || activePatients[0]?.id || "104"
   const patient = activePatients.find((item) => item.id === activeId) || activePatients[0] || patients[0]
-  const patientCase = patientCases[patient.id] || patientCases["104"]
+  // Only scripted demo patients get a sample dictation; everyone else starts blank.
+  const seedTranscript = isDemo ? patientCases[patient.id]?.transcript || "" : ""
 
-  const [transcript, setTranscript] = useState(patientCase.transcript)
+  const [transcript, setTranscript] = useState(seedTranscript)
   const [captured, setCaptured] = useState(false)
   const [sent, setSent] = useState(false)
   const [autoCorrectModalOpen, setAutoCorrectModalOpen] = useState(false)
@@ -4475,8 +5000,8 @@ function MobileCompanion({
   const mobileFileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    setTranscript(patientCase.transcript)
-  }, [patientCase.transcript, patient.id])
+    setTranscript(seedTranscript)
+  }, [seedTranscript, patient.id])
 
   const {
     engine: sttEngine,
@@ -4555,7 +5080,7 @@ function MobileCompanion({
         <div className="phone-title">
           <div>
             <h1>Bedside round</h1>
-            <p>Local speech · zero audio upload</p>
+            <p>{sttEngine === "whisper" ? "Whisper · transcribed on your RoundsAI server" : "Live ASR · browser speech recognition"}</p>
           </div>
           <span
             className="status-dot"
@@ -4608,7 +5133,11 @@ function MobileCompanion({
             <Icon name="mic" size={20} />
           </button>
           <h2>{recording ? (sttEngine === "whisper" ? `Listening to Whisper (${whisperSeconds}s)…` : "Listening to microphone…") : `Tap to dictate (${sttEngine === "whisper" ? "Whisper" : "Live ASR"})`}</h2>
-          <p>Audio stays on this device · Type or edit note anytime</p>
+          <p>
+            {sttEngine === "whisper"
+              ? "Audio goes only to your RoundsAI server · Type or edit anytime"
+              : "Uses the browser's speech service (Google in Chrome) · Type or edit anytime"}
+          </p>
         </div>
         <Waveform active={recording} stream={audioStream} />
 
@@ -4716,6 +5245,19 @@ function MobileCompanion({
               if (typeof window !== "undefined") {
                 window.dispatchEvent(new CustomEvent("rounds-bedside-sync-event", { detail: payload }))
               }
+              // Other devices receive the draft through the backend's SSE relay; same-browser
+              // tabs already have it through storage events.
+              roundsApi
+                .bedsideSync({
+                  patient_id: payload.patientId,
+                  transcript: payload.transcript,
+                  patient_name: payload.patientName,
+                  bed: payload.bed,
+                  time_str: payload.timeStr,
+                  word_count: payload.wordCount,
+                  timestamp: payload.timestamp,
+                })
+                .catch(() => {})
               setSent(true)
               if (onToast) onToast(`✓ Bedside round sent to Station for Bed ${patient.bed} (${payload.wordCount} words)`)
             }}
@@ -4743,7 +5285,7 @@ function MobileCompanion({
 }
 
 function NadirChart({ rounds = [], baseline = 1400 }: { rounds?: RoundRecord[]; baseline?: number }) {
-  const chronRounds = [...rounds].reverse().filter((r) => Number.isFinite(r.anc))
+  const chronRounds = [...rounds].reverse().filter((r) => Number.isFinite(r.anc) && !r.carried?.includes("anc"))
   const count = chronRounds.length
   const points = chronRounds.map((r, i) => {
     const x = count > 1 ? Math.round(96 + (i * (608 / (count - 1)))) : 380
@@ -4928,7 +5470,7 @@ function RecoveryChart({ rounds = [] }: { rounds?: RoundRecord[] }) {
   const xAt = (i: number) => (count > 1 ? Math.round(96 + (i * (608 / (count - 1)))) : 380)
   // Only rounds where the value was measured are plotted; x keeps each round's position.
   const pltPoints = chronRounds.flatMap((r, i) => {
-    if (!Number.isFinite(r.platelets) || r.platelets <= 0) return []
+    if (!Number.isFinite(r.platelets) || r.platelets <= 0 || r.carried?.includes("platelets")) return []
     const x = xAt(i)
     // Platelets scale 0 to 300,000 -> y between 40 and 208
     const clampedPlt = Math.max(0, Math.min(300000, r.platelets))
@@ -4945,7 +5487,7 @@ function RecoveryChart({ rounds = [] }: { rounds?: RoundRecord[] }) {
   const pltPolyline = pltPoints.map((p) => `${p.x},${p.y}`).join(" ")
 
   const hgbPoints = chronRounds.flatMap((r, i) => {
-    if (!Number.isFinite(r.hemoglobin) || r.hemoglobin <= 0) return []
+    if (!Number.isFinite(r.hemoglobin) || r.hemoglobin <= 0 || r.carried?.includes("hemoglobin")) return []
     const x = xAt(i)
     // Hemoglobin scale 8 to 16 g/dL -> y between 40 and 208
     const clampedHgb = Math.max(8, Math.min(16, r.hemoglobin))
@@ -5104,7 +5646,10 @@ function Analytics({
   }
 
   const baselineOnly = (patientAnalytics.rounds || []).length <= 1
-  const kpis = patientAnalytics.kpis
+  // KPIs are recomputed from the recorded rounds on every render so they can never
+  // drift from the audit log below.
+  const kpis = computeAnalyticsKpis(patientAnalytics.rounds || [], patient.baselineAnc)
+  const cycleProgress = parseCycleProgress(patient.cycle)
 
   const doseRec = getDoseModificationRecommendation(patient, patientAnalytics.rounds)
 
@@ -5164,13 +5709,11 @@ function Analytics({
     }
   }
 
+  // Rounds are stored newest first; dates like "13 Oct" carry no year, so ordering
+  // comes from the stored sequence rather than date parsing.
   const sortedRounds = useMemo(() => {
     const list = patientAnalytics.rounds || []
-    return [...list].sort((a, b) => {
-      const dateA = new Date(a.date).getTime() || 0
-      const dateB = new Date(b.date).getTime() || 0
-      return ascending ? dateA - dateB : dateB - dateA
-    })
+    return ascending ? [...list].reverse() : list
   }, [patientAnalytics.rounds, ascending])
 
   const exportAnalyticsJson = () => {
@@ -5269,26 +5812,6 @@ function Analytics({
           <Button icon="file" onClick={exportAnalyticsJson} title="Download updated analytics JSON">
             Export JSON
           </Button>
-          <Button
-            icon="refresh"
-            onClick={() => {
-              let count = patientAnalytics.rounds?.length || 0
-              if (typeof window !== "undefined") {
-                const saved = safeLocalStorage.getItem("rounds-analytics-data")
-                if (saved) {
-                  try {
-                    const parsed = JSON.parse(saved)
-                    if (parsed[activeId]?.rounds) {
-                      count = parsed[activeId].rounds.length
-                    }
-                  } catch {}
-                }
-              }
-              if (onToast) onToast(`Synchronized ${count} clinical rounds with hospital audit log`, "success")
-            }}
-          >
-            Sync rounds
-          </Button>
           <Button icon="download" onClick={() => window.print()}>
             Print report
           </Button>
@@ -5312,10 +5835,10 @@ function Analytics({
             <span>
               {patient.regimen} · {patient.cycle}
             </span>
-            <strong>{patientAnalytics.rounds.length > 1 ? "50%" : "—"}</strong>
+            <strong>{cycleProgress ? `${cycleProgress.current} of ${cycleProgress.total}` : "—"}</strong>
           </div>
-          <div className="progress-track">
-            <i />
+          <div className="progress-track" aria-label="Treatment cycle progress">
+            <i style={{ width: cycleProgress ? `${Math.round((cycleProgress.current / cycleProgress.total) * 100)}%` : "0%" }} />
           </div>
         </div>
       </section>
@@ -5326,15 +5849,9 @@ function Analytics({
           </div>
           <div>
             <strong>Not enough rounds yet.</strong>
-            <p>Showing admission baseline only. Attach or scan a lab report to run OCR and update analytics.</p>
+            <p>Showing admission baseline only. Attest a round or scan a lab report in the Station to build the trajectory.</p>
           </div>
-          <Button
-            onClick={() => {
-              if (onToast) onToast("Analytics synchronized", "success")
-            }}
-          >
-            Sync rounds
-          </Button>
+          {go && <Button onClick={() => go("station")}>Open Station</Button>}
         </div>
       )}
       <div className="stat-grid">
@@ -5362,7 +5879,7 @@ function Analytics({
               <h2 style={{ margin: 0, fontSize: "18px", lineHeight: "28px", fontWeight: 600 }}>AI Longitudinal Clinical Analytics & Recovery Prognosis</h2>
             </div>
             <p style={{ margin: "4px 0 0", color: "var(--secondary)", fontSize: "13px", lineHeight: "20px" }}>
-              Deep multi-model trajectory modeling (Gemini 2.5 Flash Cascade with CTCAE v5.0 deterministic fallback).
+              Trajectory analysis of this patient's recorded rounds (Gemini when available, deterministic CTCAE v5.0 rules otherwise).
             </p>
           </div>
           <Button
@@ -5420,7 +5937,10 @@ function Analytics({
                         : "success"
                     }`}
                   >
-                    {aiInsight.risk_level} Risk · {aiInsight.confidence_score}% Confidence
+                    {aiInsight.risk_level} Risk ·{" "}
+                    {getModelProvenance(aiInsight.engine).isAi
+                      ? `${aiInsight.confidence_score}% model confidence`
+                      : `${aiInsight.confidence_score}% data completeness`}
                   </span>
                 </div>
               </div>
@@ -5549,9 +6069,8 @@ function Analytics({
             >
               <Icon name="shield" size={14} />
               <span>
-                Note: {aiInsight.engine?.includes("fallback") || aiInsight.engine?.includes("deterministic") || aiInsight.engine?.includes("offline")
-                  ? "Generated via Deterministic Clinical Rule Engine (CTCAE v5.0)"
-                  : "Generated via Gemini 2.5 Flash (CTCAE v5.0 calibrated)"}
+                Note: Generated via {getModelProvenance(aiInsight.engine).displayLabel} from {patientAnalytics.rounds.length} recorded round
+                {patientAnalytics.rounds.length === 1 ? "" : "s"} (CTCAE v5.0).
               </span>
             </div>
           </div>
@@ -5608,7 +6127,7 @@ function Analytics({
             </div>
             {doseRec.actionRequired && (
               <span className="danger-text" style={{ fontSize: "13px", fontWeight: 600 }}>
-                ⚠️ï¸ Clinical Action Mandatory
+                Clinical action required
               </span>
             )}
           </div>
@@ -5673,11 +6192,11 @@ function Analytics({
                     <td>{r.doctor}</td>
                     <td className="numeric">
                       <strong className={r.ctcae_grade >= 4 ? "danger-text" : ""}>
-                        {formatNumber(r.anc)} /µL
+                        {formatLab(r.anc)} /µL
                       </strong>
                     </td>
                     <td className="numeric">
-                      {formatNumber(r.platelets)} /µL
+                      {formatLab(r.platelets)} /µL
                     </td>
                     <td>
                       <SeverityBadge grade={r.ctcae_grade}>
@@ -5802,7 +6321,7 @@ function Landing({
     ],
     [
       "Does audio leave the device?",
-      "No third-party audio egress. In-browser speech uses local Web Speech recognition, and our dedicated server pipeline runs a self-hosted faster-whisper model. Raw bedside audio is never sent to third-party commercial LLM providers.",
+      "It depends on the speech engine you pick. Whisper STT sends audio only to your RoundsAI backend, where a self-hosted faster-whisper model transcribes it — no third-party speech service is involved. Live ASR uses the browser's Web Speech API; in Chrome that audio is processed by Google's speech service. Lab-report images and, when enabled, transcripts are sent to the Google Gemini API.",
     ],
     [
       "Which guidelines does it use?",
@@ -5873,7 +6392,7 @@ function Landing({
             </Button>
           </div>
           <small>
-            Local speech processing <i /> CTCAE v5.0 deterministic grading <i /> Clinician approves every
+            Self-hosted Whisper speech <i /> CTCAE v5.0 deterministic grading <i /> Clinician approves every
             note
           </small>
         </div>
@@ -5980,29 +6499,87 @@ function Landing({
   )
 }
 
+function firebaseAuthMessage(error: unknown): string {
+  const code = (error as { code?: string })?.code || ""
+  const messages: Record<string, string> = {
+    "auth/invalid-credential": "Incorrect email or password.",
+    "auth/wrong-password": "Incorrect email or password.",
+    "auth/user-not-found": "No account exists for this email. Create one below.",
+    "auth/invalid-email": "Enter a valid email address.",
+    "auth/email-already-in-use": "An account already exists for this email. Sign in instead.",
+    "auth/weak-password": "Use a password of at least 6 characters.",
+    "auth/too-many-requests": "Too many attempts. Wait a moment and try again.",
+    "auth/network-request-failed": "Network error. Check your connection and try again.",
+    "auth/operation-not-allowed": "Email/password sign-in is not enabled for this Firebase project.",
+    "auth/invalid-api-key": "Firebase is not configured for this deployment.",
+    "auth/api-key-not-valid.-please-pass-a-valid-api-key.": "Firebase is not configured for this deployment.",
+  }
+  return messages[code] || "Sign-in failed. Please try again."
+}
+
 function Login({
   go,
   onAuth,
 }: {
   go: (screen: Screen) => void
-  onAuth: (mode?: "demo" | "account") => void
+  onAuth: (mode?: AuthMode, user?: AuthUser) => void
 }) {
+  const [mode, setMode] = useState<"signin" | "signup">("signin")
   const [show, setShow] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
-  const submit = (event: React.FormEvent<HTMLFormElement>) => {
+  const [info, setInfo] = useState("")
+  const formRef = useRef<HTMLFormElement>(null)
+
+  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const data = new FormData(event.currentTarget)
-    if (!data.get("email") || !data.get("password"))
-      return setError("Enter your Staff ID and password to continue.")
+    const email = String(data.get("email") || "").trim()
+    const password = String(data.get("password") || "")
+    const fullName = String(data.get("fullName") || "").trim()
+    if (!email || !password) return setError("Enter your work email and password to continue.")
+    if (mode === "signup" && !fullName) return setError("Enter your full name as it should appear on notes.")
     setError("")
+    setInfo("")
     setLoading(true)
-    setTimeout(() => {
-      setLoading(false)
-      onAuth("account")
+    try {
+      const fb = await import("../lib/firebase")
+      const { setPersistence, browserLocalPersistence, browserSessionPersistence, updateProfile } = await import("firebase/auth")
+      await setPersistence(fb.auth, data.get("remember") ? browserLocalPersistence : browserSessionPersistence)
+      const credential =
+        mode === "signup"
+          ? await fb.createUserWithEmailAndPassword(fb.auth, email, password)
+          : await fb.signInWithEmailAndPassword(fb.auth, email, password)
+      if (mode === "signup") await updateProfile(credential.user, { displayName: fullName })
+      const user = credential.user
+      onAuth("account", {
+        uid: user.uid,
+        email: user.email || email,
+        name: (mode === "signup" ? fullName : user.displayName) || nameFromEmail(user.email || email),
+      })
       go("station")
-    }, 900)
+    } catch (err) {
+      setError(firebaseAuthMessage(err))
+    } finally {
+      setLoading(false)
+    }
   }
+
+  const resetPassword = async () => {
+    const email = String(new FormData(formRef.current || undefined).get("email") || "").trim()
+    if (!email) return setError("Enter your work email first, then choose Reset password.")
+    setError("")
+    try {
+      const fb = await import("../lib/firebase")
+      const { sendPasswordResetEmail } = await import("firebase/auth")
+      await sendPasswordResetEmail(fb.auth, email)
+      setInfo(`If an account exists for ${email}, a reset link has been sent.`)
+    } catch (err) {
+      setError(firebaseAuthMessage(err))
+    }
+  }
+
+  const signup = mode === "signup"
   return (
     <main className="login-page">
       <section className="login-hero">
@@ -6027,12 +6604,12 @@ function Login({
           </p>
           <div className="hero-stats">
             <div>
-              <strong className="numeric">0 ms</strong>
-              <span>cloud audio egress</span>
+              <strong>Whisper</strong>
+              <span>self-hosted speech-to-text</span>
             </div>
             <div>
-              <strong className="numeric">120+</strong>
-              <span>regimens recognized</span>
+              <strong className="numeric">~100</strong>
+              <span>oncology term rules</span>
             </div>
             <div>
               <strong>CTCAE v5.0</strong>
@@ -6045,21 +6622,38 @@ function Login({
         <div className="login-theme">
           <ThemeToggle />
         </div>
-        <form className="login-form" onSubmit={submit}>
-          <h2>Welcome back</h2>
-          <p>Sign in with your hospital credentials.</p>
+        <form className="login-form" onSubmit={submit} ref={formRef}>
+          <h2>{signup ? "Create your account" : "Welcome back"}</h2>
+          <p>
+            {signup
+              ? "Your account starts with an empty ward — no demo data."
+              : "Sign in with your work email."}
+          </p>
           {error && (
             <div className="form-error">
               <Icon name="alert" size={20} />
               {error}
             </div>
           )}
+          {info && (
+            <div className="form-info" role="status">
+              <Icon name="check" size={20} />
+              {info}
+            </div>
+          )}
+          {signup && (
+            <label>
+              Full name
+              <input name="fullName" placeholder="Dr. Priya Sharma" autoComplete="name" />
+            </label>
+          )}
           <label>
-            Staff ID or email
+            Work email
             <input
               name="email"
+              type="email"
               placeholder="name@citycancer.org"
-              autoComplete="username"
+              autoComplete={signup ? "email" : "username"}
             />
           </label>
           <label>
@@ -6068,8 +6662,8 @@ function Login({
               <input
                 name="password"
                 type={show ? "text" : "password"}
-                placeholder="Enter your password"
-                autoComplete="current-password"
+                placeholder={signup ? "At least 6 characters" : "Enter your password"}
+                autoComplete={signup ? "new-password" : "current-password"}
               />
               <button type="button" onClick={() => setShow(!show)}>
                 {show ? "Hide" : "Show"}
@@ -6078,14 +6672,31 @@ function Login({
           </label>
           <div className="login-options">
             <label>
-              <input type="checkbox" />
+              <input type="checkbox" name="remember" defaultChecked />
               Keep me signed in
             </label>
-            <button type="button">Reset password</button>
+            {!signup && (
+              <button type="button" onClick={resetPassword}>
+                Reset password
+              </button>
+            )}
           </div>
-          <Button variant="primary" type="submit" className="full">
-            {loading ? "Signing in…" : "Sign in"}
+          <Button variant="primary" type="submit" className="full" disabled={loading}>
+            {loading ? (signup ? "Creating account…" : "Signing in…") : signup ? "Create account" : "Sign in"}
           </Button>
+          <p className="login-switch">
+            {signup ? "Already have an account?" : "New to RoundsAI?"}{" "}
+            <button
+              type="button"
+              onClick={() => {
+                setMode(signup ? "signin" : "signup")
+                setError("")
+                setInfo("")
+              }}
+            >
+              {signup ? "Sign in" : "Create an account"}
+            </button>
+          </p>
           <div className="or-divider">
             <span>or</span>
           </div>
@@ -6100,12 +6711,95 @@ function Login({
           </Button>
           <small className="privacy-note">
             <Icon name="lock" size={20} />
-            Protected health information remains encrypted and audited.
+            Demo mode uses synthetic patients only. Accounts keep their own isolated ward data.
           </small>
         </form>
       </section>
     </main>
   )
+}
+
+type AuthMode = "demo" | "account"
+type AuthUser = { uid: string; email: string; name: string }
+type AuthSession = { mode: AuthMode | null; user: AuthUser | null }
+
+function readAuthSession(): AuthSession {
+  const mode = safeLocalStorage.getItem("rounds-auth")
+  if (mode === "demo") return { mode, user: null }
+  if (mode === "account") {
+    try {
+      const user = JSON.parse(safeLocalStorage.getItem("rounds-auth-user") || "null")
+      if (user && typeof user.uid === "string") return { mode, user }
+    } catch {}
+  }
+  // Legacy "account" markers without a verified Firebase user count as signed out.
+  return { mode: null, user: null }
+}
+
+function workspaceKey(session: AuthSession, name: string): string {
+  return session.mode === "account" && session.user
+    ? `rounds-account-${session.user.uid}-${name}`
+    : `rounds-demo-${name}`
+}
+
+function readStored<T>(key: string, fallback: T): T {
+  const raw = safeLocalStorage.getItem(key)
+  if (raw === null) return fallback
+  try {
+    return JSON.parse(raw) as T
+  } catch {
+    return fallback
+  }
+}
+
+/** "priya.sharma@hospital.org" -> "Priya Sharma" */
+function nameFromEmail(email: string): string {
+  const local = (email.split("@")[0] || "Clinician").replace(/[._-]+/g, " ").trim()
+  return local.replace(/\b\w/g, (c) => c.toUpperCase()) || "Clinician"
+}
+
+function profileForSession(session: AuthSession): ClinicianProfile {
+  const saved = readStored<Partial<ClinicianProfile> | null>(workspaceKey(session, "profile"), null)
+  if (session.mode !== "account" || !session.user) return { ...DEFAULT_CLINICIAN_PROFILE, ...(saved || {}) }
+  const name = session.user.name || nameFromEmail(session.user.email)
+  const fresh: ClinicianProfile = {
+    name,
+    title: "Clinician",
+    department: "",
+    hospital: "",
+    ward: "",
+    shift: "",
+    npi: "",
+    hospitalId: session.user.email,
+    initials: deriveDoctorInitials(name),
+  }
+  return { ...fresh, ...(saved || {}) }
+}
+
+/** Demo sessions start from the scripted ward; accounts start empty and keep only their own data. */
+function loadWorkspace(session: AuthSession) {
+  const demo = session.mode !== "account"
+  const savedPatients = readStored<typeof patients>(workspaceKey(session, "patients-list"), [])
+  // Demo lists saved before admission baselines existed get them back by patient id.
+  const withDemoAdmission = (list: typeof patients) =>
+    list.map((p) => (p.admission ? p : { ...p, admission: patients.find((d) => d.id === p.id)?.admission }))
+  return {
+    patients: demo
+      ? withDemoAdmission(Array.isArray(savedPatients) && savedPatients.length ? savedPatients : patients)
+      : savedPatients,
+    notifications: readStored<ClinicalNotification[]>(
+      workspaceKey(session, "notifications"),
+      demo ? INITIAL_CLINICAL_NOTIFICATIONS : [],
+    ),
+    analytics: demo
+      ? { ...INITIAL_ANALYTICS, ...readStored<Record<string, PatientAnalytics>>(workspaceKey(session, "analytics-data"), {}) }
+      : readStored<Record<string, PatientAnalytics>>(workspaceKey(session, "analytics-data"), {}),
+    roundNotes: readStored<Record<string, RoundNote[]>>(
+      workspaceKey(session, "round-notes"),
+      demo ? buildDemoRoundHistory() : {},
+    ),
+    profile: profileForSession(session),
+  }
 }
 
 export default function App({ initialScreen }: { initialScreen?: Screen } = {}) {
@@ -6122,153 +6816,42 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
     if (typeof window === "undefined") return "landing"
     return routeMap[window.location.pathname] || "landing"
   }
-  const [signedIn, setSignedIn] = useState(false)
+  // Server and first client render use the same signed-out defaults; the saved
+  // workspace is loaded after mount so hydration never sees browser-only state.
+  const [session, setSession] = useState<AuthSession>({ mode: null, user: null })
+  const [hydrated, setHydrated] = useState(false)
+  const [initialWorkspace] = useState(() => loadWorkspace({ mode: null, user: null }))
+  const signedIn = session.mode !== null
+  const isDemoSession = session.mode === "demo"
   const [online, setOnline] = useState(true)
-  const [patientsList, setPatientsList] = useState<typeof patients>(() => {
-    if (typeof window !== "undefined") {
-      const auth = safeLocalStorage.getItem("rounds-auth")
-      if (auth === "account") {
-        const saved = safeLocalStorage.getItem("rounds-account-patients-list")
-        if (saved) {
-          try {
-            return JSON.parse(saved)
-          } catch {}
-        }
-        return []
-      }
-      if (auth === "demo") {
-        const saved = safeLocalStorage.getItem("rounds-demo-patients-list")
-        if (saved) {
-          try {
-            const parsed = JSON.parse(saved)
-            if (Array.isArray(parsed) && parsed.length > 0) return parsed
-          } catch {}
-        }
-        return patients
-      }
-    }
-    return patients
-  })
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const auth = safeLocalStorage.getItem("rounds-auth")
-      if (auth === "account") {
-        safeLocalStorage.setItem("rounds-account-patients-list", JSON.stringify(patientsList))
-      } else if (auth === "demo") {
-        safeLocalStorage.setItem("rounds-demo-patients-list", JSON.stringify(patientsList))
-      }
-    }
-  }, [patientsList])
-  const [selectedPatientId, setSelectedPatientId] = useState<string>(() => {
-    if (typeof window !== "undefined") {
-      const auth = safeLocalStorage.getItem("rounds-auth")
-      if (auth === "account") {
-        const saved = safeLocalStorage.getItem("rounds-account-patients-list")
-        if (saved) {
-          try {
-            const parsed = JSON.parse(saved)
-            if (Array.isArray(parsed) && parsed.length > 0) return parsed[0].id
-          } catch {}
-        }
-        return ""
-      }
-    }
-    return "104"
-  })
+  const [patientsList, setPatientsList] = useState<typeof patients>(initialWorkspace.patients)
+  const [selectedPatientId, setSelectedPatientId] = useState<string>(initialWorkspace.patients[0]?.id || "")
   const [screen, setScreen] = useState<Screen>(initialScreen || "landing")
+  const [clinicianProfile, setClinicianProfile] = useState<ClinicianProfile>(initialWorkspace.profile)
+  const [notifications, setNotifications] = useState<ClinicalNotification[]>(initialWorkspace.notifications)
+  const [analyticsData, setAnalyticsData] = useState<Record<string, PatientAnalytics>>(initialWorkspace.analytics)
+  const [roundNotes, setRoundNotes] = useState<Record<string, RoundNote[]>>(initialWorkspace.roundNotes)
 
-  const [clinicianProfile, setClinicianProfile] = useState<ClinicianProfile>(() => {
-    if (typeof window !== "undefined") {
-      const saved = safeLocalStorage.getItem("rounds-clinician-profile")
-      if (saved) {
-        try {
-          return { ...DEFAULT_CLINICIAN_PROFILE, ...JSON.parse(saved) }
-        } catch {}
-      }
-    }
-    return DEFAULT_CLINICIAN_PROFILE
-  })
+  // Each workspace (demo, or one per signed-in account) persists under its own keys,
+  // so accounts never see demo data or each other's patients.
+  const persist = (name: string, value: unknown) => {
+    if (hydrated && session.mode) safeLocalStorage.setItem(workspaceKey(session, name), JSON.stringify(value))
+  }
+  useEffect(() => persist("patients-list", patientsList), [patientsList, session])
+  useEffect(() => persist("profile", clinicianProfile), [clinicianProfile, session])
+  useEffect(() => persist("notifications", notifications), [notifications, session])
+  useEffect(() => persist("analytics-data", analyticsData), [analyticsData, session])
+  useEffect(() => persist("round-notes", roundNotes), [roundNotes, session])
 
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      safeLocalStorage.setItem("rounds-clinician-profile", JSON.stringify(clinicianProfile))
-    }
-  }, [clinicianProfile])
-
-  const [notifications, setNotifications] = useState<ClinicalNotification[]>(() => {
-    if (typeof window !== "undefined") {
-      const auth = safeLocalStorage.getItem("rounds-auth")
-      if (auth === "account") {
-        const saved = safeLocalStorage.getItem("rounds-account-notifications")
-        if (saved !== null) {
-          try {
-            return JSON.parse(saved)
-          } catch {}
-        }
-        return []
-      }
-      if (auth === "demo") {
-        const saved = safeLocalStorage.getItem("rounds-demo-notifications")
-        if (saved !== null) {
-          try {
-            const parsed = JSON.parse(saved)
-            if (Array.isArray(parsed)) return parsed
-          } catch {}
-        }
-        return INITIAL_CLINICAL_NOTIFICATIONS
-      }
-    }
-    return INITIAL_CLINICAL_NOTIFICATIONS
-  })
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const auth = safeLocalStorage.getItem("rounds-auth")
-      if (auth === "account") {
-        safeLocalStorage.setItem("rounds-account-notifications", JSON.stringify(notifications))
-      } else if (auth === "demo") {
-        safeLocalStorage.setItem("rounds-demo-notifications", JSON.stringify(notifications))
-      }
-    }
-  }, [notifications])
-
-  const [analyticsData, setAnalyticsData] = useState<Record<string, PatientAnalytics>>(() => {
-    if (typeof window !== "undefined") {
-      const auth = safeLocalStorage.getItem("rounds-auth")
-      if (auth === "account") {
-        const saved = safeLocalStorage.getItem("rounds-account-analytics-data")
-        if (saved) {
-          try {
-            return JSON.parse(saved)
-          } catch {}
-        }
-        return {}
-      }
-      if (auth === "demo") {
-        const saved = safeLocalStorage.getItem("rounds-demo-analytics-data")
-        if (saved) {
-          try {
-            const parsed = JSON.parse(saved)
-            return { ...INITIAL_ANALYTICS, ...parsed }
-          } catch {}
-        }
-        return INITIAL_ANALYTICS
-      }
-    }
-    return INITIAL_ANALYTICS
-  })
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const auth = safeLocalStorage.getItem("rounds-auth")
-      if (auth === "account") {
-        safeLocalStorage.setItem("rounds-account-analytics-data", JSON.stringify(analyticsData))
-      } else if (auth === "demo") {
-        safeLocalStorage.setItem("rounds-demo-analytics-data", JSON.stringify(analyticsData))
-      }
-    }
-  }, [analyticsData])
+  const applyWorkspace = (next: AuthSession) => {
+    const ws = loadWorkspace(next)
+    setPatientsList(ws.patients)
+    setSelectedPatientId(ws.patients[0]?.id || "")
+    setClinicianProfile(ws.profile)
+    setNotifications(ws.notifications)
+    setAnalyticsData(ws.analytics)
+    setRoundNotes(ws.roundNotes)
+  }
 
   const [globalToast, setGlobalToast] = useState<{
     message: string
@@ -6361,6 +6944,10 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
     showToast(`Updated clinician profile for ${updated.name}`, "success")
   }
 
+  const handleSaveRoundNote = (patientId: string, note: RoundNote) => {
+    setRoundNotes((prev) => ({ ...prev, [patientId]: [...(prev[patientId] || []), note] }))
+  }
+
   const handleAttestRound = (patientId: string, incoming: RoundRecord) => {
     setAnalyticsData((prev) => {
       const current = prev[patientId] || {
@@ -6404,9 +6991,6 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
           kpis: updatedKpis,
           trajectory: updatedTrajectory,
         },
-      }
-      if (typeof window !== "undefined") {
-        safeLocalStorage.setItem("rounds-analytics-data", JSON.stringify(updated))
       }
       return updated
     })
@@ -6479,13 +7063,6 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
           trajectory: [...current.trajectory, newTrajectoryPoint],
         },
       }
-      if (typeof window !== "undefined") {
-        try {
-          safeLocalStorage.setItem("rounds-analytics-data", JSON.stringify(updated))
-        } catch (e) {
-          console.warn("Could not persist OCR analytics data to localStorage:", e)
-        }
-      }
       return updated
     })
 
@@ -6516,15 +7093,21 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
 
     // Seed new patient's analytics with initial admission baseline
     const dateStr = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
-    const baseGrade = newPatient.baselineAnc < 500 ? 4 : newPatient.baselineAnc < 1000 ? 3 : newPatient.baselineAnc < 1500 ? 2 : 0
+    // Only values entered on the admission form are recorded; nothing is estimated.
+    const adm = newPatient.admission
+    const baseGrade = Math.max(
+      gradeAncValue(newPatient.baselineAnc),
+      adm?.platelets ? gradePlateletValue(adm.platelets) : 0,
+      adm?.hemoglobin ? gradeHemoglobinValue(adm.hemoglobin) : 0,
+    )
     const admissionRound: RoundRecord = {
       id: `adm-${newPatient.id}`,
       date: dateStr,
       doctor: clinicianProfile.name,
       anc: newPatient.baselineAnc,
-      wbc: Math.round((newPatient.baselineAnc / 0.6) * 1.5) || 5200,
-      platelets: 220000,
-      hemoglobin: 12.5,
+      wbc: adm?.wbc ?? NaN,
+      platelets: adm?.platelets ?? NaN,
+      hemoglobin: adm?.hemoglobin ?? NaN,
       ctcae_grade: baseGrade,
       status: "Admission Workup",
       source: "Ward 4B Admission",
@@ -6533,7 +7116,7 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
 
     const initialKpis: [string, string, string, string][] = [
       ["Absolute neutrophils", `${formatNumber(newPatient.baselineAnc)}`, "/µL", baseGrade === 0 ? "Grade 0" : `Grade ${baseGrade}`],
-      ["Platelet reserve", formatNumber(220000), "/µL", "Grade 0"],
+      ["Platelet reserve", adm?.platelets ? formatNumber(adm.platelets) : "—", "/µL", adm?.platelets ? `Grade ${gradePlateletValue(adm.platelets)}` : "Not recorded"],
       ["Active graded toxicities", baseGrade > 0 ? "1" : "0", "", baseGrade === 0 ? "Stable" : `Grade ${baseGrade}`],
       ["Clinical risk level", baseGrade >= 4 ? "High" : baseGrade >= 3 ? "Moderate" : "Low", "", baseGrade >= 4 ? "High Risk" : "Stable"],
     ]
@@ -6558,42 +7141,31 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
           trajectory: initialTrajectory,
         },
       }
-      if (typeof window !== "undefined") {
-        safeLocalStorage.setItem("rounds-analytics-data", JSON.stringify(updated))
-      }
       return updated
     })
 
     showToast(`Admitted ${newPatient.name} to Bed ${newPatient.bed}`)
   }
 
+  // Demo data can only be restored inside the demo workspace, never into an account.
   const handleResetCensus = () => {
+    if (!isDemoSession) return
     setPatientsList(patients)
     setAnalyticsData(INITIAL_ANALYTICS)
     setNotifications(INITIAL_CLINICAL_NOTIFICATIONS)
-    if (typeof window !== "undefined") {
-      const mode = safeLocalStorage.getItem("rounds-auth")
-      if (mode === "account") {
-        safeLocalStorage.setItem("rounds-account-patients-list", JSON.stringify(patients))
-        safeLocalStorage.setItem("rounds-account-analytics-data", JSON.stringify(INITIAL_ANALYTICS))
-        safeLocalStorage.setItem("rounds-account-notifications", JSON.stringify(INITIAL_CLINICAL_NOTIFICATIONS))
-      } else {
-        safeLocalStorage.setItem("rounds-demo-patients-list", JSON.stringify(patients))
-        safeLocalStorage.setItem("rounds-demo-analytics-data", JSON.stringify(INITIAL_ANALYTICS))
-        safeLocalStorage.setItem("rounds-demo-notifications", JSON.stringify(INITIAL_CLINICAL_NOTIFICATIONS))
-      }
-    }
+    setRoundNotes(buildDemoRoundHistory())
     setSelectedPatientId("104")
-    showToast("Ward 4B census and analytics populated with 5 demo patient cases (Grades 0 to 4)")
+    showToast("Demo ward restored: 5 patients with Grade 0–4 cases and round history")
   }
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const auth = safeLocalStorage.getItem("rounds-auth")
-      const isAuth = auth === "demo" || auth === "account"
-      setSignedIn(isAuth)
+      const stored = readAuthSession()
+      setSession(stored)
+      if (stored.mode) applyWorkspace(stored)
+      setHydrated(true)
       const target = getRoute()
-      if (!isAuth && ["station", "roster", "analytics", "mobile"].includes(target)) {
+      if (!stored.mode && ["station", "roster", "analytics", "mobile"].includes(target)) {
         setScreen("login")
       } else {
         setScreen(target)
@@ -6605,47 +7177,20 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
   }, [initialScreen])
 
   const go = (next: Screen) => {
-    const protectedRoute = [
-      "station",
-      "roster",
-      "analytics",
-      "mobile",
-    ].includes(next)
-    const auth = typeof window !== "undefined" ? safeLocalStorage.getItem("rounds-auth") : null
-    const isAuth = auth === "demo" || auth === "account"
-    const destination = protectedRoute && !signedIn && !isAuth ? "login" : next
-    history.pushState(
-      {},
-      "",
-      destination === "landing" ? "/" : `/${destination}`,
-    )
+    const protectedRoute = ["station", "roster", "analytics", "mobile"].includes(next)
+    const destination = protectedRoute && !readAuthSession().mode ? "login" : next
+    history.pushState({}, "", destination === "landing" ? "/" : `/${destination}`)
     setScreen(destination)
     window.scrollTo(0, 0)
   }
 
-  const authenticate = (mode: "demo" | "account" = "demo") => {
-    if (typeof window !== "undefined") {
-      safeLocalStorage.setItem("rounds-auth", mode)
-    }
-    setSignedIn(true)
-    if (mode === "demo") {
-      const savedPatients = typeof window !== "undefined" ? safeLocalStorage.getItem("rounds-demo-patients-list") : null
-      setPatientsList(savedPatients ? JSON.parse(savedPatients) : patients)
-      const savedNotifs = typeof window !== "undefined" ? safeLocalStorage.getItem("rounds-demo-notifications") : null
-      setNotifications(savedNotifs ? JSON.parse(savedNotifs) : INITIAL_CLINICAL_NOTIFICATIONS)
-      const savedAnalytics = typeof window !== "undefined" ? safeLocalStorage.getItem("rounds-demo-analytics-data") : null
-      setAnalyticsData(savedAnalytics ? JSON.parse(savedAnalytics) : INITIAL_ANALYTICS)
-      setSelectedPatientId("104")
-    } else {
-      const savedPatients = typeof window !== "undefined" ? safeLocalStorage.getItem("rounds-account-patients-list") : null
-      const parsedPatients = savedPatients ? JSON.parse(savedPatients) : []
-      setPatientsList(parsedPatients)
-      const savedNotifs = typeof window !== "undefined" ? safeLocalStorage.getItem("rounds-account-notifications") : null
-      setNotifications(savedNotifs ? JSON.parse(savedNotifs) : [])
-      const savedAnalytics = typeof window !== "undefined" ? safeLocalStorage.getItem("rounds-account-analytics-data") : null
-      setAnalyticsData(savedAnalytics ? JSON.parse(savedAnalytics) : {})
-      setSelectedPatientId(parsedPatients.length > 0 ? parsedPatients[0].id : "")
-    }
+  const authenticate = (mode: AuthMode = "demo", user?: AuthUser) => {
+    const next: AuthSession = mode === "account" && user ? { mode, user } : { mode: "demo", user: null }
+    safeLocalStorage.setItem("rounds-auth", next.mode as string)
+    if (next.user) safeLocalStorage.setItem("rounds-auth-user", JSON.stringify(next.user))
+    else safeLocalStorage.removeItem("rounds-auth-user")
+    setSession(next)
+    applyWorkspace(next)
   }
 
   const handleTryDemo = () => {
@@ -6654,13 +7199,29 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
   }
 
   const signOut = () => {
-    if (typeof window !== "undefined") {
-      safeLocalStorage.removeItem("rounds-auth")
+    if (session.mode === "account") {
+      import("../lib/firebase").then(({ auth, signOut: firebaseSignOut }) => firebaseSignOut(auth)).catch(() => {})
     }
-    setSignedIn(false)
+    safeLocalStorage.removeItem("rounds-auth")
+    safeLocalStorage.removeItem("rounds-auth-user")
+    setSession({ mode: null, user: null })
     history.pushState({}, "", "/")
     setScreen("landing")
   }
+
+  // An account session is only valid while Firebase still has that user signed in.
+  useEffect(() => {
+    if (session.mode !== "account") return
+    let unsubscribe: (() => void) | undefined
+    import("../lib/firebase")
+      .then(({ auth, onAuthStateChanged }) => {
+        unsubscribe = onAuthStateChanged(auth, (user) => {
+          if (!user || user.uid !== session.user?.uid) signOut()
+        })
+      })
+      .catch(() => {})
+    return () => unsubscribe?.()
+  }, [session.mode, session.user?.uid])
 
   useEffect(() => {
     const update = () => {
@@ -6689,13 +7250,15 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
   }, [])
 
   if (screen === "landing") return <Landing go={go} signedIn={signedIn} onTryDemo={handleTryDemo} />
+  // Protected screens wait for the stored workspace so they never flash an empty ward.
+  if (!hydrated && screen !== "login") return <div className="page-shell" aria-busy="true" />
   if (screen === "login") return <Login go={go} onAuth={authenticate} />
   return (
     <div>
       {!online && (
         <div className="offline-banner" role="status">
           <Icon name="wifi" />
-          Live sync lost. Polling every 5 seconds.
+          You're offline. Work stays on this device; bedside sync resumes when the connection returns.
           <button onClick={() => window.location.reload()}>Retry</button>
         </div>
       )}
@@ -6741,12 +7304,14 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
           patientsList={patientsList}
           selectedPatientId={selectedPatientId}
           onSelectPatient={setSelectedPatientId}
-          onResetCensus={handleResetCensus}
+          onResetCensus={isDemoSession ? handleResetCensus : undefined}
           onOcrExtracted={handleOcrExtracted}
           onAttestRound={handleAttestRound}
           go={go}
           onToast={showToast}
           clinicianProfile={clinicianProfile}
+          roundHistory={roundNotes}
+          onSaveRoundNote={handleSaveRoundNote}
         />
       ) : screen === "roster" ? (
         <Roster
@@ -6756,7 +7321,7 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
           onUpdatePatient={handleUpdatePatient}
           onDischargePatient={handleDischargePatient}
           onAdmitPatient={handleAdmitPatient}
-          onResetCensus={handleResetCensus}
+          onResetCensus={isDemoSession ? handleResetCensus : undefined}
           go={go}
           onToast={showToast}
         />
@@ -6768,7 +7333,7 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
           onToast={showToast}
           onOcrExtracted={handleOcrExtracted}
           go={go}
-          onResetCensus={handleResetCensus}
+          onResetCensus={isDemoSession ? handleResetCensus : undefined}
         />
       ) : (
         <Analytics
@@ -6778,7 +7343,7 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
           analyticsData={analyticsData}
           onToast={showToast}
           go={go}
-          onResetCensus={handleResetCensus}
+          onResetCensus={isDemoSession ? handleResetCensus : undefined}
         />
       )}
       <footer className="quiet-footer">

@@ -20,7 +20,7 @@ from fastapi import FastAPI, HTTPException, UploadFile, File, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from starlette.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from backend.agents.round_graph import round_graph, CTCAE_V5_CONFIG
 from backend.models.round import ExtractRoundRequest, ExtractRoundResponse, ImageAttachment
@@ -273,6 +273,32 @@ def autocorrect_clinical_text(request: AutoCorrectRequest) -> AutoCorrectRespons
     """Intelligently correct oncology phonetic speech errors with context validation."""
     result = correct_clinical_transcript(request.text, use_gemini=request.use_gemini)
     return AutoCorrectResponse(**result)
+
+
+class BedsideSyncRequest(BaseModel):
+    patient_id: str = Field(min_length=1, max_length=64)
+    transcript: str = Field(default="", max_length=10_000)
+    patient_name: Optional[str] = Field(default=None, max_length=200)
+    bed: Optional[str] = Field(default=None, max_length=32)
+    time_str: Optional[str] = Field(default=None, max_length=32)
+    word_count: int = Field(default=0, ge=0)
+    timestamp: Optional[int] = None
+
+
+@app.post("/api/v1/rounds/bedside-sync", status_code=202)
+async def bedside_sync(request: BedsideSyncRequest) -> dict[str, Any]:
+    """Relay a bedside draft to doctor stations subscribed to this patient's SSE stream.
+
+    No AI processing and nothing is persisted: the station loads the draft and the
+    clinician analyzes it there.
+    """
+    payload = {
+        "type": "bedside_draft",
+        **request.model_dump(),
+        "sent_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await sse_manager.broadcast_round(payload, request.patient_id.strip())
+    return {"status": "relayed", "listeners": sse_manager.listener_count()}
 
 
 @app.post("/api/v1/vision/lab-ocr", response_model=VisionObservation)

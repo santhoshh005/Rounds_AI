@@ -31,6 +31,28 @@ def _is_transient_503(exc: Exception) -> bool:
     return any(tok in msg for tok in ("503", "unavailable", "deadline_exceeded", "504", "server disconnected", "high demand"))
 
 
+def _measured(value: Any, allow_zero: bool) -> float | None:
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    if v != v or v in (float("inf"), float("-inf")):
+        return None
+    return v if (v >= 0 if allow_zero else v > 0) else None
+
+
+def _anc_grade(v: float | None) -> int:
+    return 0 if v is None else 4 if v < 500 else 3 if v < 1000 else 2 if v < 1500 else 1 if v < 2000 else 0
+
+
+def _plt_grade(v: float | None) -> int:
+    return 0 if v is None else 4 if v < 25000 else 3 if v < 50000 else 2 if v < 75000 else 1 if v < 150000 else 0
+
+
+def _hgb_grade(v: float | None) -> int:
+    return 0 if v is None else 3 if v < 8 else 2 if v < 10 else 1 if v < 12 else 0
+
+
 def generate_deterministic_analytics_insight(
     patient_id: str,
     patient_name: str,
@@ -40,97 +62,103 @@ def generate_deterministic_analytics_insight(
     baseline_anc: float = 2000.0,
     rounds: Optional[list[dict[str, Any]]] = None,
 ) -> AiAnalyticsInsight:
-    """High-precision deterministic oncology analytics fallback.
+    """Deterministic oncology analytics fallback.
 
-    Produces accurate, guideline-concordant, reproducible clinical analytics
-    from mathematical laboratory trajectories without relying on generative LLMs.
+    Every statement is derived from recorded values (rounds are newest first);
+    values that were never recorded are reported as such, never assumed.
     """
     now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
     active_rounds = rounds or []
+    baseline = _measured(baseline_anc, False)
 
-    # Calculate exact hematologic nadir & kinetics
-    anc_values = [float(r.get("anc", 0)) for r in active_rounds if float(r.get("anc", 0)) > 0]
-    platelet_values = [float(r.get("platelets", 0)) for r in active_rounds if float(r.get("platelets", 0)) > 0]
-    grades = [int(r.get("ctcae_grade", 0)) for r in active_rounds]
+    def fmt(v: float) -> str:
+        return f"{int(round(v)):,}"
 
-    lowest_anc = min(anc_values) if anc_values else float(baseline_anc)
-    lowest_plt = min(platelet_values) if platelet_values else 200000.0
-    worst_grade = max(grades) if grades else (4 if lowest_anc < 500 else 3 if lowest_anc < 1000 else 2 if lowest_anc < 1500 else 1 if lowest_anc < 2000 else 0)
+    anc_series = [v for v in (_measured(r.get("anc"), True) for r in active_rounds) if v is not None]
+    plt_series = [v for v in (_measured(r.get("platelets"), False) for r in active_rounds) if v is not None]
+    hgb_series = [v for v in (_measured(r.get("hemoglobin"), False) for r in active_rounds) if v is not None]
 
-    decline_pct = 0.0
-    if baseline_anc > 0:
-        decline_pct = max(0.0, round(((baseline_anc - lowest_anc) / baseline_anc) * 100.0, 1))
+    nadir_anc = min(anc_series) if anc_series else None
+    latest_anc = anc_series[0] if anc_series else None
+    lowest_plt = min(plt_series) if plt_series else None
+    lowest_hgb = min(hgb_series) if hgb_series else None
 
-    # Determine risk level
-    if worst_grade >= 4 or lowest_anc < 500:
-        risk_level = "Critical"
-    elif worst_grade == 3 or lowest_anc < 1000:
-        risk_level = "High"
-    elif worst_grade == 2 or lowest_anc < 1500:
-        risk_level = "Moderate"
+    reference_anc = nadir_anc if nadir_anc is not None else baseline
+    neutropenia_grade = _anc_grade(reference_anc)
+    thrombocytopenia_grade = _plt_grade(lowest_plt)
+    anemia_grade = _hgb_grade(lowest_hgb)
+    recorded_grades = [int(g) for g in (_measured(r.get("ctcae_grade"), True) for r in active_rounds) if g is not None]
+    worst_grade = max([neutropenia_grade, thrombocytopenia_grade, anemia_grade, *recorded_grades])
+
+    risk_level = "Critical" if worst_grade >= 4 else "High" if worst_grade == 3 else "Moderate" if worst_grade == 2 else "Low"
+
+    decline_pct = (
+        max(0.0, round(((baseline - nadir_anc) / baseline) * 100.0, 1))
+        if baseline and nadir_anc is not None
+        else None
+    )
+    trend = ""
+    if latest_anc is not None and nadir_anc is not None and len(anc_series) > 1:
+        if latest_anc == nadir_anc:
+            trend = "the latest value is the lowest recorded (no recovery documented yet)"
+        elif latest_anc >= nadir_anc * 1.1:
+            trend = f"recovering from the nadir (latest {fmt(latest_anc)} /µL)"
+        else:
+            trend = f"near the nadir (latest {fmt(latest_anc)} /µL)"
+
+    rounds_text = f"{len(active_rounds)} recorded round{'' if len(active_rounds) == 1 else 's'}"
+    if nadir_anc is not None:
+        decline_text = f", {decline_pct}% below baseline {fmt(baseline)} /µL" if decline_pct is not None else ""
+        anc_sentence = f"ANC nadir {fmt(nadir_anc)} /µL (CTCAE Grade {neutropenia_grade}{decline_text}){'; ' + trend if trend else ''}."
+    elif baseline:
+        anc_sentence = f"No ANC recorded since admission; admission baseline ANC {fmt(baseline)} /µL (Grade {neutropenia_grade})."
     else:
-        risk_level = "Low"
+        anc_sentence = "No ANC values recorded yet."
+    plt_sentence = (
+        f"Lowest platelets {fmt(lowest_plt)} /µL (Grade {thrombocytopenia_grade})." if lowest_plt is not None else "Platelets not recorded."
+    )
+    action = {
+        "Critical": "Grade 4 toxicity recorded: daily CBC with differential, neutropenic precautions and protocol dose-modification review are indicated.",
+        "High": "Grade 3 toxicity recorded: a cycle delay and secondary growth-factor support should be considered before the next infusion.",
+        "Moderate": "Grade 2 toxicity recorded: repeat CBC with differential before clearing the next cycle.",
+        "Low": "No grade ≥ 2 hematologic toxicity recorded; continuation is supported if pre-cycle counts remain adequate.",
+    }[risk_level]
+    executive_summary = f"{patient_name} (#{patient_id}) on {regimen}, {cycle} — {rounds_text}. {anc_sentence} {plt_sentence} {action}"
 
-    # 1. Executive Summary
-    if risk_level == "Critical":
-        executive_summary = (
-            f"Patient #{patient_id} ({patient_name}) receiving {regimen} ({cycle}) exhibits critical CTCAE Grade 4 myelosuppression. "
-            f"The absolute neutrophil count reached a nadir of {int(lowest_anc):,} /µL (a {decline_pct}% reduction from baseline {int(baseline_anc):,} /µL). "
-            f"Immediate inpatient infectious precautions, daily hematology surveillance, and protocol dose modification are indicated."
-        )
-    elif risk_level == "High":
-        executive_summary = (
-            f"Patient #{patient_id} ({patient_name}) on {regimen} presents with severe CTCAE Grade 3 neutropenia. "
-            f"Current marrow nadir is documented at {int(lowest_anc):,} /µL (down {decline_pct}% from baseline {int(baseline_anc):,} /µL). "
-            f"Chemotherapy cycle delay and secondary growth factor prophylaxis are recommended prior to treatment resumption."
-        )
-    elif risk_level == "Moderate":
-        executive_summary = (
-            f"Patient #{patient_id} ({patient_name}) on {regimen} shows moderate CTCAE Grade 2 marrow suppression. "
-            f"The ANC nadir is {int(lowest_anc):,} /µL with a {decline_pct}% drop from baseline {int(baseline_anc):,} /µL. "
-            f"The patient is clinically monitored for symptoms and requires a Day 1 repeat CBC diff before next cycle clearance."
-        )
-    else:
-        executive_summary = (
-            f"Patient #{patient_id} ({patient_name}) receiving {regimen} ({cycle}) demonstrates excellent hematologic tolerance. "
-            f"The ANC is sustained at {int(lowest_anc):,} /µL (Grade 0/1), reflecting adequate bone marrow reserve. "
-            f"Cleared for scheduled full-dose chemotherapy continuation with routine outpatient follow-up."
-        )
-
-    # 2. Nadir & Kinetics
+    kinetics_parts = [
+        f"Baseline ANC {fmt(baseline)} /µL" if baseline else "Baseline ANC not recorded",
+        (f"nadir {fmt(nadir_anc)} /µL" + (f" ({decline_pct}% decline)" if decline_pct is not None else ""))
+        if nadir_anc is not None
+        else "no ANC recorded since admission",
+    ]
+    if latest_anc is not None and len(anc_series) > 1:
+        kinetics_parts.append(f"latest {fmt(latest_anc)} /µL")
     nadir_and_kinetics = (
-        f"Marrow suppression profile across {len(active_rounds) or 1} recorded round(s): "
-        f"Baseline ANC {int(baseline_anc):,} /µL → Nadir {int(lowest_anc):,} /µL ({decline_pct}% decline). "
-        f"Platelet reserve: lowest recorded {int(lowest_plt):,} /µL. "
-        f"Kinetics demonstrate expected cytotoxic cell clearance; hematopoietic recovery anticipated within 7–10 days post-infusion."
+        " → ".join(kinetics_parts)
+        + f". Platelets: {'lowest ' + fmt(lowest_plt) + ' /µL' if lowest_plt is not None else 'not recorded'}."
+        + f" Hemoglobin: {'lowest ' + f'{lowest_hgb:g}' + ' g/dL' if lowest_hgb is not None else 'not recorded'}. "
+        + "After myelosuppressive chemotherapy the neutrophil nadir typically falls 7–14 days post-infusion "
+        + "with recovery over the following 1–2 weeks; confirm with serial CBCs."
     )
 
-    # 3. Toxicity Stratification
-    if worst_grade >= 4:
-        toxicity_stratification = (
-            f"CTCAE v5.0 Grade 4 Life-threatening Neutropenia (ANC < 500 /µL). "
-            f"High risk for febrile neutropenia, bacteremia, and opportunistic translocation. "
-            f"Platelet toxicity: {'Grade 3/4 thrombocytopenia' if lowest_plt < 50000 else 'Preserved hemostatic reserve'}. "
-            f"Absolute temperature screening (≥ 38.0°C) and broad-spectrum IV coverage protocol active."
-        )
-    elif worst_grade == 3:
-        toxicity_stratification = (
-            f"CTCAE v5.0 Grade 3 Severe Neutropenia (ANC 500–999 /µL). "
-            f"Elevated susceptibility to infectious complications. "
-            f"Platelet reserve: {int(lowest_plt):,} /µL. Mandatory daily vital sign monitoring and avoidance of myelosuppressive antipyretics without cultures."
-        )
-    elif worst_grade == 2:
-        toxicity_stratification = (
-            f"CTCAE v5.0 Grade 2 Moderate Neutropenia (ANC 1,000–1,499 /µL). "
-            f"Mild fatigue or peripheral cold sensitivity consistent with protocol antineoplastic exposure. Infection risk is moderate but afebrile."
-        )
+    lineages = [
+        f"Neutropenia: Grade {neutropenia_grade}" + (f" (ANC {fmt(reference_anc)} /µL)" if reference_anc is not None else " (not recorded)"),
+        f"Thrombocytopenia: Grade {thrombocytopenia_grade}" + (f" ({fmt(lowest_plt)} /µL)" if lowest_plt is not None else " (not recorded)"),
+        f"Anemia: Grade {anemia_grade}" + (f" ({lowest_hgb:g} g/dL)" if lowest_hgb is not None else " (not recorded)"),
+    ]
+    if neutropenia_grade >= 4:
+        risk_note = " ANC < 500 /µL carries a high risk of febrile neutropenia: any temperature ≥ 38.0°C requires immediate evaluation."
+    elif neutropenia_grade == 3:
+        risk_note = " ANC 500–999 /µL: elevated infection risk; monitor temperature closely."
+    elif thrombocytopenia_grade >= 3:
+        risk_note = " Platelets < 50,000 /µL: bleeding precautions apply."
+    elif worst_grade <= 1:
+        risk_note = " Stable: no grade ≥ 2 hematologic toxicity recorded."
     else:
-        toxicity_stratification = (
-            f"CTCAE v5.0 Grade 0–1 Stable (ANC ≥ 1,500 /µL). No life-threatening myelosuppression, bleeding diathesis, or active organ toxicities identified."
-        )
+        risk_note = ""
+    toxicity_stratification = f"CTCAE v5.0 worst recorded grades — {'; '.join(lineages)}.{risk_note}"
 
-    # 4. Dose & Cycle Guidance
-    regimen_lower = regimen.lower()
+    regimen_lower = (regimen or "").lower()
     if worst_grade >= 4:
         if "folfox" in regimen_lower or "oxaliplatin" in regimen_lower:
             dose_and_cycle_guidance = (
@@ -139,11 +167,11 @@ def generate_deterministic_analytics_insight(
             )
         else:
             dose_and_cycle_guidance = (
-                "Protocol Dose Adjustment: 20–25% cytotoxic dose reduction required for next cycle due to Grade 4 nadir. "
-                "Initiate daily G-CSF growth factor support starting 24–48 hours post-chemotherapy until ANC recovery."
+                "Protocol Dose Adjustment: 20–25% cytotoxic dose reduction for the next cycle after a Grade 4 nadir. "
+                "Consider G-CSF support starting 24–48 hours post-chemotherapy until ANC recovery."
             )
     elif worst_grade == 3:
-        if "r-chop" in regimen_lower or "chop" in regimen_lower:
+        if "chop" in regimen_lower:
             dose_and_cycle_guidance = (
                 "NCCN Lymphoma Guideline: Delay initiation of next cycle by 7 days until absolute neutrophil count recovers to ≥ 1,500 /µL. "
                 "Add secondary G-CSF prophylaxis with Pegfilgrastim 6 mg SC on Day 2 of subsequent cycles."
@@ -151,33 +179,38 @@ def generate_deterministic_analytics_insight(
         else:
             dose_and_cycle_guidance = (
                 "Protocol Guidance: Hold or delay next infusion by 7 days until ANC ≥ 1,500 /µL and platelets ≥ 100,000 /µL. "
-                "Prescribe secondary granulocyte colony-stimulating factor (G-CSF) prophylaxis."
+                "Consider secondary granulocyte colony-stimulating factor (G-CSF) prophylaxis."
             )
     elif worst_grade == 2:
         dose_and_cycle_guidance = (
-            "Protocol Guidance: Continue planned cycle at 100% dose intensity contingent on pre-cycle Day 1 CBC verifying ANC ≥ 1,500 /µL. "
-            "Reinforce patient hydration and symptom self-monitoring."
+            "Protocol Guidance: Continue planned cycle at 100% dose intensity contingent on pre-cycle Day 1 CBC verifying "
+            "ANC ≥ 1,500 /µL and platelets ≥ 100,000 /µL."
         )
     else:
         dose_and_cycle_guidance = (
-            "Protocol Guidance: Proceed with planned chemotherapy cycle at 100% relative dose intensity. "
-            "No schedule delay or prophylactic growth factor dose reduction required."
+            "Protocol Guidance: Proceed with planned chemotherapy cycle at 100% relative dose intensity if pre-cycle counts remain adequate. "
+            "No schedule delay or dose reduction indicated by recorded counts."
         )
 
-    # 5. Surveillance Milestones
     surveillance_milestones = [
-        f"Confirm CBC with differential prior to next infusion (ANC must be ≥ 1,500 /µL, Platelets ≥ 100,000 /µL)",
+        "Confirm CBC with differential prior to next infusion (ANC must be ≥ 1,500 /µL, Platelets ≥ 100,000 /µL)",
         "Instruct patient on immediate emergency reporting for temperature ≥ 38.0°C or shaking chills",
-        f"Evaluate clinical recovery from acute toxicities (fatigue, GI, mucositis) to Grade ≤ 1 before cycle start",
-        f"Verify renal/hepatic clearance markers (creatinine, AST/ALT, total bilirubin) within safe administration parameters",
+        "Evaluate clinical recovery from acute toxicities (fatigue, GI, mucositis) to Grade ≤ 1 before cycle start",
+        "Verify renal/hepatic clearance markers (creatinine, AST/ALT, total bilirubin) within safe administration parameters",
     ]
+    if lowest_plt is None:
+        surveillance_milestones.insert(0, "Record a platelet count — none documented this admission")
+
+    # Deterministic rules have no model confidence; report how complete the recorded data is.
+    lineages_recorded = sum(1 for series in (anc_series, plt_series, hgb_series) if series)
+    data_completeness = round(((lineages_recorded / 3) * 0.7 + (min(len(active_rounds), 3) / 3) * 0.3) * 100)
 
     return AiAnalyticsInsight(
         engine="deterministic-clinical-rules (high-precision fallback)",
         patient_id=str(patient_id),
         patient_name=patient_name,
         risk_level=risk_level,
-        confidence_score=98,
+        confidence_score=data_completeness,
         executive_summary=executive_summary,
         nadir_and_kinetics=nadir_and_kinetics,
         toxicity_stratification=toxicity_stratification,
@@ -222,16 +255,21 @@ def generate_ai_analytics_insight(
     model_name = candidate_models[0]
 
     # Format clinical data payload for prompt
+    def _value(r: dict[str, Any], key: str, unit: str, allow_zero: bool = False) -> str:
+        v = _measured(r.get(key), allow_zero)
+        return f"{v:g} {unit}" if v is not None else "not recorded"
+
+    # Newest round first, exactly as stored; missing values are stated, never filled in.
     rounds_summary_lines = []
     for r in active_rounds:
-        r_date = r.get("date", "Undated")
-        r_anc = r.get("anc", "N/A")
-        r_plt = r.get("platelets", "N/A")
-        r_grade = r.get("ctcae_grade", 0)
-        r_notes = r.get("notes", "")
-        rounds_summary_lines.append(f"- Date: {r_date} | ANC: {r_anc} /µL | Platelets: {r_plt} /µL | CTCAE Grade: {r_grade} | Notes: {r_notes}")
+        rounds_summary_lines.append(
+            f"- Date: {r.get('date') or 'Undated'} | ANC: {_value(r, 'anc', '/µL', True)} | "
+            f"WBC: {_value(r, 'wbc', '/µL')} | Platelets: {_value(r, 'platelets', '/µL')} | "
+            f"Hemoglobin: {_value(r, 'hemoglobin', 'g/dL')} | Recorded CTCAE grade: {r.get('ctcae_grade', 'not recorded')} | "
+            f"Notes: {r.get('notes') or ''}"
+        )
 
-    rounds_context = "\n".join(rounds_summary_lines) if rounds_summary_lines else "Single baseline encounter recorded."
+    rounds_context = "\n".join(rounds_summary_lines) if rounds_summary_lines else "No rounds recorded since admission."
 
     system_prompt = (
         "You are an expert board-certified oncology clinical informatics specialist.\n"
@@ -241,7 +279,11 @@ def generate_ai_analytics_insight(
         "1. DO NOT hallucinate, fabricate, or alter any numbers, lab values, or dates.\n"
         "2. Adhere strictly to NCI CTCAE v5.0 hematologic toxicity grading criteria (ANC <500 = Grade 4, 500-999 = Grade 3, 1000-1499 = Grade 2, 1500-LLN = Grade 1).\n"
         "3. Provide protocol-specific, guideline-concordant dose modification advice (e.g. NCCN, ASCO).\n"
-        "4. Output MUST be valid, parseable JSON matching the requested schema with no markdown code fences or conversational text."
+        "4. Use ONLY the values listed. When a value is 'not recorded', say so; never estimate or assume it. "
+        "Rounds are listed newest first: the first line is the latest value and the lowest ANC is the nadir.\n"
+        "5. Do not state clinical facts absent from the data (fever status, antibiotics given, symptoms), and never "
+        "mention age, sex or other demographics — they are not provided. Refer to the patient by name.\n"
+        "6. Output MUST be valid, parseable JSON matching the requested schema with no markdown code fences or conversational text."
     )
 
     user_prompt = (
@@ -256,7 +298,7 @@ def generate_ai_analytics_insight(
         "Generate a structured JSON response with the following exact keys:\n"
         "{\n"
         '  "risk_level": "Low" | "Moderate" | "High" | "Critical",\n'
-        '  "confidence_score": integer between 85 and 99,\n'
+        '  "confidence_score": integer 0-100 reflecting how complete the recorded data is (fewer rounds or missing lineages = lower),\n'
         '  "executive_summary": "2-3 comprehensive sentences synthesizing the trajectory, nadir depth, and overall clinical posture",\n'
         '  "nadir_and_kinetics": "Detailed marrow suppression analysis, calculated percentage decline from baseline, and recovery trajectory",\n'
         '  "toxicity_stratification": "Detailed CTCAE v5.0 breakdown (neutropenia, thrombocytopenia) and acute complication risk evaluation",\n'

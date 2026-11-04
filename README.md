@@ -1,6 +1,6 @@
-# 🩺 RoundsAI — Inpatient Oncology Ward Copilot & Real-Time Decision Support
+# 🩺 RoundsAI — Inpatient Oncology Ward Copilot
 
-> **Turn a 20-minute inpatient oncology round into a structured, evidence-linked clinical note in under 2 minutes — with zero cloud audio privacy leakage and ₹0 API cost.**
+> Capture the bedside round by voice or text, get CTCAE v5.0–graded findings and a draft SOAP note, verify every item, attest — and keep each round as history for the next one. The clinician decides; RoundsAI does the paperwork around them.
 
 [![Live App](https://img.shields.io/badge/Live%20App-rounds--ai--umber.vercel.app-success?style=flat&logo=vercel)](https://rounds-ai-umber.vercel.app/)
 [![Backend API](https://img.shields.io/badge/Render%20API-rounds--ai--backend.onrender.com-46E3B7?style=flat&logo=render)](https://rounds-ai-backend.onrender.com/health)
@@ -10,388 +10,305 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?style=flat&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![Next.js](https://img.shields.io/badge/Next.js-15.5-000000?style=flat&logo=next.js&logoColor=white)](https://nextjs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
-[![Python](https://img.shields.io/badge/Python-3.12+-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org)
-[![Whisper AI](https://img.shields.io/badge/Whisper-On--Device%20Base%20int8-orange?style=flat)](https://github.com/openai/whisper)
-[![Google Gemini](https://img.shields.io/badge/Gemini%202.5%20Flash-Multimodal%20Vision-4285F4?style=flat&logo=google&logoColor=white)](https://ai.google.dev)
+[![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org)
+[![Whisper](https://img.shields.io/badge/faster--whisper-base%20int8%20on%20CPU-orange?style=flat)](https://github.com/SYSTRAN/faster-whisper)
+[![Google Gemini](https://img.shields.io/badge/Gemini-Flash%20with%20rule--engine%20fallback-4285F4?style=flat&logo=google&logoColor=white)](https://ai.google.dev)
+
+**Health-a-thon 2026 · Team Binary Minds (1RKUPH)** · Track: Cancer — Doctor / Care Team — Doctor Productivity & Knowledge Assistant
 
 ---
 
-## 📋 Executive Overview
+## 📋 Overview
 
-Inpatient oncology ward rounds represent one of the most cognitively taxing environments in clinical medicine. Attending oncologists and fellows must simultaneously synthesize bedside conversations, decipher physical laboratory printouts, calculate chemotherapy toxicity nadirs, and verify clinical practice guidelines under severe time constraints.
+Inpatient oncology rounds combine spoken observations, printed CBC sheets, toxicity grading against CTCAE thresholds and note writing — under time pressure, and with time-critical escalations such as febrile neutropenia.
 
-**RoundsAI** is a multimodal clinical intelligence copilot built specifically for the oncology inpatient ward:
-- **Bedside Mobile Companion (`/mobile`)**: Clinicians dictate observations on the move or scan printed lab sheets using their mobile camera.
-- **Privacy-Preserving Speech Architecture**: Voice dictation is transcribed via local dedicated server CPU inference (`faster-whisper` base int8) or native browser Web Speech API, with **zero third-party audio egress to commercial LLM APIs** and **₹0 audio API fees**.
-- **Specialized Oncology Normalizer**: A clinical phonetic engine corrects 120+ oncology acoustic homophones (*"fall fox"* $\rightarrow$ **mFOLFOX6**, *"anc nine hundred"* $\rightarrow$ **ANC 900 /µL**), with strict safeguards protecting negation terms (e.g. *"a febrile episode"* is never inverted).
-- **Instant Bedside-to-Desktop Synchronization**: 1-tap transmission immediately triggers a live Server-Sent Events (SSE) notification on the desktop workstation with 1-click encounter loading.
-- **Automated CTCAE v5.0 Toxicity Grading**: Calculates baseline-to-current lab deltas and detects Grade 1–4 myelosuppression.
-- **Comprehensive Grade 0–4 Demo Cases**: Seeded ward census includes complete clinical trajectories representing every CTCAE grade:
-  - **Grade 4**: David Miller (`#104`, Bed 12) — Febrile neutropenia (ANC 420 /µL, T 38.4°C, secondary G-CSF protocol)
-  - **Grade 3**: Sarah Jenkins (`#105`, Bed 14) — Severe neutropenia & low-grade fever (ANC 750 /µL, cycle delay)
-  - **Grade 2**: Robert Chen (`#107`, Bed 18) — Moderate myelosuppression & fatigue (ANC 1,250 /µL, pre-infusion CBC surveillance)
-  - **Grade 1**: Emily Watson (`#108`, Bed 20) — Mild myelosuppression & sensory neuropathy (ANC 1,750 /µL, full dose cleared)
-  - **Grade 0 (Stable)**: Elena Rostova (`#106`, Bed 16) — Normal bone marrow recovery (ANC 1,620 /µL, 100% RDI continuation)
-- **4-Tier Model Fallback & AI Provenance**: Resilient cascading fallback hierarchy (`Gemini Flash` → `Gemini Flash-Lite` → `Gemini Pro` → `Deterministic Clinical Rule Engine`) with transparent visual badges (`[🤖 AI Model: Gemini 2.5 Flash]`, `[⚙️ Deterministic Clinical Rule Engine]`) identifying the exact generation engine on every alert, trajectory, and note.
-- **Mandatory Clinician Verification Guardrails**: Clear `[CLINICIAN VERIFICATION REQUIRED]` callouts on decision support alerts and concise doctor verification checkpoints across SOAP attestation, phonetic autocorrect, OCR lab review, and protocol dose modification recommendations.
-- **Demo Mode vs. Clean Hospital Account Isolation**: Evaluators can enter instant demo mode with 1 click ("Try demo") to explore all features across seeded cases, while credentialed staff login starts completely from scratch with zero demo data traces for admitting real patients.
-- **Multimodal Document Attachment**: Quick `+` attach button on the capture toolbar allowing rapid upload and Multimodal Vision OCR extraction of paper lab sheets directly into the note draft.
-- **Human-Centered Bedside Care Visuals**: Modernized landing experience featuring an arched hospital bedside scene, concentric orbit rings, and Listen / Understand / Support workflow signals.
-- **Clinical Notification Center**: Surfaces active ward alerts, warnings, and recovery notes by CTCAE urgency with 1-click mark as read and clear all.
-- **Assistive Safety Sentinels**: Evaluates high-risk criteria (e.g. **Febrile Neutropenia** per IDSA/ASCO 2018) as `"Criterion met, for clinician review"` with neutral guideline citations.
-- **Longitudinal Patient Analytics (`/analytics`)**: Charts ANC/WBC/Platelet nadirs across chemotherapy cycles, predicts recovery windows, and surfaces guideline-concordant dose modifications.
-- **Hospital EMR Grade UI**: Clean, distraction-free interface built with vector SVG icons, tabular monospace lab typography (`tnum`), and strict 0-emoji compliance.
+RoundsAI is a web application with three connected surfaces:
+
+| Surface | Route | What it does |
+| :--- | :--- | :--- |
+| **Doctor Assessment Station** | `/station` | Capture (dictate / type / attach lab report) → **Analyze** → Review graded findings and a checklist → Sign the SOAP note → **Start next round**. Shows the fixed admission baseline and the patient's round history. |
+| **Bedside Mobile Companion** | `/mobile` | Dictate at the bedside, scan a lab sheet, and send the draft to the station (live over SSE, or between tabs on one device). |
+| **Longitudinal Analytics** | `/analytics` | ANC nadir trajectory, platelet and hemoglobin recovery chart, KPIs from the latest round, trajectory insight, NCCN-style dose-modification advice and the round audit log. |
+| **Ward Roster** | `/roster` | Admit (with an optional admission baseline), edit, and discharge patients; bed-conflict checks. |
+
+> **Everything shown to the clinician is derived from what was recorded.** Values that were not dictated or scanned are shown as *Not recorded* — they are never filled in from demo profiles or estimated.
 
 ---
 
-## 🏛️ System Architecture
+## ⚡ Features
+
+### Capture
+- **Two speech engines:** *Whisper STT* — `faster-whisper` base int8 on the RoundsAI backend CPU; audio goes only to your own server (default `TRANSCRIPTION_MODE=local`). *Live ASR* — the browser's Web Speech API for real-time text; in Chrome this audio is processed by Google's speech service. The UI states which applies for the selected engine.
+- **Oncology auto-correct with review:** 92 in-browser rules and 102 server rules (each matching several spoken variants) fix misheard terms — e.g. *"our chop"* → **R-CHOP**, *"ox ally platin"* → **oxaliplatin**, *"Anarcho AMC"* → **ANC**. Every correction is shown with a confidence score and can be accepted or rejected individually; *"a febrile episode"* is protected from being rewritten to *"afebrile"*.
+- **Lab-report upload (`+`):** text reports (`.txt/.csv/.json`) are parsed on-device; PNG/JPEG/WebP images are read by **Gemini Vision** through `POST /api/v1/vision/lab-ocr` (nothing is stored). Extracted values open in a review modal for confirmation before they are committed. If the vision model is unavailable the modal says so and asks for manual entry.
+
+### Analyze → Review → Sign
+- **Analyze round** sends the dictation to the backend pipeline (`POST /api/v1/rounds/extract`: polish → extraction → lab validation → CTCAE grading → sentinels → draft note). If the backend is unreachable the same analysis runs **on-device** with deterministic rules, and the UI says which engine produced the result.
+- **CTCAE v5.0 grading** of ANC, platelets, WBC and hemoglobin (counts normalized to /µL — "88k", "1.8 K/µL" and "x10³" are handled).
+- **Febrile-neutropenia sentinel (IDSA/ASCO 2018):** fever = single reading ≥ 38.3 °C or ≥ 38.0 °C sustained ≥ 1 h; criteria met when ANC < 500 /µL, or < 1,000 /µL with a documented expected decline. Fever with ANC 500–999 and no documented decline is still surfaced ("Assess for FN") — it never passes silently.
+- **Clause-scoped negation:** "denies cough, dysuria, or focal pain" negates all three; "no fever and reports severe pain" keeps pain active.
+- **Verification checklist:** every graded value, the fever criterion and any ambiguous unit becomes a checklist item. All items start **unchecked**; attestation stays locked until each is confirmed.
+- **Editable SOAP draft** built from the dictated values, with guideline-based plan suggestions (always ending "All orders require attending confirmation").
+
+### Round history
+- Each patient has a **fixed admission baseline** (ANC, platelets, WBC, Hgb, temperature, condition) recorded once at admission.
+- **Attest** saves the round (dictation, SOAP note, grades, labs, clinician, time) to **Round history**; **Start next round** opens a blank capture for the updated condition while every previous note stays expandable for reference.
+
+### Analytics
+- KPIs are computed from the latest recorded round; the cycle bar reads the real "Cycle N of M".
+- Charts plot only measured values (missing hemoglobin is not drawn as a default).
+- Trajectory insight: Gemini when available, otherwise a deterministic generator that states nadir, latest value, trend and per-lineage CTCAE grades from recorded data only, and reports **data completeness** instead of a model "confidence".
+- Dose-modification advice (Grade 4 → 20% reduction + G-CSF; Grade 3 → delay until ANC ≥ 1,500 /µL and platelets ≥ 100,000 /µL; Grade 0–2 → 100% RDI if pre-cycle counts are adequate), referencing the patient's actual next cycle.
+
+### Accounts and demo
+- **Accounts:** Firebase email/password sign-in and sign-up (with password reset and "keep me signed in"). The clinician profile comes from the signed-in user, and each account has its **own isolated ward** (patients, analytics, round history, notifications) — accounts never receive demo data.
+- **Demo mode** ("Try demo"): five synthetic patients covering CTCAE Grades 0–4, each with a pre-loaded Round 1, a step-by-step **demo guide**, **Try a scenario** dictations (febrile neutropenia, possible FN, sustained 38.1 °C, low platelets & Hgb, stable, labs pending, speech errors) and downloadable sample lab reports in `apps/web/public/demo/`.
+
+| Demo patient | Bed | Case (Round 2 dictation) |
+| :--- | :--- | :--- |
+| David Miller (#104) | 12 | ANC 420 /µL + 38.4 °C → febrile neutropenia, Grade 4 |
+| Sarah Jenkins (#105) | 14 | ANC 750 /µL + 38.1 °C (not sustained) → Grade 3 neutropenia |
+| Robert Chen (#107) | 18 | ANC 1,250 /µL → Grade 2 |
+| Emily Watson (#108) | 20 | ANC 1,750 /µL → Grade 1 |
+| Elena Rostova (#106) | 16 | ANC 2,150 /µL, afebrile → Grade 0 |
+
+---
+
+## 🏛️ Architecture
 
 ```mermaid
 flowchart TB
-    subgraph ClientLayer["1. Clinical Client Tier (Next.js 15)"]
-        Mobile["📱 Bedside Mobile Companion\n(/mobile)\n• Voice Dictation (Local Audio Buffer / Web Speech)\n• Camera Document / Lab Scan\n• Patient Context Selector"]
-        Desktop["💻 Doctor Assessment Station\n(/)\n• Real-Time SSE Live Sync Sentinel\n• 1-Click Encounter Loader\n• CTCAE Evaluation & SOAP Note Editor"]
-        Analytics["📊 Longitudinal Patient Analytics\n(/analytics)\n• ANC Nadir & Toxicity Trends\n• Chemo Dose Modification Advisor\n• Historical Round Audit Trail"]
+    subgraph Client["Next.js 15 web app (apps/web)"]
+        Mobile["Bedside Mobile /mobile"]
+        Station["Doctor Station /station"]
+        Analytics["Analytics /analytics"]
+        Roster["Roster /roster"]
+        Local["On-device rules\nround-analysis.ts · oncology-autocorrect.ts\nclinical-utils.ts"]
+        Store["Browser storage per workspace\n(demo, or one per Firebase user)"]
     end
 
-    subgraph APILayer["2. FastAPI Application Boundary (:8000)"]
-        Router["FastAPI Core Router\n• /api/v1/voice/transcribe\n• /api/v1/clinical/autocorrect\n• /api/v1/rounds/extract\n• /api/v1/rounds/stream (SSE)\n• /api/v1/analytics/{patient_id}\n• /api/v1/patients"]
+    subgraph API["FastAPI backend (backend/)"]
+        Extract["POST /api/v1/rounds/extract\nLangGraph: polish → extract → validate → grade → sentinels → note"]
+        OCR["POST /api/v1/vision/lab-ocr"]
+        Voice["POST /api/v1/voice/transcribe\n(faster-whisper, local)"]
+        Sync["POST /api/v1/rounds/bedside-sync\nGET /api/v1/rounds/stream (SSE)"]
+        Insight["POST /api/v1/analytics/ai-insights"]
+        Fallback["ai_fallback.py\nmodel cascade + cooldown"]
     end
 
-    subgraph BrainLayer["3. Multimodal Clinical Intelligence & Deterministic Rules"]
-        Whisper["🎙️ On-Device Whisper Engine\n(faster-whisper base-int8 on CPU)\n• Zero cloud egress\n• Oncology vocabulary priming"]
-        AutoCorrect["✨ Clinical Phonetic Normalizer\n• 120+ Oncology Regimen Rules\n• Homophone & Acoustic Rectification\n• Deterministic Zero-Hallucination Fallback"]
-        OCR["📷 Multimodal Vision / OCR\n• Paper lab printout extraction (Gemini Vision)\n• Baseline vs Current Lab Parser"]
-        CTCAE["🧪 CTCAE v5.0 Grading Engine\n• Grade 1-4 Myelosuppression (ANC, Plt, WBC, Hgb)\n• ANC Nadir Delta Tracking"]
-        Sentinel["🚨 Clinical Safety Sentinel\n• Febrile Neutropenia Protocol (IDSA/ASCO 2018)\n• Thrombocytopenia Hemorrhage Guard\n• NCCN 20% Dose Reduction Advisory"]
-        NoteGen["📝 Structured Note Generator\n• Standardized Oncology SOAP Format\n• Provenance & Guideline Citations"]
-    end
+    Gemini["Google Gemini API"]
+    Auth["Firebase Auth"]
+    Supabase["Supabase (optional persistence)"]
 
-    subgraph DataLayer["4. Persistence & Evidence Knowledge Base"]
-        Store["💾 Local Round Cache & SQLite Store\n• Dynamic Round Indexing\n• Immutable Audit Trail\n• Optional Supabase Sync"]
-        Guidelines["📚 Oncology Evidence Knowledge Base\n• ASCO / IDSA Neutropenic Guidelines\n• NCCN Chemotherapy Dose Adjustments"]
-    end
-
-    Mobile -->|"POST /api/v1/voice/transcribe"| Router
-    Mobile -->|"POST /api/v1/rounds/extract"| Router
-    Desktop -->|"GET /api/v1/rounds/stream (SSE)"| Router
-    Desktop -->|"POST /api/v1/rounds/extract"| Router
-    Analytics -->|"GET /api/v1/analytics/{id}"| Router
-
-    Router --> Whisper
-    Router --> AutoCorrect
-    Router --> OCR
-    Router --> CTCAE
-    Router --> Sentinel
-    Router --> NoteGen
-
-    CTCAE --> Store
-    Sentinel --> Guidelines
-    NoteGen --> Guidelines
-    NoteGen --> Store
-    Store --> Router
+    Mobile -->|draft| Sync
+    Sync -->|SSE round_update| Station
+    Station --> Extract
+    Station --> OCR
+    Station --> Voice
+    Analytics --> Insight
+    Station -.->|backend unreachable| Local
+    Extract --> Fallback
+    OCR --> Fallback
+    Insight --> Fallback
+    Fallback --> Gemini
+    Extract -.-> Supabase
+    Station --> Store
+    Analytics --> Store
+    Client --> Auth
 ```
 
----
-
-## 🔄 End-to-End Clinical Round Flow
+### One round, end to end
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Clinician as Attending Oncologist
-    participant Mobile as Bedside Mobile (/mobile)
-    participant Backend as FastAPI Backend (:8000)
-    participant Brain as Whisper & Clinical Brain
-    participant Desktop as Doctor Workstation (/)
-    participant Analytics as Patient Analytics (/analytics)
+    actor Doc as Clinician
+    participant M as Mobile (/mobile)
+    participant B as FastAPI
+    participant S as Station (/station)
 
-    Clinician->>Mobile: Selects Patient Bed 04 & dictates clinical observations
-    Clinician->>Mobile: Snaps photo of bedside CBC lab sheet
-    Mobile->>Brain: Transcribes audio locally via faster-whisper (0ms cloud latency)
-    Mobile->>Brain: Applies phonetic normalizer ("fall fox" → mFOLFOX6)
-    Clinician->>Mobile: Taps "SYNC ROUND TO DOCTOR DASHBOARD"
-    Mobile->>Backend: POST /api/v1/rounds/extract { patient_id: "104", transcript, images }
-    
-    activate Backend
-    Backend->>Brain: Extract WBC, ANC, Platelets & Vital Signs
-    Backend->>Brain: Run CTCAE v5.0 evaluation against patient baseline
-    Backend->>Brain: Safety Sentinel detects ANC 420 + Temp 38.4°C → Febrile Neutropenia!
-    Backend->>Backend: Cache round in local store & broadcast SSE event
-    Backend-->>Mobile: 200 OK (Round ID, extracted labs, confirmation card)
-    deactivate Backend
-
-    Note over Desktop: Real-Time SSE Listener receives event: round_update
-    Desktop-->>Clinician: Displays top banner: "Bedside Round Transmitted · LIVE SYNC · Pt #104"
-    Clinician->>Desktop: Clicks "Load into Assessment Station"
-    Desktop->>Desktop: Auto-populates transcript, patient context, lab metrics & CTCAE alerts
-    Clinician->>Desktop: Reviews pre-drafted SOAP note & clicks "Attest & Approve Note"
-
-    Clinician->>Analytics: Navigates to Patient #104 Analytics
-    Analytics->>Backend: GET /api/v1/analytics/104
-    Backend-->>Analytics: Returns longitudinal lab trajectory & cycle nadir history
-    Analytics-->>Clinician: Displays ANC nadir trendline & recommended 20% chemo dose reduction
+    Doc->>M: Dictate at the bedside, tap "Send"
+    M->>B: POST /rounds/bedside-sync
+    B-->>S: SSE round_update (same-device tabs also get a storage event)
+    Doc->>S: "Load into station" → Analyze round
+    S->>B: POST /rounds/extract
+    B-->>S: labs, symptoms, sentinel flags, confirm items, engine used
+    Note over S: If the backend is down, on-device rules produce the same structure
+    Doc->>S: Tick every checklist item → edit SOAP → Attest
+    S->>S: Save to Round history + analytics; "Start next round"
 ```
 
 ---
 
-## ⚡ Key Features
+## 🤖 How AI is used
 
-### 1. High-Accuracy Voice & Zero-Cost Clinical Transcription
-- **On-Device Whisper**: Employs `faster-whisper` (base int8) running locally on CPU. No external audio APIs required, ensuring zero audio egress in local mode and ₹0 per-minute billing.
-- **120+ Specialized Oncology Regimens**: Normalizes acoustic homophones:
-  - *Chemotherapy*: `"fall fox"` $\rightarrow$ `mFOLFOX6`, `"carbo taxol"` $\rightarrow$ `Carboplatin + Paclitaxel`, `"our chop"` $\rightarrow$ `R-CHOP`, `"fol fir inox"` $\rightarrow$ `FOLFIRINOX`.
-  - *Lab Counts*: `"anc nine hundred"` $\rightarrow$ `ANC 900 /µL`, `"platelets one forty five k"` $\rightarrow$ `Platelets 145,000 /µL`.
-  - *Clinical Terms*: `"a febrile"` $\rightarrow$ `afebrile`, `"sensory pare sthesia"` $\rightarrow$ `sensory paresthesia`.
-- **Clinician Oversight Safeguard**: Displays automated diff notices with a 1-click **Undo** action to revert any automatic text change.
-
-### 2. Bedside-to-Desktop Live Synchronization
-- Bedside mobile companion sends captured speech, lab photographs, and selected patient bed.
-- Desktop workstation features a Server-Sent Events (SSE) connection (`/api/v1/rounds/stream`) with automatic 5-second polling fallback.
-- 1-click **"Load into Assessment Station"** transfers the complete encounter directly into the SOAP drafting interface.
-
-### 3. Automated CTCAE v5.0 & Clinical Safety Sentinels
-- **Febrile Neutropenia Screening**: Detects fever ($\ge 38.3^\circ\text{C}$ once or $\ge 38.0^\circ\text{C} \ge 1\text{h}$) alongside ANC $< 500/\mu\text{L}$ (Grade 4) or expected decline to $< 500/\mu\text{L}$ within 48h. Surfaces a `"Criterion met, for clinician review"` sentinel alert citing the IDSA/ASCO 2018 guideline.
-- **Myelosuppression Grading**: Computes baseline vs. current lab deltas and classifies Grade 1–4 toxicities per CTCAE v5.0 (NCI).
-- **Thrombocytopenia & Anemia Sentinels**: Flags critical platelet nadirs ($< 25,000/\mu\text{L}$) and severe anemia ($< 8.0\text{ g/dL}$) with neutral guideline citations.
-
-### 4. Longitudinal Patient Analytics
-- Cycle-over-cycle laboratory trend charts for Absolute Neutrophil Count (ANC), White Blood Cells (WBC), and Platelets.
-- Real-time toxicity trajectory and clinical recovery estimation.
-- Historical ward round timeline with clinician sign-off timestamps and approved SOAP notes.
-
-### 5. Hospital-Grade UI & Typography
-- Strict **0-emoji design standard** with 26 custom enterprise vector SVG icons.
-- Tabular figures (`font-feature-settings: "tnum"`) for perfectly aligned clinical lab metrics.
-- High-contrast clinical slate/navy color scheme.
-
----
-
-## 🛠️ Technology Stack
-
-| Layer | Technologies | Role |
+| Task | Primary | Fallback |
 | :--- | :--- | :--- |
-| **Frontend** | Next.js 15 (App Router), React 19, TypeScript, Vanilla CSS | Doctor Workstation, Bedside Mobile Companion, Longitudinal Analytics |
-| **Backend** | FastAPI, Python 3.12+, Uvicorn, Pydantic v2 | High-performance asynchronous REST API & clinical routing |
-| **Local Speech AI** | `faster-whisper` (base int8), CTranslate2, Web Speech API | Offline, zero-cloud transcription on CPU |
-| **Multimodal Vision** | Google Gemini 2.5 Flash SDK | Multimodal lab sheet transcription & document analysis |
-| **Clinical Logic** | CTCAE v5.0 Scoring Matrix, NCCN / ASCO Guidelines | Deterministic toxicity grading and safety sentinels |
-| **Data & Storage** | In-memory cache, SQLite store, optional Supabase integration | Longitudinal patient census & round audit logging |
+| Speech-to-text | `faster-whisper` base int8 on the backend CPU (Whisper STT), or the browser Web Speech API (Live ASR; Google's service in Chrome) | — |
+| Transcript polish | Gemini (`GEMINI_MODEL_POLISH`) with a diff guard that rejects any change to numbers, units, drugs or negations | Rule-based oncology normalizer |
+| Clinical extraction | Gemini structured output (`LLM_PROVIDER=gemini`) | Deterministic regex extractor |
+| Lab-report images | Gemini Vision (`GEMINI_MODEL_VISION`) | "Image not analyzed — enter values manually" |
+| Trajectory insight | Gemini JSON | Deterministic generator from recorded values |
+| CTCAE grading, sentinels, dose advice | **Always deterministic rules** | — |
+
+**Model cascade (`backend/services/ai_fallback.py`):** the configured models (`.env`: `gemini-3.5-flash`, polish `gemini-3.5-flash-lite`) → pinned tiers (`gemini-2.5-flash`, `2.0-flash`, `1.5-flash`, `1.5-pro`, `2.5-pro`) → rolling aliases (`gemini-flash-latest`, `gemini-flash-lite-latest`) → deterministic rules. A model that returns a quota error (429) is skipped for 10 minutes and a retired one (404) for an hour, so an exhausted key fails fast instead of retrying. Every result carries a provenance badge naming the model or rule engine that actually produced it.
+
+**Prompting:** extraction and vision prompts instruct the model to copy numbers exactly with their printed units, ignore reference ranges and differential percentages, scope negation to the clause, and leave unknown fields empty. The analytics prompt lists missing values as "not recorded", states that rounds are newest-first, forbids demographics and unstated clinical facts, and asks for a confidence that reflects data completeness.
 
 ---
 
-## 📁 Repository Structure
+## 🔒 Safety and responsible AI
+
+- **Clinician in the loop:** every alert carries a *Clinician verification required* callout; notes stay drafts until all checklist items are confirmed and the clinician attests.
+- **Assistive wording:** sentinels read "Criterion met, for clinician review" and cite the guideline; RoundsAI does not diagnose or issue orders.
+- **No invented values:** missing labs are "Not recorded"; analytics carry the previous measured value forward only with an explicit note.
+- **Honest provenance:** badges show the real engine (e.g. "AI Fallback: Gemini Flash Lite Latest", "Deterministic Clinical Rule Engine (On-Device)").
+- **Privacy boundary:** with *Whisper STT* (`TRANSCRIPTION_MODE=local`) audio is transcribed on the RoundsAI backend, not by a third-party speech service; *Live ASR* uses the browser's speech service (Google, in Chrome). **Lab-report images, and transcripts when `LLM_PROVIDER=gemini`, are sent to the Google Gemini API** — use de-identified data unless institutional privacy, consent and data-processing approvals are in place.
+- **Isolation:** demo data lives in its own workspace; each Firebase account has its own.
+- **Web security headers:** HSTS, `nosniff`, `X-Frame-Options: DENY`, enforced `frame-ancestors/object-src/base-uri/form-action` CSP, with the full CSP in report-only mode.
+
+### Known limitations
+- Formal clinical user testing has **not** been done yet; evaluation so far is automated tests plus hands-on testing by the developers.
+- Ward census, round history and analytics are stored in the **browser** (per workspace). They do not yet sync across devices or users; only bedside drafts travel between devices (via SSE).
+- Gemini features depend on API quota; on a free-tier key the app frequently runs on the deterministic fallbacks.
+- Whisper accuracy for multi-accent speech in noisy wards has not been measured.
+- No EHR write-back yet: the note is exported via clipboard.
+
+---
+
+## 🧪 Testing
+
+| Suite | Command | Tests |
+| :--- | :--- | :--- |
+| Backend unit + API | `pytest --ignore=tests/test_full_system.py` | 102 |
+| Backend live integration (needs the API on :8000) | `pytest tests/test_full_system.py` | 8 |
+| Web unit (Node test runner) | `cd apps/web && npm test` | 83 |
+| Browser E2E (Playwright; app on :3000) | `node regression_test.mjs` · `node e2e_button_test.mjs` | 20 · 32 checks |
+
+Backend files: `test_clinical_accuracy.py` (63), `test_api_pytest.py` (20), `test_audit_regressions.py` (9), `test_ai_fallback.py` (7), `test_gemini_analytics.py` (3), `test_full_system.py` (8). Web files: `clinical-utils.test.ts`, `oncology-autocorrect.test.ts`, `round-analysis.test.ts`.
+
+Covered cases include CTCAE boundaries (e.g. ANC 499 vs 500), IDSA/ASCO fever criteria (single vs sustained), ANC 500–999 with and without expected decline, "88k" platelets, °F→°C, clause-scoped negation, the "a febrile" inversion guard, vision-unit normalization, model-provenance labels, quota cooldowns, SSE queue bounds/cleanup, and offline analytics never inventing values.
+
+---
+
+## 🛠️ Technology stack
+
+| Layer | Technologies |
+| :--- | :--- |
+| Frontend | Next.js 15 (App Router), React 19, TypeScript 5.9, CSS |
+| Backend | FastAPI, Python 3.12, Uvicorn, Pydantic v2, LangGraph |
+| Speech | Web Speech API; `faster-whisper` (CTranslate2, int8, CPU) |
+| AI | Google Gemini via `google-genai` (structured output, vision) |
+| Auth | Firebase Authentication (email/password) |
+| Data | Browser storage per workspace; backend in-memory store with optional Supabase |
+| Deploy | Vercel (web), Render (API), Dockerfile |
+
+---
+
+## 📁 Repository structure
 
 ```text
-├── apps/
-│   └── web/
-│       ├── app/
-│       │   ├── components/
-│       │   │   └── Icons.tsx              # Hospital-grade vector SVG icons (0 emojis)
-│       │   ├── mobile/page.tsx            # Bedside Mobile Capture Companion
-│       │   ├── analytics/page.tsx         # Longitudinal Patient Analytics Dashboard
-│       │   ├── roster/page.tsx            # Ward Census, Bed Allocations & Inpatient Management
-│       │   ├── station/page.tsx           # Doctor Assessment Station & SOAP Workflow
-│       │   ├── login/page.tsx             # Clinician Authentication & Demo Mode
-│       │   ├── page.tsx                   # Public Landing & Overview
-│       │   ├── App.tsx                    # Core responsive clinical workstation & state engine
-│       │   ├── layout.tsx                 # Root Layout & Clinical Navigation Shell
-│       │   └── styles.css                 # Hospital EMR typography & theme styling
-│       ├── lib/
-│       │   ├── clinical-utils.ts          # CTCAE badge styles, lab trends, bed occupancy & dose guidelines
-│       │   ├── clinical-utils.test.ts     # TDD unit test suite
-│       │   ├── oncology-autocorrect.ts    # 120+ oncology phonetic regex normalizer & rules
-│       │   ├── oncology-autocorrect.test.ts # Speech misrecognition & homophone tests
-│       │   ├── api.ts                     # REST client & Server-Sent Events (SSE) bridge
-│       │   └── firebase.ts                # Firebase client configuration & auth
-│       ├── package.json
-│       └── tsconfig.json
-├── backend/
-│   ├── api/
-│   │   └── main.py                     # FastAPI REST routes & application entrypoint
-│   ├── agents/
-│   │   └── round_graph.py              # Multi-agent clinical workflow & CTCAE rules
-│   ├── models/
-│   │   ├── analytics.py                # Longitudinal analytics schemas
-│   │   ├── patient.py                  # Patient demographic & lab schemas
-│   │   └── round.py                    # Round request/response schemas
-│   ├── services/
-│   │   ├── ai_fallback.py              # 4-tier AI model selection & fallback cascade
-│   │   ├── voice_transcriber.py        # Local faster-whisper base-int8 pipeline
-│   │   ├── clinical_autocorrect.py     # 120+ oncology phonetic regex normalizer
-│   │   ├── clinical_negation.py        # Deterministic acute vs historical negation engine
-│   │   ├── lab_validation.py           # Biological plausibility range checks
-│   │   ├── patient_analytics.py        # Longitudinal trends & CTCAE calculator
-│   │   ├── persistence.py              # Thread-safe round cache & database storage
-│   │   ├── gemini_extractor.py         # Gemini LLM clinical structured extractor
-│   │   ├── gemini_vision.py            # Multimodal vision lab report extractor
-│   │   ├── local_extractor.py          # Deterministic local regex extractor
-│   │   ├── patient_service.py          # Patient census management
-│   │   └── rag_service.py              # Clinical guideline retrieval & grounding
-│   └── requirements.txt
-├── docs/
-│   ├── submissions/
-│   │   ├── Deliverable_2_Two_Page_Overview_BinaryMinds_1RKUPH.pptx  # Prescribed 2-page brief
-│   │   ├── Deliverable_3_Final_Presentation_BinaryMinds_1RKUPH.pptx # Prescribed 12-slide PPT
-│   │   └── Round1_Idea_Pitch_Deck.pdf                              # Round 1 archive
-│   ├── HACKATHON_SUBMISSION.md         # Comprehensive hackathon dossier
-│   ├── demo-script.md                  # 5-minute presentation & demo script
-│   └── architecture.md                 # System architecture overview
-├── knowledge/
-│   ├── Lab_Report_01.png               # Sample bedside CBC lab report scan
-│   └── oncology_guidelines.json        # Curated NCCN/ASCO clinical guidelines
-├── scripts/
-│   └── verify_live_api.py              # End-to-end integration verification script
-├── tests/
-│   ├── conftest.py                     # Pytest fixtures and network guardrails
-│   ├── test_ai_fallback.py             # 4-tier fallback model hierarchy tests (7 tests)
-│   ├── test_api_pytest.py              # API contract, CORS, SSE & auth tests (20 tests)
-│   ├── test_clinical_accuracy.py       # Clinical accuracy & CTCAE v5.0 tests (61 tests)
-│   └── test_full_system.py             # Live integration test suite (8 tests)
-├── .env.example                        # Documented environment template
-├── Dockerfile                          # Production container specification
-├── Procfile                            # Render / cloud deployment descriptor
-├── pytest.ini                          # Pytest configuration (pythonpath = .)
-├── README.md                           # Project documentation
-├── render.yaml                         # Render deployment specification
-└── vercel.json                         # Vercel deployment specification
+apps/web/
+  app/App.tsx                 # Station, Roster, Mobile, Analytics, Login and app state
+  app/styles.css
+  lib/round-analysis.ts       # Transcript extraction, CTCAE grading, review case & SOAP builder
+  lib/clinical-utils.ts       # Provenance, OCR parsing, dose advice, offline analytics insight
+  lib/oncology-autocorrect.ts # In-browser oncology term correction
+  lib/api.ts                  # Backend client (extract, OCR, bedside sync, SSE, analytics)
+  lib/firebase.ts             # Firebase app/auth (loaded lazily)
+  public/demo/                # Synthetic sample CBC report (PNG + TXT)
+  *.mjs                       # Playwright E2E scripts
+backend/
+  api/main.py                 # FastAPI routes, SSE manager, bedside relay, lab OCR
+  agents/round_graph.py       # LangGraph round pipeline & CTCAE sentinels
+  services/                   # ai_fallback, gemini_*, clinical_negation, clinical_autocorrect,
+                              # lab_validation, local_extractor, voice_transcriber, persistence, ...
+tests/                        # pytest suites
+docs/submissions/             # Health-a-thon deliverables
 ```
 
 ---
 
-## 🚀 Quickstart & Local Setup
+## 🚀 Local setup
 
-### Prerequisites
-- **Python**: 3.11 or higher
-- **Node.js**: 18.x or higher (npm 9+)
-- **Git**
+Prerequisites: Python 3.12, Node.js 24 (see `apps/web/.nvmrc`).
 
-### 1. Clone the Repository
 ```bash
 git clone https://github.com/santhoshh005/Rounds_AI.git
 cd Rounds_AI
 ```
 
-### 2. Setup & Launch Backend
-Open a terminal in the project root:
-
-```powershell
-# Create and activate Python virtual environment
-py -m venv .venv
-.\.venv\Scripts\Activate.ps1
-
-# Install backend dependencies
-pip install -r backend\requirements.txt
-
-# Configure environment variables
-Copy-Item .env.example .env
-
-# Start FastAPI server
-python -m uvicorn backend.api.main:app --host 0.0.0.0 --port 8000
-```
-*API health check is available at [http://localhost:8000/health](http://localhost:8000/health) and interactive Swagger documentation at [http://localhost:8000/docs](http://localhost:8000/docs).*
-
-### 3. Setup & Launch Frontend
-Open a second terminal in the `apps/web` directory:
+**Backend**
 
 ```bash
-cd apps/web
-npm install
-npm run dev
+python -m venv .venv
 ```
-*Application is available at [http://localhost:3000](http://localhost:3000).*
-
----
-
-## 🧪 Testing & Verification
-
-RoundsAI includes a comprehensive, dual-stack test suite ensuring strict clinical correctness and zero regressions:
-
-### Backend Test Suite (Pytest)
-```powershell
-# Run the complete clinical accuracy and API suite
-pytest
-```
-- **63 Clinical Accuracy Tests** (`tests/test_clinical_accuracy.py`):
-  - CTCAE v5.0 myelosuppression grading across boundary conditions (e.g. ANC 499 vs 500 /µL).
-  - Acute fever vs. historical/negated fever differentiation (`"no fever"`, `"afebrile"`).
-  - 120+ oncology phonetic regex corrections and Gemini polish diff verification guard.
-  - Biological plausibility range checks.
-  - Audit regression tests protecting *"a febrile episode"* from negation inversion, spoken Fahrenheit conversion, and chills extraction.
-- **20 API & Live Sync Tests** (`tests/test_api_pytest.py`):
-  - CORS header validation across allowed origins.
-  - Server-Sent Events (SSE) framing, keepalive, and real-time round broadcast delivery.
-  - Unverified clinician attestation fallback headers.
-  - Zero-key fallback behavior.
-- **8 Full-System Integration Tests** (`tests/test_full_system.py`)
-
-### Frontend Test Suite
 ```bash
-cd apps/web
-npm test
+.venv/Scripts/activate        # Windows; use: source .venv/bin/activate on macOS/Linux
 ```
-- **57 Unit & Safety Tests** (`apps/web/lib/clinical-utils.test.ts` & `oncology-autocorrect.test.ts`):
-  - Executes in **~1.3s** via Node.js native test runner.
-  - Verifies CTCAE badge styles, lab trend calculation, source provenance badges, oncology triad extraction, bed occupancy validation, Grade 0–4 dose modification recommendations, toast cleanups, doctor initials, and clinical notification center defaults.
+```bash
+pip install -r backend/requirements.txt
+```
+```bash
+cp .env.example .env          # add GEMINI_API_KEY to enable Gemini features
+```
+```bash
+python -m uvicorn backend.api.main:app --port 8000
+```
+
+Health check: http://localhost:8000/health · API docs: http://localhost:8000/docs
+
+**Frontend**
+
+```bash
+cd apps/web && npm install && npm run dev
+```
+
+Open http://localhost:3000. For accounts, set the `NEXT_PUBLIC_FIREBASE_*` variables (see `apps/web/.env.example`) and enable the Email/Password provider in Firebase Authentication. Demo mode needs no configuration.
 
 ---
 
-## 🔒 Clinical Safety, Privacy & Accuracy Safeguards
+## 🔑 Environment variables
 
-### 1. Privacy Modes & Audio Egress Controls
-RoundsAI is engineered with a transparent privacy-first architecture controlled via `TRANSCRIPTION_MODE`:
-- **`local` (Default — Zero Third-Party Audio Egress)**: Voice recordings are processed on the dedicated application backend via CPU `faster-whisper` (int8 quantized) or in-browser Web Speech API. Audio bytes are never uploaded or streamed to third-party commercial LLM providers, ensuring **zero third-party audio egress** and **₹0 audio API fees**.
-- **`cloud`**: Utilizes Google Gemini audio processing (`gemini-2.5-flash`) only when cloud processing is explicitly configured and authorized by institutional policy.
-- **`hybrid`**: Attempts low-latency cloud transcription with seamless local fallback if network connectivity drops.
-- **Multimodal Lab OCR Privacy**: Physical lab reports are processed by Google Gemini Vision (`gemini-2.5-flash`) solely when an authorized clinician explicitly captures and submits a lab document. Extracted lab metrics must be human-verified before being committed into the encounter record.
-
-### 2. Clinical Accuracy & Hallucination Prevention
-- **Zero Invented Clinical Values**: The system never invents or hallucinates clinical metrics. Missing, ambiguous, or out-of-range values are flagged as `needs_confirmation` and surfaced in the interactive **"Confirm Before Signing"** review queue.
-- **LLM Polish Diff Verification Guard**: Any LLM-assisted note polishing is verified against the original dictation via a strict diff checker. If any numeric digit, laboratory unit, medication name, or negation term is mutated, the LLM output is rejected immediately in favor of deterministic rule-based text.
-- **Laboratory Normalization & Physiological Range Checks**: Standardizes units (e.g. ANC to `cells/µL`, Hemoglobin to `g/dL`, Platelets to `/µL`) and inspects biological plausibility boundaries, flagging possible 10× scaling or dictation errors for confirmation.
-- **Deterministic Negation & Temporality Engine**: Uses rule-based regex parsing to differentiate acute ongoing fevers from negated or historical observations (`"no fever"`, `"afebrile"`, `"fever resolved"`, `"fever yesterday"` vs `"fever since yesterday"`), eliminating false-alarm Febrile Neutropenia alerts.
-- **Deterministic CTCAE v5.0 Toxicity Grading**: Evaluates myelosuppression and toxicities against a canonical, versioned configuration table (`CTCAE v5.0, November 27, 2017`), citing standard practice guidelines (ASCO/IDSA and NCCN).
-- **Human-in-the-Loop Attestation**: Notes remain strictly in `status="draft"` until a licensed clinician reviews and clicks **"ATTEST & APPROVE NOTE"**. Sign-off is locked while unconfirmed items remain in the queue.
-- **Assistive Documentation Boundaries**: Alerts are strictly assistive and non-prescriptive, always phrased as `"Criterion met, for clinician review: ..."` rather than autonomous diagnostic claims or treatment orders.
-- **Thread-Safe Resilient Persistence**: In-memory stores are protected by threading locks (`threading.Lock`), and database write failures trigger a prominent `"Saved Locally Only"` warning in the UI without losing clinician work.
+| Variable | Description |
+| :--- | :--- |
+| `GEMINI_API_KEY` | Enables Gemini polish, extraction, vision OCR and insights. Without it everything runs on deterministic rules. |
+| `LLM_PROVIDER` | `local` (default) or `gemini` for transcript extraction. |
+| `GEMINI_MODEL_VISION` / `GEMINI_MODEL_DRAFT` / `GEMINI_MODEL_POLISH` | Primary models per task (first in the cascade). |
+| `TRANSCRIPTION_MODE` | `local` (default, faster-whisper) · `cloud` (Gemini audio) · `hybrid`. |
+| `WHISPER_MODEL_SIZE` | faster-whisper size (default `base`). |
+| `ALLOWED_ORIGINS` | Comma-separated CORS origins. |
+| `REQUIRE_AUTH` / `API_KEY` | Require an API key on backend requests. |
+| `NEXT_PUBLIC_API_URL` | Backend URL used by the web app. |
+| `NEXT_PUBLIC_FIREBASE_*` | Firebase web config for sign-in. |
+| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | Optional server-side persistence. |
+| `DEMO_MODE` | Backend synthetic data, labelled `[DEMO DATA]`. |
+| `TEST_MODE` | Disables all database writes (CI / testing). |
 
 ---
 
-## 🔑 Environment Variables Reference
+## 📈 Impact and cost — team estimates (not yet measured)
 
-| Variable | Required | Description |
-| :--- | :--- | :--- |
-| `GEMINI_API_KEY` | Optional | Enables Gemini vision OCR, extraction, and polish. Omit to run deterministic local mode. |
-| `LLM_PROVIDER` | Optional | `local` (default) or `gemini`. |
-| `GEMINI_MODEL_VISION` | Optional | Gemini model for lab image OCR (default: `gemini-2.5-flash`). |
-| `TRANSCRIPTION_MODE` | Optional | `local` / `cloud` / `hybrid` (default: `local`). |
-| `WHISPER_MODEL_SIZE` | Optional | `faster-whisper` model size (default: `base`). |
-| `ALLOWED_ORIGINS` | Optional | Comma-separated CORS origins. |
-| `REQUIRE_AUTH` | Optional | `true` to require `API_KEY` or Bearer token on all endpoints. |
-| `API_KEY` | If REQUIRE_AUTH=true | Server-side API key for `X-API-Key` header or Bearer token. |
-| `NEXT_PUBLIC_API_URL` | Optional | Backend URL for the frontend (default: `http://localhost:8000`). |
-| `SUPABASE_URL` | Optional | Supabase project URL for cloud persistence. |
-| `SUPABASE_SERVICE_ROLE_KEY` | Optional | Server-side only key for Supabase persistence. |
-| `DEMO_MODE` | Optional | `true` enables synthetic demo trajectories labeled `[DEMO DATA]`. |
-| `TEST_MODE` | Optional | `true` disables all cloud database writes for automated CI runs. |
+The following are **unmeasured team estimates** for planning, not results:
+
+- Documentation time per patient: from ~20 minutes of manual note writing to a few minutes of review and attestation.
+- Running cost: speech is transcribed on our own server (no per-minute speech fees); Gemini calls are billed per Google's current pricing and are optional — the deterministic engine runs at no API cost.
+
+Clinical context: IDSA/ASCO guidance recommends empiric antibiotics within 1 hour of presentation for febrile neutropenia; in septic shock each hour of delay in effective antimicrobials has been associated with about 7.6% lower survival (Kumar et al., *Crit Care Med* 2006).
 
 ---
 
-## 👥 Authors & Clinical Advisory
+## 👥 Team and clinical partner
 
-- **Chalicheemala Surya Thejas** — Technical Lead (`suryathejas970@gmail.com`)  
-  *Full-stack pipeline architecture: FastAPI asynchronous gateway, real-time Server-Sent Events (SSE) live sync, CTCAE scoring engine, and clinical Next.js 15 workstation.*
-- **Gaddam Sai Santhosh** — AI Systems Engineer (`saisanthosh05012006@gmail.com`)  
-  *On-device Whisper transcription pipeline, multimodal Gemini Vision OCR extraction, 120+ oncology phonetic normalizer, and automated test harnesses.*
-- **Dr. Amrut S Kadam** — Clinical Lead & Physician Partner (`raysoflife@gmail.com`)  
-  *Inpatient Ward Attending, Victoria Hospital, Bangalore Medical College & Research Institute (BMCRI).*  
-  *Clinical workflow co-design, CTCAE v5.0 myelosuppression grading threshold validation, 120+ chemotherapy regimen phonetic calibrations, and IDSA/ASCO 2018 febrile neutropenia protocol verification.*
+- **Chalicheemala Surya Thejas** — Team Leader & Technical Lead (`suryathejas970@gmail.com`)
+- **Gaddam Sai Santhosh** — Full-Stack AI Systems Engineer (`saisanthosh05012006@gmail.com`)
+- **Dr. Amrut S Kadam** — Clinical Lead & Inpatient Ward Attending, Victoria Hospital, Bangalore Medical College & Research Institute (BMCRI) (`raysoflife@gmail.com`) — clinical workflow co-design and review of CTCAE thresholds, oncology terminology and febrile-neutropenia criteria.
 
 ---
 
-## 📄 License & Clinical Disclaimer
+## 📄 License and disclaimer
 
-This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
+MIT — see [LICENSE](LICENSE).
 
 > [!CAUTION]
-> **Research and Decision Support Prototype**: RoundsAI is designed exclusively as an assistive productivity and cognitive copilot for licensed healthcare professionals. It does not provide autonomous medical diagnoses, prescriptive clinical orders, or independent treatment directives. All clinical evaluations, CTCAE grading, and generated notes require explicit review and attestation by a qualified clinician before inclusion in any permanent electronic medical record (EMR).
+> RoundsAI is a research and decision-support prototype for licensed clinicians. It does not diagnose or prescribe. All grades, alerts and notes require review and attestation by a qualified clinician, and clinical thresholds must be confirmed by the institution's clinical governance before any real-patient use.

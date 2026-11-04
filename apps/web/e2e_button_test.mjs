@@ -105,7 +105,7 @@ async function main() {
   await signInBtn.click();
   await page.waitForTimeout(200);
   const errorMsg = await page.locator(".form-error").textContent();
-  record("Login", "Form Validation On Empty Submit", errorMsg.includes("Enter your Staff ID"), errorMsg);
+  record("Login", "Form Validation On Empty Submit", errorMsg.includes("Enter your work email"), errorMsg);
 
   // Test "Continue in demo mode" button
   const demoModeBtn = page.getByText("Continue in demo mode", { exact: false });
@@ -294,7 +294,7 @@ async function main() {
 
   // Test Chemo Dose Modification Advisor Card
   const doseCard = page.locator(".dose-recommendation-card").first();
-  record("Analytics", "Chemo Dose Modification Advisor", /dose reduction/i.test(await doseCard.textContent()), "NCCN guideline recommendation active");
+  record("Analytics", "Chemo Dose Modification Advisor", /dose reduction|delay/i.test(await doseCard.textContent()), "NCCN guideline recommendation active");
 
   // Test Historical Rounds Audit Log Table
   const auditRows = page.locator(".audit-table table tbody tr");

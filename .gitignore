@@ -1,37 +1,61 @@
-# Environment files
+# ── Secrets & environment ───────────────────────────────────────────
+# Every env file is private; only the documented templates are committed.
 .env
-.env*.local
-.env.production
-.env.development
+.env.*
+!.env.example
+*.pem
+*.key
+serviceAccount*.json
+firebase-adminsdk*.json
 
-# Python virtual environment & caches
+# ── Python ──────────────────────────────────────────────────────────
 .venv/
 venv/
 __pycache__/
 *.py[cod]
 *$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 *.sqlite3
 *.faiss
-scratch/
 
-# Node & Next.js build artifacts
+# ── Node & Next.js ──────────────────────────────────────────────────
 node_modules/
 .next/
+out/
 dist/
 coverage/
 *.tsbuildinfo
+next-env.d.ts
+.vercel/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
 
-# AI Agent skills & plugins cache
+# ── Test & local working output ─────────────────────────────────────
+apps/web/e2e-artifacts/
+scratch/
+outputs/
+work/
+*.log
+
+# ── Local tooling & AI agent caches ─────────────────────────────────
+.claude/
 .agents/
 skills-lock.json
+.idea/
+.vscode/
 
-# Operating System files
+# ── OS, editor & Office temp files ──────────────────────────────────
 .DS_Store
 Thumbs.db
+desktop.ini
 *.bak
 *.swp
 *.zip
-apps/web/e2e-artifacts/
+~$*

@@ -1,0 +1,8 @@
+CITY CANCER CENTER - HEMATOLOGY LAB
+SYNTHETIC DEMO REPORT - NOT REAL PATIENT DATA
+Patient: David Miller | MRN-009184 | Bed 12
+WBC: 1.8 x10^3/uL
+Absolute Neutrophil Count (ANC): 420 cells/uL
+Platelet Count: 88,000 /uL
+Hemoglobin: 10.2 g/dL
+Temperature: 38.4 C

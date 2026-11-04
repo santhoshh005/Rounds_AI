@@ -194,3 +194,32 @@ describe("Vision OCR mapping and provenance", () => {
     assert.match(local.displayLabel, /Deterministic Clinical Rule Engine \(On-Device\)/);
   });
 });
+
+describe("Offline analytics insight — recorded data only", async () => {
+  const { generateLocalClinicalAnalyticsInsight } = await import("./clinical-utils.ts");
+
+  it("reports missing platelets instead of inventing a value", () => {
+    const res = generateLocalClinicalAnalyticsInsight(
+      { id: "p1", name: "Test Patient", regimen: "R-CHOP", cycle: "Cycle 2", baselineAnc: 2400 },
+      [{ anc: 750, platelets: NaN, ctcae_grade: 3 }],
+    );
+    assert.match(res.nadir_and_kinetics, /Platelets: not recorded/);
+    assert.doesNotMatch(res.nadir_and_kinetics, /215,000/);
+    assert.equal(res.risk_level, "High");
+    assert.ok(res.surveillance_milestones[0].startsWith("Record a platelet count"));
+  });
+
+  it("uses platelet toxicity in the risk level and reports recovery from nadir", () => {
+    const res = generateLocalClinicalAnalyticsInsight(
+      { id: "p2", name: "Test Patient", regimen: "AC-T", cycle: "Cycle 4", baselineAnc: 2500 },
+      [
+        { anc: 2100, platelets: 40000, ctcae_grade: 0 },
+        { anc: 900, platelets: 60000, ctcae_grade: 3 },
+      ],
+    );
+    assert.equal(res.risk_level, "High");
+    assert.match(res.executive_summary, /recovering from the nadir \(latest 2,100/);
+    assert.match(res.toxicity_stratification, /Thrombocytopenia: Grade 3/);
+    assert.ok(res.confidence_score < 100);
+  });
+});
