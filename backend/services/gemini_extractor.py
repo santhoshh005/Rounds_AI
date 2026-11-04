@@ -13,7 +13,12 @@ from pydantic import BaseModel, Field
 
 from backend.models.round import ClinicalExtraction, LabValue, Sex
 from backend.services.local_extractor import extract_clinical_facts as local_extract
-from backend.services.ai_fallback import get_candidate_models, is_transient_error
+from backend.services.ai_fallback import (
+    get_candidate_models,
+    is_transient_error,
+    note_model_failure,
+    should_retry_same_model,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -35,14 +40,20 @@ class GeminiClinicalExtraction(BaseModel):
     labs: list[GeminiLabValue] = Field(default_factory=list, description="Lab values explicitly mentioned")
 
 
-SYSTEM_INSTRUCTION = """You are a clinical data extraction assistant for a demonstration prototype.
-Extract structured clinical facts that are EXPLICITLY stated in the provided round transcript.
-CRITICAL SAFETY BOUNDARIES:
-- Do NOT infer, diagnose, or add information not present in the text.
-- If a field cannot be determined from the text, leave it as null or empty.
-- Distinguish active symptoms from negated symptoms (e.g. 'no fever', 'afebrile', 'fever resolved' belong in negated_symptoms).
-- Extract exact numbers for lab values without rounding or altering.
-This is a demo tool — not for autonomous clinical use."""
+SYSTEM_INSTRUCTION = """You extract structured facts from an oncology ward-round dictation.
+Output only facts EXPLICITLY stated in the transcript; never infer, diagnose or add values.
+
+Rules:
+- Labs: one entry per lab actually dictated. Use canonical names: ANC, WBC, PLATELETS, HEMOGLOBIN, CREATININE.
+  Copy the number exactly as spoken (convert number words to digits, e.g. "four twenty" -> 420) and keep the
+  dictated unit; if counts are stated in thousands ("1.8 K", "88k", "x10^3") put that in unit, do not rescale.
+  Ignore reference ranges, percentages of differential counts, and values described as previous/baseline.
+- Symptoms: lower-case symptom names. A symptom is negated when denied or absent in its own clause
+  ("denies chest pain", "no nausea, vomiting or diarrhea", "afebrile", "fever resolved") -> negated_symptoms.
+  "a febrile episode" / "was febrile" means fever is ACTIVE.
+- treatment_cycle: the integer cycle number only; patient_id only when an ID/MRN is spoken.
+- Leave any field null/empty when the transcript does not state it.
+This is assistive documentation; a clinician verifies every value."""
 
 
 def _is_transient_503(exc: Exception) -> bool:
@@ -90,8 +101,9 @@ def extract_clinical_facts_gemini(text: str) -> ClinicalExtraction:
                     used_model = candidate
                     break
                 except Exception as call_exc:
+                    note_model_failure(candidate, call_exc)
                     last_exc = call_exc
-                    if is_transient_error(call_exc) and attempt == 0:
+                    if should_retry_same_model(call_exc) and attempt == 0:
                         time.sleep(1.0)
                         continue
                     break

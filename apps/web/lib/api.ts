@@ -1,47 +1,14 @@
 import { autocorrectOncologyTranscript } from "./oncology-autocorrect"
 import { type AiAnalyticsInsight, generateLocalClinicalAnalyticsInsight } from "./clinical-utils"
+import type { BackendExtractResponse } from "./round-analysis"
 
-export type ExtractRoundResponse = {
-  round_id: string
-  patient_id?: string
-  extraction: {
-    patient_id?: string
-    chemo_cycle?: string
-    regimen?: string
-    vital_signs?: {
-      temperature?: number
-      bp_systolic?: number
-      bp_diastolic?: number
-    }
-    symptoms?: { name: string; severity?: string; negated?: boolean }[]
-    labs: { name: string; value: number; unit?: string; ctcae_grade?: number }[]
-  }
-  lab_trends: {
-    lab_name: string
-    current_value: number
-    baseline_value?: number
-    delta_percentage?: number
-    direction: "down" | "up" | "stable"
-    severity: "normal" | "mild" | "severe"
-  }[]
-  review_flags: {
-    rule_id: string
-    severity: "high" | "medium" | "low"
-    title: string
-    message: string
-    guideline?: string
-  }[]
-  confirm_before_signing: {
-    id: string
-    item_type: "lab_validation" | "ocr_confidence" | "conflict"
-    label: string
-    value: number | string
-    unit?: string
-    reason: string
-    confirmed: boolean
-  }[]
+/** Response of POST /api/v1/rounds/extract (backend/models/round.py ExtractRoundResponse). */
+export type ExtractRoundResponse = BackendExtractResponse & {
+  round_id?: string | null
   draft_note: string
   ctcae_version: string
+  fallback_used?: boolean
+  fallback_message?: string | null
 }
 
 export const API_URL =
@@ -51,9 +18,12 @@ export const API_URL =
 
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY || ""
 
+const REQUEST_TIMEOUT_MS = 15000
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const url = `${API_URL.replace(/\/$/, "")}${path}`
   const response = await fetch(url, {
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     ...init,
     headers: {
       "Content-Type": "application/json",
@@ -137,6 +107,12 @@ export const roundsApi = {
       )
     }
   },
+  labOcr: (image: { name: string; mime_type: string; data: string }) =>
+    request<{
+      labs: { name: string; value: number; unit?: string | null; confidence?: string }[]
+      notes?: string | null
+      engine: string
+    }>("/api/v1/vision/lab-ocr", { method: "POST", body: JSON.stringify(image) }),
   latest: () => request<ExtractRoundResponse>("/api/v1/rounds/latest"),
   stream: (
     patientId: string,

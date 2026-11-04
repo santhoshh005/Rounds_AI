@@ -188,6 +188,7 @@ def compute_ctcae_grade(analyte: str, value: float, lln: float | None = None) ->
 class RoundState(TypedDict, total=False):
     transcript: str
     images: list[ImageAttachment]
+    patient_id: str | None
     extraction: ClinicalExtraction
     lab_trends: list[LabTrend]
     retrieved_evidence: list[ClinicalEvidence]
@@ -335,6 +336,10 @@ def extraction_node(state: RoundState) -> RoundState:
                     if v_confirm:
                         v_confirm.source = vision_src
                         confirm_items.append(v_confirm)
+
+    # The clinician-selected patient applies when the dictation/scan names none
+    if not extraction.patient_id and state.get("patient_id"):
+        extraction.patient_id = state["patient_id"]
 
     # 3. Guarantee provenance[lab.name] == lab.source for every lab in extraction.labs
     for lab in extraction.labs:

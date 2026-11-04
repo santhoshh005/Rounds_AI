@@ -23,7 +23,8 @@ from starlette.responses import JSONResponse
 from pydantic import BaseModel
 
 from backend.agents.round_graph import round_graph, CTCAE_V5_CONFIG
-from backend.models.round import ExtractRoundRequest, ExtractRoundResponse
+from backend.models.round import ExtractRoundRequest, ExtractRoundResponse, ImageAttachment
+from backend.services.gemini_vision import VisionObservation, analyze_clinical_images
 from backend.models.patient import Patient, PatientCreate, PatientUpdate
 from backend.models.analytics import PatientAnalyticsResponse, AiAnalyticsInsight
 from backend.services.gemini_analytics import generate_ai_analytics_insight
@@ -66,38 +67,60 @@ app = FastAPI(
 class RoundSSEManager:
     """Manages real-time asynchronous streaming queues for active doctor workstations."""
 
+    # A stalled client keeps at most this many undelivered events (oldest dropped).
+    MAX_QUEUED_EVENTS = 100
+
     def __init__(self):
         self._listeners: dict[str, list[asyncio.Queue]] = {}
-        self._lock = asyncio.Lock()
+        # Created on first use inside the running loop, never at import time.
+        self._lock: asyncio.Lock | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
 
+    def _get_lock(self) -> asyncio.Lock:
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        return self._lock
+
+    @staticmethod
+    def _key(patient_id: str | None) -> str:
+        return patient_id.strip() if patient_id and patient_id.strip() else "all"
+
+    def listener_count(self) -> int:
+        return sum(len(qs) for qs in self._listeners.values())
+
     async def subscribe(self, patient_id: str | None = None) -> asyncio.Queue:
-        try:
-            self._loop = asyncio.get_running_loop()
-        except RuntimeError:
-            pass
-        key = patient_id.strip() if patient_id else "all"
-        q: asyncio.Queue = asyncio.Queue()
-        async with self._lock:
-            if key not in self._listeners:
-                self._listeners[key] = []
-            self._listeners[key].append(q)
+        self._loop = asyncio.get_running_loop()
+        q: asyncio.Queue = asyncio.Queue(maxsize=self.MAX_QUEUED_EVENTS)
+        async with self._get_lock():
+            self._listeners.setdefault(self._key(patient_id), []).append(q)
         return q
 
     async def unsubscribe(self, q: asyncio.Queue, patient_id: str | None = None):
-        key = patient_id.strip() if patient_id else "all"
-        async with self._lock:
-            if key in self._listeners and q in self._listeners[key]:
-                self._listeners[key].remove(q)
+        key = self._key(patient_id)
+        async with self._get_lock():
+            queues = self._listeners.get(key)
+            if queues and q in queues:
+                queues.remove(q)
+            if queues is not None and not queues:
+                del self._listeners[key]
+
+    @staticmethod
+    def _offer(q: asyncio.Queue, payload: str) -> None:
+        if q.full():
+            try:
+                q.get_nowait()
+            except asyncio.QueueEmpty:
+                pass
+        q.put_nowait(payload)
 
     async def broadcast_round(self, round_data: dict, patient_id: str | None = None):
         payload = json.dumps(round_data)
-        async with self._lock:
-            for q in list(self._listeners.get("all", [])):
-                await q.put(payload)
-            if patient_id and patient_id in self._listeners:
-                for q in list(self._listeners[patient_id]):
-                    await q.put(payload)
+        async with self._get_lock():
+            targets = list(self._listeners.get("all", []))
+            if patient_id and patient_id.strip() in self._listeners:
+                targets += self._listeners[patient_id.strip()]
+            for q in targets:
+                self._offer(q, payload)
 
     def broadcast_sync(self, round_data: dict, patient_id: str | None = None):
         """Thread-safe broadcast invocation for synchronous worker threads."""
@@ -250,6 +273,14 @@ def autocorrect_clinical_text(request: AutoCorrectRequest) -> AutoCorrectRespons
     """Intelligently correct oncology phonetic speech errors with context validation."""
     result = correct_clinical_transcript(request.text, use_gemini=request.use_gemini)
     return AutoCorrectResponse(**result)
+
+
+@app.post("/api/v1/vision/lab-ocr", response_model=VisionObservation)
+def lab_report_ocr(image: ImageAttachment) -> VisionObservation:
+    """Read lab values from one photographed/scanned report. Nothing is persisted;
+    the clinician reviews the values before they are committed to a round."""
+    observations = analyze_clinical_images([image])
+    return observations[0] if observations else VisionObservation(source_file=image.name)
 
 
 @app.get("/api/v1/voice/mode")

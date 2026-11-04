@@ -13,7 +13,12 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 from backend.models.round import ImageAttachment
-from backend.services.ai_fallback import get_candidate_models, is_transient_error
+from backend.services.ai_fallback import (
+    get_candidate_models,
+    is_transient_error,
+    note_model_failure,
+    should_retry_same_model,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -35,15 +40,19 @@ class VisionObservation(BaseModel):
     engine: str = Field(default="local-vision-fallback", description="Model or engine that produced this observation")
 
 
-SYSTEM_VISION_PROMPT = """You are a specialized clinical document extraction assistant.
-Your task is to extract EXPLICITLY VISIBLE clinical information from the supplied medical document or laboratory report image.
-CRITICAL SAFETY BOUNDARIES:
-- Do NOT infer diagnoses or treatment decisions.
-- Extract ONLY what is legibly printed or handwritten on the document.
-- Mark uncertain, blurry, or ambiguous values with confidence='Uncertain'.
-- Extract lab names (e.g. WBC, ANC, Absolute Neutrophil Count, Hemoglobin, Platelets), their exact numerical values, and units.
-- Extract any visible Patient ID or MRN.
-This is an assistive tool for clinical review, not an autonomous diagnostic system."""
+SYSTEM_VISION_PROMPT = """You read laboratory reports (CBC with differential, chemistry, vitals sheets) from images.
+Extract ONLY values that are legibly printed or handwritten; never infer, estimate or diagnose.
+
+Rules:
+- One lab entry per result row. Use the report's test name; map absolute neutrophils (ANC, ABS NEUT,
+  Neut#, Neutrophils Absolute) to name "ANC". Use WBC, Platelets, Hemoglobin for those rows.
+- value: the patient's result number exactly as printed (no rescaling). unit: the printed unit exactly
+  (e.g. "x10^3/uL", "10*3/uL", "/uL", "g/dL", "g/L"). Never use the reference-range column as the value.
+- Skip percentage differentials (e.g. "Neutrophils %") when an absolute count is present.
+- confidence: "High" when clearly legible, "Medium" when partly obscured, "Uncertain" when you are unsure
+  of any digit.
+- patient_id: only a visibly printed MRN/patient ID. date_recorded: the collection date if printed.
+This is an assistive tool; a clinician reviews every value before use."""
 
 
 def _is_transient_503(exc: Exception) -> bool:
@@ -106,8 +115,9 @@ def analyze_clinical_images(images: list[ImageAttachment]) -> list[VisionObserva
                         used_model = candidate
                         break
                     except Exception as call_exc:
+                        note_model_failure(candidate, call_exc)
                         last_exc = call_exc
-                        if is_transient_error(call_exc) and attempt == 0:
+                        if should_retry_same_model(call_exc) and attempt == 0:
                             time.sleep(1.0)
                             continue
                         break

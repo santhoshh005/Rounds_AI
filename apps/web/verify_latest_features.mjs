@@ -1,5 +1,9 @@
 import { chromium } from "playwright";
 import * as assert from "node:assert/strict";
+import fs from "fs";
+import path from "path";
+const ARTIFACT_DIR = process.env.E2E_ARTIFACT_DIR || path.join(process.cwd(), "e2e-artifacts");
+fs.mkdirSync(path.join(ARTIFACT_DIR, "scratch"), { recursive: true });
 
 async function main() {
   console.log("=== Launching Browser to Verify All User Requirements ===");
@@ -48,7 +52,7 @@ async function main() {
     conflictBanner.includes("occupied by David Miller"),
     "Should clearly indicate Bed 12 is occupied by David Miller"
   );
-  await page.screenshot({ path: "C:/Users/saisa/.gemini/antigravity/brain/c68413c6-d89d-4149-9a5c-5c229ff3649c/verified_bed_conflict_alert.png" });
+  await page.screenshot({ path: path.join(ARTIFACT_DIR, "verified_bed_conflict_alert.png") });
 
   // Now allocate an available bed by clicking an available bed chip: Bed 18
   console.log("Clicking available Bed 18 chip...");
@@ -63,7 +67,7 @@ async function main() {
   const updatedRowCount = await page.locator("tbody tr").count();
   console.log(`Updated patient count in roster: ${updatedRowCount}`);
   assert.equal(updatedRowCount, 4, "Roster should now have 4 patients");
-  await page.screenshot({ path: "C:/Users/saisa/.gemini/antigravity/brain/c68413c6-d89d-4149-9a5c-5c229ff3649c/verified_patient_admitted_bed18.png" });
+  await page.screenshot({ path: path.join(ARTIFACT_DIR, "verified_patient_admitted_bed18.png") });
 
   console.log("\n--- TEST 2: Dynamic Patient-Specific Dose Recommendations ---");
   // Go to Analytics
@@ -97,7 +101,7 @@ async function main() {
   console.log(`#106 Elena Rostova: ${recTitle} (Card class: ${badgeText})`);
   assert.ok(badgeText.includes("success"), "Elena Rostova must have success badge");
   assert.ok(recTitle.includes("Full Planned Dose Continuation"), "Should recommend full continuation for Grade 0");
-  await page.screenshot({ path: "C:/Users/saisa/.gemini/antigravity/brain/c68413c6-d89d-4149-9a5c-5c229ff3649c/verified_elena_full_dose_recommendation.png" });
+  await page.screenshot({ path: path.join(ARTIFACT_DIR, "verified_elena_full_dose_recommendation.png") });
 
   console.log("\n--- TEST 3: Historical Rounds Audit Log Table ---");
   // Check the audit table for Elena Rostova
@@ -117,7 +121,7 @@ async function main() {
   const sungFirstRow = await page.locator(".audit-table tbody tr").first().textContent();
   console.log(`Sung Jinwoo first row: "${sungFirstRow.trim()}"`);
   assert.ok(sungFirstRow.includes("Admission Workup") || sungFirstRow.includes("1,450"), "Should show admission baseline");
-  await page.screenshot({ path: "C:/Users/saisa/.gemini/antigravity/brain/c68413c6-d89d-4149-9a5c-5c229ff3649c/verified_audit_table_rendered.png" });
+  await page.screenshot({ path: path.join(ARTIFACT_DIR, "verified_audit_table_rendered.png") });
 
   console.log("\n--- TEST 4: Distinct Patient Trajectory Curves & Reactive Attestation ---");
   // Check David Miller's chart vs Elena Rostova's chart
@@ -126,14 +130,14 @@ async function main() {
   const davidSvg = await page.locator("svg.chart").first().innerHTML();
   assert.ok(davidSvg.includes("420"), "David Miller chart must contain 420 /uL nadir point");
   assert.ok(davidSvg.includes("Base: 1,400"), "David Miller chart must show Base: 1,400");
-  await page.screenshot({ path: "C:/Users/saisa/.gemini/antigravity/brain/c68413c6-d89d-4149-9a5c-5c229ff3649c/verified_david_distinct_chart.png" });
+  await page.screenshot({ path: path.join(ARTIFACT_DIR, "verified_david_distinct_chart.png") });
 
   await page.locator("button:has-text('#106 Elena')").click();
   await page.waitForTimeout(400);
   const elenaSvg = await page.locator("svg.chart").first().innerHTML();
   assert.ok(elenaSvg.includes("1,620"), "Elena Rostova chart must contain 1,620 /uL point");
   assert.ok(elenaSvg.includes("Base: 1,650"), "Elena Rostova chart must show Base: 1,650");
-  await page.screenshot({ path: "C:/Users/saisa/.gemini/antigravity/brain/c68413c6-d89d-4149-9a5c-5c229ff3649c/verified_elena_distinct_chart.png" });
+  await page.screenshot({ path: path.join(ARTIFACT_DIR, "verified_elena_distinct_chart.png") });
 
   // Now test attesting a note on Station for David Miller
   console.log("\n--- TEST 5: Attesting Note Reactive Update in Analytics ---");
@@ -169,7 +173,7 @@ async function main() {
   const attestBtn = page.locator(".round-summary button:has-text('Attest'), .sign-bar button:has-text('Attest')").first();
   await attestBtn.click();
   await page.waitForTimeout(800);
-  await page.screenshot({ path: "C:/Users/saisa/.gemini/antigravity/brain/c68413c6-d89d-4149-9a5c-5c229ff3649c/verified_station_attested.png" });
+  await page.screenshot({ path: path.join(ARTIFACT_DIR, "verified_station_attested.png") });
 
   // Now go back to Analytics and verify the newly attested round is present in audit log and chart!
   await page.goto("http://localhost:3000/analytics");
@@ -194,7 +198,7 @@ async function main() {
     newestRow.includes("420") || newestRow.includes("Grade 4"),
     "Audit log must record David's acute 420 cells/uL nadir and Grade 4 toxicity"
   );
-  await page.screenshot({ path: "C:/Users/saisa/.gemini/antigravity/brain/c68413c6-d89d-4149-9a5c-5c229ff3649c/verified_analytics_reactive_attestation.png" });
+  await page.screenshot({ path: path.join(ARTIFACT_DIR, "verified_analytics_reactive_attestation.png") });
 
   console.log("\n--- TEST 6: Toast Notification Auto-Dismiss & Clean Message (No Double Checkmarks) ---");
   await page.goto("http://localhost:3000/station");
@@ -224,7 +228,7 @@ async function main() {
   console.log(`Toast message text: "${toastText}"`);
   assert.equal(toastText?.trim(), "Updated verification point 2", "Toast message must NOT duplicate checkmark icon");
 
-  await page.screenshot({ path: "C:/Users/saisa/.gemini/antigravity/brain/c68413c6-d89d-4149-9a5c-5c229ff3649c/verified_toast_clean_single_icon.png" });
+  await page.screenshot({ path: path.join(ARTIFACT_DIR, "verified_toast_clean_single_icon.png") });
 
   // Test Auto-Dismiss: Wait 4 seconds and check that toast has automatically disappeared
   console.log("Waiting 4 seconds to verify toast auto-dismiss...");
@@ -271,7 +275,7 @@ async function main() {
   console.log(`Notification feed items count: ${notifItemsCount}`);
   assert.ok(notifItemsCount >= 2, "Expected clinical alert items in feed");
 
-  await page.screenshot({ path: "C:/Users/saisa/.gemini/antigravity/brain/c68413c6-d89d-4149-9a5c-5c229ff3649c/verified_notification_center_open.png" });
+  await page.screenshot({ path: path.join(ARTIFACT_DIR, "verified_notification_center_open.png") });
 
   // Click 'Mark all read'
   console.log("Clicking 'Mark all read'...");
@@ -303,7 +307,7 @@ async function main() {
 
   const profileDialog = page.locator(".clinician-profile-dialog");
   assert.equal(await profileDialog.isVisible(), true, "Clinician profile modal must be open");
-  await page.screenshot({ path: "C:/Users/saisa/.gemini/antigravity/brain/c68413c6-d89d-4149-9a5c-5c229ff3649c/verified_doctor_profile_view_mode.png" });
+  await page.screenshot({ path: path.join(ARTIFACT_DIR, "verified_doctor_profile_view_mode.png") });
 
   // Switch to Edit Mode
   console.log("Clicking 'Edit Details' button...");
@@ -349,7 +353,7 @@ async function main() {
   const attendingLabel = await page.locator(".soap-header span").textContent();
   console.log(`Attending label in SOAP note: "${attendingLabel?.trim()}"`);
   assert.ok(attendingLabel?.includes("Dr. Gregory House, MD"), "SOAP header must show updated attending doctor name");
-  await page.screenshot({ path: "C:/Users/saisa/.gemini/antigravity/brain/c68413c6-d89d-4149-9a5c-5c229ff3649c/verified_doctor_profile_updated_soap_note.png" });
+  await page.screenshot({ path: path.join(ARTIFACT_DIR, "verified_doctor_profile_updated_soap_note.png") });
 
     console.log("\n=== ALL 8 VERIFICATION CHECKS PASSED PERFECTLY! ===");
   } finally {

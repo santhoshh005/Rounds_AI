@@ -12,7 +12,12 @@ import logging
 import os
 import re
 
-from backend.services.ai_fallback import get_candidate_models, is_transient_error
+from backend.services.ai_fallback import (
+    get_candidate_models,
+    is_transient_error,
+    note_model_failure,
+    should_retry_same_model,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -347,9 +352,10 @@ def correct_clinical_transcript(raw_text: str, use_gemini: bool = True) -> dict:
                     used_model = candidate
                     break
                 except Exception as call_exc:
+                    note_model_failure(candidate, call_exc)
                     last_exc = call_exc
                     msg_low = str(call_exc).lower()
-                    if any(tok in msg_low for tok in ("503", "unavailable", "deadline_exceeded", "504", "server disconnected", "high demand")) and attempt == 0:
+                    if should_retry_same_model(call_exc) and attempt == 0:
                         time.sleep(1.0)
                         continue
                     break

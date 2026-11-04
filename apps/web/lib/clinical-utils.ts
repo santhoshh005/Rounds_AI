@@ -196,7 +196,7 @@ export interface ModelProvenanceInfo {
   engineRaw: string;
   modelName: string | null;
   displayLabel: string;
-  badgeType: "ai-primary" | "ai-fallback" | "deterministic-fallback" | "on-device-stt" | "browser-stt" | "demo";
+  badgeType: "ai-primary" | "ai-fallback" | "deterministic" | "deterministic-fallback" | "on-device-stt" | "browser-stt" | "demo";
   detailedDescription: string;
   badgeBg: string;
   badgeText: string;
@@ -213,23 +213,23 @@ export function getModelProvenance(engineOrSource?: string | null): ModelProvena
 
   // 1. Google Gemini Generative AI Models
   if (lower.includes("gemini")) {
-    let modelName = "gemini-2.5-flash";
-    if (lower.includes("gemini-2.0-flash")) modelName = "gemini-2.0-flash";
-    else if (lower.includes("gemini-1.5-flash")) modelName = "gemini-1.5-flash";
-    else if (lower.includes("gemini-1.5-pro")) modelName = "gemini-1.5-pro";
-    else if (lower.includes("gemini-2.5-pro")) modelName = "gemini-2.5-pro";
-    else if (lower.includes("gemini-2.5-flash")) modelName = "gemini-2.5-flash";
+    // Report the model that actually answered (e.g. "gemini (gemini-3.5-flash)").
+    const modelName = lower.match(/gemini-[a-z0-9.]+(?:-[a-z0-9.]+)*/)?.[0] ?? "gemini";
+    const LEGACY_FALLBACK_TIERS: Record<string, string> = {
+      "gemini-2.0-flash": "Tier 2",
+      "gemini-1.5-flash": "Tier 3",
+      "gemini-1.5-pro": "Tier 4",
+      "gemini-2.5-pro": "Tier 4",
+    };
+    // Rolling "-latest" aliases are only tried after the configured models fail.
+    const isFallback = lower.includes("fallback") || modelName.endsWith("-latest") || modelName in LEGACY_FALLBACK_TIERS;
 
-    const isPrimary = modelName === "gemini-2.5-flash" && !lower.includes("fallback");
-    const isFallback = !isPrimary;
-
-    const pretty = modelName
-      .replace("gemini-", "Gemini ")
-      .replace("-flash", " Flash")
-      .replace("-pro", " Pro");
+    const pretty = ["Gemini", ...modelName.replace(/^gemini-?/, "").split("-").filter(Boolean)]
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
 
     if (isFallback) {
-      const tier = modelName === "gemini-2.0-flash" ? "Tier 2" : modelName === "gemini-1.5-flash" ? "Tier 3" : "Tier 4";
+      const tier = LEGACY_FALLBACK_TIERS[modelName] ?? "Tier 4";
       return {
         isAi: true,
         isFallback: true,
@@ -307,7 +307,26 @@ export function getModelProvenance(engineOrSource?: string | null): ModelProvena
     };
   }
 
-  // 5. Deterministic Clinical Rule Engine Fallback (Default offline)
+  // 5. Deterministic rule engine as the primary path (on-device or server), not a fallback
+  if (/rule_based|deterministic|local-text-parser/.test(lower) && !lower.includes("fallback")) {
+    const onServer = lower.includes("server");
+    return {
+      isAi: false,
+      isFallback: false,
+      engineRaw: raw,
+      modelName: null,
+      displayLabel: onServer ? "Deterministic Clinical Rule Engine (Server)" : "Deterministic Clinical Rule Engine (On-Device)",
+      badgeType: "deterministic",
+      detailedDescription: onServer
+        ? "Extracted by the RoundsAI backend's deterministic oncology rules (no generative AI)."
+        : "Extracted in this browser by deterministic oncology rules (no generative AI, no data egress).",
+      badgeBg: "rgba(14, 165, 233, 0.12)",
+      badgeText: "#0369a1",
+      badgeBorder: "rgba(14, 165, 233, 0.35)",
+    };
+  }
+
+  // 6. Deterministic Clinical Rule Engine Fallback (Default offline)
   return {
     isAi: false,
     isFallback: true,
@@ -663,7 +682,58 @@ export function parseClinicalLabReport(
     isFebrile,
     confidence,
     extractedFromText,
-    engine: extractedFromText ? "gemini (gemini-2.5-flash)" : "local-vision-fallback",
+    engine: extractedFromText ? "local-text-parser (deterministic regex)" : "local-vision-fallback",
+  };
+}
+
+/**
+ * Maps lab values read from an image by the backend vision model into the OCR
+ * review shape, normalizing units (ANC/platelets in /µL, WBC in x10³/µL, Hgb in g/dL).
+ * Values the model did not return stay 0 ("not read") for the clinician to fill in.
+ */
+export function parsedOcrFromVisionLabs(
+  labs: { name: string; value: number; unit?: string | null }[],
+  engine: string
+): ParsedClinicalOcr {
+  let anc: number | null = null;
+  let wbc: number | null = null;
+  let platelets: number | null = null;
+  let hemoglobin: number | null = null;
+  let temp: number | null = null;
+
+  for (const lab of labs) {
+    const name = lab.name.toLowerCase();
+    const unit = (lab.unit || "").toLowerCase();
+    const v = Number(lab.value);
+    if (!Number.isFinite(v) || unit.includes("%")) continue;
+    const inThousands = /10\s*\^?\s*3|10³|\bk\b|k\/|thou/.test(unit);
+
+    if (anc === null && /\banc\b|neutrophil|neut#|\bneut\b/.test(name)) {
+      anc = inThousands || v < 50 ? Math.round(v * 1000) : Math.round(v);
+    } else if (wbc === null && /\bwbc\b|white|leuk/.test(name)) {
+      wbc = v > 50 ? Math.round((v / 1000) * 10) / 10 : v;
+    } else if (platelets === null && /platelet|\bplts?\b|thrombo/.test(name)) {
+      platelets = inThousands || v < 1000 ? Math.round(v * 1000) : Math.round(v);
+    } else if (hemoglobin === null && /h(a)?emoglobin|\bhgb\b|^hb$/.test(name)) {
+      hemoglobin = v > 25 ? Math.round(v) / 10 : v;
+    } else if (temp === null && /temp/.test(name)) {
+      temp = unit.includes("f") || v > 45 ? Math.round(((v - 32) * 5 / 9) * 10) / 10 : v;
+    }
+  }
+
+  const found = [anc, wbc, platelets, hemoglobin, temp].some((x) => x !== null);
+  const grade = anc === null ? 0 : anc < 500 ? 4 : anc < 1000 ? 3 : anc < 1500 ? 2 : anc < 2000 ? 1 : 0;
+  return {
+    anc: anc ?? 0,
+    wbc: wbc ?? 0,
+    platelets: platelets ?? 0,
+    hemoglobin: hemoglobin ?? 0,
+    temp: temp ?? 0,
+    grade,
+    isFebrile: (temp ?? 0) >= 38.0,
+    confidence: found ? 95 : 0,
+    extractedFromText: found,
+    engine,
   };
 }
 
@@ -731,6 +801,12 @@ export interface DoseModificationGuideline {
  * Computes patient-specific NCCN / ASCO dose modification and toxicity management recommendations
  * tailored dynamically to each patient's regimen, cycle, nadir counts, and CTCAE grade.
  */
+/** "Cycle 3 of 6" -> "Cycle 4"; falls back to "the next cycle" when no number is present. */
+function nextCycleLabel(cycle: string): string {
+  const n = (cycle || "").match(/cycle\s*(\d+)/i);
+  return n ? `Cycle ${parseInt(n[1], 10) + 1}` : "the next cycle";
+}
+
 export function getDoseModificationRecommendation(
   patient: { id: string; name: string; regimen: string; cycle: string; baselineAnc: number; grade?: number },
   rounds?: Array<{ anc: number; ctcae_grade: number }>
@@ -739,13 +815,14 @@ export function getDoseModificationRecommendation(
   const lowestAnc = activeRounds.length > 0 ? Math.min(...activeRounds.map((r) => r.anc)) : patient.baselineAnc;
   const highestGrade = activeRounds.length > 0 ? Math.max(...activeRounds.map((r) => r.ctcae_grade)) : (patient.grade ?? 0);
   const regLower = (patient.regimen || "").toLowerCase();
+  const nextCycle = nextCycleLabel(patient.cycle);
 
   // Grade 4 Febrile Neutropenia / ANC < 500
   if (highestGrade >= 4 || lowestAnc < 500) {
     let doseAdjustment = `Reduce cytotoxic myelosuppressive agents in ${patient.regimen} by 20% for upcoming cycle.`;
     let protocolSource = "NCCN / ASCO Febrile Neutropenia Guidelines v2.2025";
     if (regLower.includes("folfox") || regLower.includes("oxaliplatin")) {
-      doseAdjustment = "Reduce oxaliplatin dose by 20% (to 68 mg/m²) and omit bolus fluorouracil (5-FU) for Cycle 4.";
+      doseAdjustment = `Reduce oxaliplatin dose by 20% (to 68 mg/m²) and omit bolus fluorouracil (5-FU) for ${nextCycle}.`;
       protocolSource = "NCCN Colorectal Cancer / ASCO Febrile Neutropenia Guidelines v2.2025";
     } else if (regLower.includes("ac-t") || regLower.includes("doxorubicin") || regLower.includes("taxane")) {
       doseAdjustment = "Reduce cytotoxic dose by 20% and hold continuation until ANC ≥ 1,500 /µL.";
@@ -773,13 +850,13 @@ export function getDoseModificationRecommendation(
   // Grade 3 Neutropenia / ANC < 1000
   if (highestGrade === 3 || lowestAnc < 1000) {
     let protocolSource = "NCCN / ASCO Growth Factor Prophylaxis Guidelines";
-    let doseAdjustment = `Delay initiation of next cycle by 7 days or until absolute neutrophil count recovers to ≥ 1,000 /µL and platelets recover to ≥ 100,000 /µL. Maintain 100% relative dose intensity upon recovery.`;
+    let doseAdjustment = `Delay initiation of next cycle by 7 days or until absolute neutrophil count recovers to ≥ 1,500 /µL and platelets recover to ≥ 100,000 /µL. Maintain 100% relative dose intensity upon recovery.`;
     let gcsfProphylaxis = `Recommend secondary G-CSF prophylaxis (pegfilgrastim 6 mg subcutaneous injection once per cycle, 24 hours post-chemotherapy) for subsequent cycles to prevent dose delays.`;
 
     if (regLower.includes("chop") || regLower.includes("lymphoma")) {
       protocolSource = "NCCN B-Cell Lymphomas / ASCO Growth Factor Prophylaxis Guidelines";
-      doseAdjustment = `Delay initiation of Cycle 3 by 7 days or until absolute neutrophil count recovers to ≥ 1,000 /µL and platelets recover to ≥ 100,000 /µL. Maintain 100% relative dose intensity of curative R-CHOP upon recovery.`;
-      gcsfProphylaxis = `Recommend primary pegfilgrastim 6 mg subcutaneous injection once per cycle (24 hours after completion of day 1 chemotherapy) for Cycle 3 onwards to prevent dose delays.`;
+      doseAdjustment = `Delay initiation of ${nextCycle} by 7 days or until absolute neutrophil count recovers to ≥ 1,500 /µL and platelets recover to ≥ 100,000 /µL. Maintain 100% relative dose intensity of curative R-CHOP upon recovery.`;
+      gcsfProphylaxis = `Recommend primary pegfilgrastim 6 mg subcutaneous injection once per cycle (24 hours after completion of day 1 chemotherapy) for ${nextCycle} onwards to prevent dose delays.`;
     }
 
     return {
@@ -827,7 +904,7 @@ export function getDoseModificationRecommendation(
     let doseAdjustment = `Maintain 100% full dose intensity for ${patient.cycle} ${patient.regimen}. Provide supportive care and monitor for cumulative toxicity.`;
     if (regLower.includes("cisplatin") || regLower.includes("pemetrexed") || regLower.includes("nsclc") || regLower.includes("lung")) {
       protocolSource = "NCCN Non-Small Cell Lung Cancer Guidelines v2.2025";
-      doseAdjustment = "Proceed with planned Cycle 3 Cisplatin + Pemetrexed at 100% relative dose intensity. Counsel patient on Grade 1 peripheral sensory symptoms.";
+      doseAdjustment = `Proceed with planned ${nextCycle} Cisplatin + Pemetrexed at 100% relative dose intensity. Counsel patient on Grade 1 peripheral sensory symptoms.`;
     }
 
     return {
@@ -850,7 +927,7 @@ export function getDoseModificationRecommendation(
   let doseAdjustment = `No dose reduction or schedule delay warranted. Proceed with planned ${patient.cycle} ${patient.regimen} at 100% relative dose intensity.`;
   if (regLower.includes("ac-t") || regLower.includes("doxorubicin") || regLower.includes("breast")) {
     protocolSource = "NCCN Breast Cancer Guidelines · ASCO Systemic Therapy Recommendations";
-    doseAdjustment = `No dose reduction or schedule delay warranted. Proceed with planned Cycle 4 AC-T (doxorubicin 60 mg/m² + cyclophosphamide 600 mg/m²) at 100% relative dose intensity.`;
+    doseAdjustment = `No dose reduction or schedule delay warranted. Proceed with planned ${nextCycle} AC-T (doxorubicin 60 mg/m² + cyclophosphamide 600 mg/m²) at 100% relative dose intensity.`;
   }
 
   return {

@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { Icon } from "./components/Icons"
-import { roundsApi, API_URL, type ExtractRoundResponse } from "../lib/api"
+import { roundsApi, API_URL } from "../lib/api"
 import {
   formatEmrClipboardNote,
   parseClinicalLabReport,
+  parsedOcrFromVisionLabs,
   validateBedOccupancy,
   getDoseModificationRecommendation,
   normalizeBedIdentifier,
@@ -22,6 +23,13 @@ import {
   getModelProvenance,
   type ModelProvenanceInfo,
 } from "../lib/clinical-utils"
+import {
+  analysisFromBackend,
+  analyzeTranscriptLocally,
+  buildReviewCase,
+  LOCAL_ANALYSIS_ENGINE,
+  type RoundAnalysis,
+} from "../lib/round-analysis"
 import { autocorrectOncologyTranscript, applySelectedCorrections, formatSpokenClinicalPunctuation, type AutocorrectChange, type AutocorrectResult } from "../lib/oncology-autocorrect"
 
 /**
@@ -147,6 +155,34 @@ export type RoundRecord = {
   notes: string
 }
 
+/**
+ * Fills values that were not measured this round (NaN, or 0 for counts that cannot
+ * physiologically be 0) from the most recent recorded round, and says so in the notes.
+ */
+function carryForwardMissing(record: RoundRecord, previous?: RoundRecord): RoundRecord {
+  const missing = (v: number, zeroIsMissing: boolean) => !Number.isFinite(v) || (zeroIsMissing && v === 0)
+  const carried: string[] = []
+  const pick = (key: "anc" | "wbc" | "platelets" | "hemoglobin", label: string, zeroIsMissing: boolean) => {
+    if (!missing(record[key], zeroIsMissing)) return record[key]
+    if (previous && !missing(previous[key], zeroIsMissing)) {
+      carried.push(label)
+      return previous[key]
+    }
+    return NaN
+  }
+  const next = {
+    ...record,
+    anc: pick("anc", "ANC", false),
+    wbc: pick("wbc", "WBC", true),
+    platelets: pick("platelets", "platelets", true),
+    hemoglobin: pick("hemoglobin", "hemoglobin", true),
+  }
+  if (carried.length) next.notes = `${record.notes} [Not measured this round; carried forward: ${carried.join(", ")}]`
+  return next
+}
+
+const formatLab = (value: number) => (Number.isFinite(value) ? formatNumber(value) : "—")
+
 export type PatientAnalytics = {
   patient_id: string
   patient_name: string
@@ -270,6 +306,43 @@ const INITIAL_ANALYTICS: Record<string, PatientAnalytics> = {
 
 function parseClinicalLabOcr(fileName: string, textContent: string, patient: typeof patients[number]): ParsedClinicalOcr {
   return parseClinicalLabReport(fileName, textContent, patient)
+}
+
+const OCR_IMAGE_TYPES = ["image/png", "image/jpeg", "image/jpg", "image/webp"]
+
+/**
+ * Reads an uploaded lab document. Text files are parsed on-device; images are read
+ * by the backend vision model. Anything that cannot be read comes back with zero
+ * confidence so the clinician enters the values in the review modal.
+ */
+async function readLabDocument(
+  file: File,
+  patient: typeof patients[number],
+): Promise<{ parsed: ParsedClinicalOcr; note?: string }> {
+  const readAs = (mode: "text" | "dataURL") =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result || ""))
+      reader.onerror = () => reject(reader.error)
+      if (mode === "text") reader.readAsText(file)
+      else reader.readAsDataURL(file)
+    })
+  const unread = parseClinicalLabOcr(file.name, "", patient)
+
+  if (file.type.startsWith("text/") || /\.(txt|csv|json)$/i.test(file.name)) {
+    return { parsed: parseClinicalLabOcr(file.name, await readAs("text"), patient) }
+  }
+  if (OCR_IMAGE_TYPES.includes(file.type.toLowerCase())) {
+    try {
+      const dataUrl = await readAs("dataURL")
+      const obs = await roundsApi.labOcr({ name: file.name, mime_type: file.type, data: dataUrl.split(",", 2)[1] || "" })
+      const parsed = parsedOcrFromVisionLabs(obs.labs || [], obs.engine || "local-vision-fallback")
+      return { parsed, note: parsed.extractedFromText ? undefined : obs.notes || "No lab values could be read from this image." }
+    } catch {
+      return { parsed: unread, note: "Vision OCR service unreachable — enter the values manually." }
+    }
+  }
+  return { parsed: unread, note: "Only PNG, JPEG, WebP images or text files can be read. Enter the values manually." }
 }
 
 
@@ -2224,7 +2297,7 @@ function OcrReviewModal({
     onClose()
   }
 
-  const ocrEngine = initialParsed.engine || (initialParsed.extractedFromText ? "gemini (gemini-2.5-flash)" : "local-vision-fallback")
+  const ocrEngine = initialParsed.engine || (initialParsed.extractedFromText ? "local-text-parser (deterministic regex)" : "local-vision-fallback")
 
   return (
     <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true">
@@ -2394,7 +2467,7 @@ function CaptureStep({
   patientCase: typeof patientCases[string]
   onSelectPatient: (id: string) => void
   complete: boolean
-  onContinue: () => void
+  onContinue: () => void | Promise<void>
   onToast?: (msg: string) => void
   onOcrExtracted?: (patientId: string, fileName: string, extracted: any) => void
   transcript: string
@@ -2410,10 +2483,11 @@ function CaptureStep({
   const [pendingOcr, setPendingOcr] = useState<{ fileName: string; parsed: ParsedClinicalOcr } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // The Station owns the transcript and resets it on patient change; resetting it
+  // here would wipe the dictation whenever the clinician navigates back to Capture.
   useEffect(() => {
-    setTranscript(patientCase.transcript)
     setOcrStatus(null)
-  }, [patientCase.transcript, patient.id])
+  }, [patient.id])
 
   const {
     engine: sttEngine,
@@ -2442,7 +2516,7 @@ function CaptureStep({
   const handleConfirmOcr = (confirmed: ParsedClinicalOcr) => {
     if (!pendingOcr) return
     const fileName = pendingOcr.fileName
-    const prov = getModelProvenance(confirmed.engine || (confirmed.extractedFromText ? "gemini (gemini-2.5-flash)" : "local-vision-fallback"))
+    const prov = getModelProvenance(confirmed.engine || (confirmed.extractedFromText ? "local-text-parser (deterministic regex)" : "local-vision-fallback"))
     const ocrReportText = `\n\n[OCR LAB REPORT: ${fileName} · ${prov.displayLabel}]\n• Collection: Today 07:15 AM · Ward 4B Stat Hematology\n• Absolute Neutrophil Count (ANC): ${formatNumber(confirmed.anc)} /µL (CTCAE Grade ${confirmed.grade})\n• Platelets: ${formatNumber(confirmed.platelets)} /µL\n• WBC: ${confirmed.wbc} x10³/µL\n• Hemoglobin: ${confirmed.hemoglobin} g/dL\n• Vitals: Temp ${confirmed.temp}°C\n[Model: ${prov.modelName || prov.displayLabel} · Synced to Analytics JSON]`
 
     setTranscript((prev) => prev + ocrReportText)
@@ -2458,31 +2532,34 @@ function CaptureStep({
     setPendingOcr(null)
   }
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
+    e.target.value = ""
     if (!file) return
-
-    const reader = new FileReader()
-    reader.onload = (event) => {
-      const rawContent = String(event.target?.result || "")
-      const parsed = parseClinicalLabOcr(file.name, rawContent, patient)
-      setPendingOcr({ fileName: file.name, parsed })
-      setOcrModalOpen(true)
-      
-    }
-    reader.readAsText(file)
+    setOcrStatus(`Reading ${file.name}…`)
+    const { parsed, note } = await readLabDocument(file, patient)
+    setOcrStatus(null)
+    if (note && onToast) onToast(note)
+    setPendingOcr({ fileName: file.name, parsed })
+    setOcrModalOpen(true)
   }
 
-  const analyze = () => {
+  const analyze = async () => {
+    if (!transcript.trim()) {
+      if (onToast) onToast("Dictate or type the round before analyzing")
+      return
+    }
     setAnalyzing(true)
     setProgress(1)
-    ;[2, 3, 4].forEach((value, index) =>
-      setTimeout(() => setProgress(value), 450 * (index + 1)),
-    )
-    setTimeout(() => {
+    // Stages advance while the request runs; the last stage waits for the result.
+    const timers = [2, 3].map((value, index) => setTimeout(() => setProgress(value), 400 * (index + 1)))
+    try {
+      await onContinue()
+    } finally {
+      timers.forEach(clearTimeout)
+      setProgress(4)
       setAnalyzing(false)
-      onContinue()
-    }, 1900)
+    }
   }
 
   return (
@@ -2694,6 +2771,14 @@ function CaptureStep({
   )
 }
 
+/** ANC from a review case's metrics, for guideline lookups that need the current count. */
+function ancFromCase(patientCase: typeof patientCases[string]): { anc: number; ctcae_grade: number }[] | undefined {
+  const metric = patientCase.metrics.find((m) => m[0] === "ANC")
+  if (!metric) return undefined
+  const anc = parseInt(metric[1].replace(/,/g, ""), 10)
+  return Number.isFinite(anc) ? [{ anc, ctcae_grade: Math.max(Number(metric[4]), patientCase.alert.grade) }] : undefined
+}
+
 const Sparkline = ({ gray = false }: { gray?: boolean }) => (
   <svg
     viewBox="0 0 130 40"
@@ -2709,17 +2794,19 @@ function ClinicalGuidelineModal({
   onClose,
   patient,
   patientCase,
+  rounds,
   onAcknowledge,
 }: {
   isOpen: boolean
   onClose: () => void
   patient: typeof patients[number]
   patientCase: typeof patientCases[string]
+  rounds?: { anc: number; ctcae_grade: number }[]
   onAcknowledge?: () => void
 }) {
   if (!isOpen) return null
 
-  const guideline = getDoseModificationRecommendation(patient)
+  const guideline = getDoseModificationRecommendation(patient, rounds)
   const isEmergency = patientCase.alert.grade >= 3
 
   return (
@@ -2846,6 +2933,7 @@ function ReviewStep({
   setConfirmed,
   onContinue,
   onToast,
+  engine,
 }: {
   patient: typeof patients[number]
   patientCase: typeof patientCases[string]
@@ -2853,6 +2941,7 @@ function ReviewStep({
   setConfirmed: (items: boolean[]) => void
   onContinue: () => void
   onToast?: (msg: string) => void
+  engine: string
 }) {
   const [checklistItems, setChecklistItems] = useState<string[]>(patientCase.checklist)
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
@@ -2912,7 +3001,7 @@ function ReviewStep({
               <div className="alert-title-row">
                 <h3>{patientCase.alert.title}</h3>
                 <div className="alert-badge-group">
-                  <ProvenanceBadge engine="gemini (gemini-2.5-flash)" size="sm" />
+                  <ProvenanceBadge engine={engine} size="sm" />
                   <SeverityBadge grade={alertGrade}>
                     {alertGrade === 0
                       ? "Grade 0 · Stable"
@@ -2965,6 +3054,12 @@ function ReviewStep({
           </button>
         </div>
       </article>
+      {patientCase.metrics.length === 0 && (
+        <p className="sign-hint">
+          <Icon name="alert" size={20} />
+          No lab values were found in the dictation. Go back to Capture to add ANC, platelets, WBC or hemoglobin.
+        </p>
+      )}
       <div className="metric-grid">
         {patientCase.metrics.map(([name, value, unit, delta, grade]) => (
           <article className="metric-card" key={String(name)}>
@@ -2992,7 +3087,7 @@ function ReviewStep({
               <span>Doctor verification mandatory — verify each finding before attestation</span>
             </p>
           </div>
-          <strong>{count} of 3 verified</strong>
+          <strong>{count} of {checklistItems.length} verified</strong>
         </div>
         {checklistItems.map((item, index) => (
           <div className="check-row" key={index}>
@@ -3035,7 +3130,7 @@ function ReviewStep({
                 <label>
                   <input
                     type="checkbox"
-                    checked={confirmed[index]}
+                    checked={Boolean(confirmed[index])}
                     onChange={() =>
                       setConfirmed(
                         confirmed.map((value, itemIndex) =>
@@ -3065,9 +3160,9 @@ function ReviewStep({
         <div style={{ marginTop: "12px", padding: "8px 14px", borderRadius: "8px", background: "var(--subtle)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px", fontSize: "12px", color: "var(--secondary)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
             <Icon name="shield" size={14} />
-            <span>Note: Synthesized via Gemini 2.5 Flash (CTCAE v5.0 calibrated)</span>
+            <span>Findings extracted from this round's dictation · {getModelProvenance(engine).displayLabel} · CTCAE v5.0 graded</span>
           </div>
-          <ProvenanceBadge engine="gemini (gemini-2.5-flash)" size="sm" />
+          <ProvenanceBadge engine={engine} size="sm" />
         </div>
       </article>
       <div className="step-action">
@@ -3081,6 +3176,7 @@ function ReviewStep({
         onClose={() => setShowGuidelineModal(false)}
         patient={patient}
         patientCase={patientCase}
+        rounds={ancFromCase(patientCase)}
         onAcknowledge={() => {
           if (onToast) onToast(`✓ Acknowledged clinical guideline: ${patientCase.alert.title}`)
         }}
@@ -3099,9 +3195,13 @@ function SignStep({
   onCopy,
   onAttest,
   attendingName,
+  engine,
+  checklistCount,
 }: {
   patient: typeof patients[number]
   patientCase: typeof patientCases[string]
+  engine: string
+  checklistCount: number
   allConfirmed: boolean
   locked: boolean
   soapSections: { s: string; o: string; a: string; p: string }
@@ -3135,7 +3235,7 @@ function SignStep({
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
               <strong>Inpatient Oncology Round Note</strong>
-              <ProvenanceBadge engine="gemini (gemini-2.5-flash)" size="sm" />
+              <ProvenanceBadge engine={engine} size="sm" />
             </div>
             <small className="numeric" style={{ display: "block", color: "var(--secondary)" }}>
               {patient.name} · {patient.mrn} · Bed {patient.bed} · {patient.regimen}
@@ -3165,7 +3265,7 @@ function SignStep({
       {!allConfirmed && (
         <p className="sign-hint">
           <Icon name="shield" size={20} />
-          Confirm all three review items before attesting this note.
+          Confirm all {checklistCount} review items before attesting this note.
         </p>
       )}
       <div className="sign-bar">
@@ -3178,7 +3278,7 @@ function SignStep({
           disabled={!allConfirmed || locked}
           title={
             !allConfirmed
-              ? "Confirm all three review items before attesting"
+              ? `Confirm all ${checklistCount} review items before attesting`
               : locked
                 ? "This note is verified and read-only"
                 : "Attest and lock this note"
@@ -3195,9 +3295,11 @@ function SignStep({
 function Stepper({
   step,
   setStep,
+  maxStep,
 }: {
   step: Step
   setStep: (step: Step) => void
+  maxStep: Step
 }) {
   return (
     <div className="stepper" aria-label="Assessment progress">
@@ -3211,6 +3313,8 @@ function Stepper({
             step > num ? "complete" : ""
           }`}
           onClick={() => setStep(num)}
+          disabled={num > maxStep}
+          title={num > maxStep ? "Analyze the round first" : undefined}
           key={num}
         >
           <span>
@@ -3229,12 +3333,16 @@ function Stepper({
 function RoundSummary({
   step,
   confirmed,
+  total,
+  activeAlerts,
   attested,
   onCopy,
   onAttest,
 }: {
   step: Step
   confirmed: number
+  total: number
+  activeAlerts: number | null
   attested: boolean
   onCopy: () => void
   onAttest: () => void
@@ -3249,11 +3357,13 @@ function RoundSummary({
         </div>
         <div>
           <span>Active alerts</span>
-          <strong className="danger-text numeric">1</strong>
+          <strong className={`numeric ${activeAlerts ? "danger-text" : ""}`}>
+            {activeAlerts === null ? "—" : activeAlerts}
+          </strong>
         </div>
         <div>
           <span>Confirmations</span>
-          <strong className="numeric">{confirmed} of 3</strong>
+          <strong className="numeric">{total ? `${confirmed} of ${total}` : "—"}</strong>
         </div>
         <div>
           <span>Note status</span>
@@ -3267,11 +3377,13 @@ function RoundSummary({
         <Button
           variant="primary"
           icon={attested ? "check" : "lock"}
-          disabled={confirmed < 3 || attested}
+          disabled={total === 0 || confirmed < total || attested}
           title={
-            confirmed < 3
-              ? `Confirm ${3 - confirmed} remaining review item${
-                  3 - confirmed === 1 ? "" : "s"
+            total === 0
+              ? "Analyze the round before attesting"
+              : confirmed < total
+              ? `Confirm ${total - confirmed} remaining review item${
+                  total - confirmed === 1 ? "" : "s"
                 } before attesting`
               : attested
                 ? "This note is verified and read-only"
@@ -3311,65 +3423,77 @@ function Station({
   const activePatients = patientsList && patientsList.length > 0 ? patientsList : (patientsList ? [] : (isDemo ? patients : []))
   const patient =
     activePatients.find((item) => item.id === selectedPatientId) || activePatients[0] || patients[0]
-  const patientCase = patientCases[patient.id] || {
-    patientId: patient.id,
-    caseLabel: `${patient.name} (${patient.regimen})`,
-    transcript: `Patient ${patient.name}, Bed ${patient.bed}. Admitted for ${patient.diagnosis}. Receiving ${patient.regimen} (${patient.cycle}). Baseline ANC: ${patient.baselineAnc} /µL. Afebrile, vitals currently stable.`,
-    alert: {
-      title: "Active Ward Admission",
-      subtitle: "Routine monitoring & assessment",
-      grade: patient.grade || 0,
-      temp: "37.0°C",
-      anc: `${patient.baselineAnc} /µL`,
-      timer: "Routine",
-      guideline: "Perform routine clinical oncology monitoring according to CTCAE v5.0.",
-    },
-    metrics: [
-      ["ANC", String(patient.baselineAnc), "cells/µL", "Baseline admission level", patient.grade || 0],
-      ["Platelets", "210,000", "/µL", "Within normal reserve", 0],
-      ["WBC", "5,200", "cells/µL", "Within normal range", 0],
-    ],
-    checklist: [
-      `Confirm ANC baseline ${patient.baselineAnc} /µL`,
-      `Verify vitals and tolerance for ${patient.regimen}`,
-      `Review clinical plan and orders`,
-    ],
-    soapDraft: {
-      s: `${patient.ageSex} admitted to Bed ${patient.bed} for ${patient.diagnosis}. Reports stable baseline, no acute complaints.`,
-      o: `Vitals stable. Temp 37.0°C. Baseline ANC ${patient.baselineAnc} /µL. ECOG ${patient.ecog}.`,
-      a: `${patient.diagnosis} on ${patient.regimen}. Clinically stable admission.`,
-      p: `Continue scheduled regimen ${patient.regimen}. Monitor CBC and vitals per protocol.`,
-    },
-    labReport: [
-      ["WBC", "5.2", "x10³/µL"],
-      ["ANC", String(patient.baselineAnc), "cells/µL"],
-      ["Platelets", "210,000", "/µL"],
-      ["Hemoglobin", "12.5", "g/dL"],
-    ],
-  }
+  // Template for patients without a scripted demo case. Only the transcript seed is
+  // used; review content is always built from the analyzed dictation.
+  const patientCase = useMemo(
+    () =>
+      patientCases[patient.id] || {
+        patientId: patient.id,
+        caseLabel: `${patient.name} (${patient.regimen})`,
+        transcript: "",
+        alert: {
+          title: "Not yet analyzed",
+          subtitle: "Analyze the round to grade dictated findings",
+          grade: 0,
+          temp: "Not recorded",
+          anc: "Not recorded",
+          timer: "—",
+          guideline: "CTCAE v5.0 grading requires dictated laboratory values.",
+        },
+        metrics: [],
+        checklist: [],
+        soapDraft: { s: "", o: "", a: "", p: "" },
+        labReport: [],
+      },
+    [patient.id, patient.name, patient.regimen],
+  )
 
   const [step, setStep] = useState<Step>(1)
   const [stationTranscript, setStationTranscript] = useState(patientCase.transcript)
   const [bedsideDraft, setBedsideDraft] = useState<{ transcript: string; timeStr: string; wordCount?: number } | null>(null)
   const [sync, setSync] = useState(true)
   const [drawer, setDrawer] = useState(false)
-  const [confirmed, setConfirmed] = useState([true, true, false])
+  const [confirmed, setConfirmed] = useState<boolean[]>([])
   const [attested, setAttested] = useState(false)
-  const [soapSections, setSoapSections] = useState({
-    s: patientCase.soapDraft.s,
-    o: patientCase.soapDraft.o,
-    a: patientCase.soapDraft.a,
-    p: patientCase.soapDraft.p,
-  })
+  const [analysis, setAnalysis] = useState<{ transcript: string; result: RoundAnalysis } | null>(null)
+  const [soapSections, setSoapSections] = useState({ s: "", o: "", a: "", p: "" })
+
+  const reviewCase = useMemo(
+    () => (analysis ? buildReviewCase(patient, analysis.result) : null),
+    [analysis, patient],
+  )
+  const reviewedCase = useMemo(
+    () => (reviewCase ? { ...patientCase, ...reviewCase } : patientCase),
+    [patientCase, reviewCase],
+  )
+  // Review and Sign reflect the transcript as analyzed; editing it requires re-analysis.
+  const analysisCurrent = Boolean(analysis && analysis.transcript === stationTranscript)
+  const maxStep: Step = analysisCurrent ? 3 : 1
 
   useEffect(() => {
-    setSoapSections({
-      s: patientCase.soapDraft.s,
-      o: patientCase.soapDraft.o,
-      a: patientCase.soapDraft.a,
-      p: patientCase.soapDraft.p,
-    })
-  }, [patientCase, patient.id])
+    if (!reviewCase) return
+    setSoapSections(reviewCase.soapDraft)
+    setConfirmed(reviewCase.checklist.map(() => false))
+    setAttested(false)
+  }, [reviewCase])
+
+  useEffect(() => {
+    if (!analysisCurrent && step > 1) setStep(1)
+  }, [analysisCurrent, step])
+
+  const analyzeRound = async () => {
+    const transcript = stationTranscript
+    let result: RoundAnalysis
+    try {
+      const res = await roundsApi.extract({ transcript, images: [], patient_id: patient.id })
+      result = analysisFromBackend(res, transcript)
+    } catch {
+      result = analyzeTranscriptLocally(transcript)
+      if (onToast) onToast("Backend unavailable — analyzed on-device with deterministic CTCAE rules", "info")
+    }
+    setAnalysis({ transcript, result })
+    setStep(2)
+  }
 
   const handleSoapChange = (sectionKey: "s" | "o" | "a" | "p", val: string) => {
     setSoapSections((prev) => ({ ...prev, [sectionKey]: val }))
@@ -3377,7 +3501,9 @@ function Station({
 
   useEffect(() => {
     setStationTranscript(patientCase.transcript)
-    setConfirmed([true, true, false])
+    setAnalysis(null)
+    setConfirmed([])
+    setSoapSections({ s: "", o: "", a: "", p: "" })
     setAttested(false)
     setStep(1)
 
@@ -3438,7 +3564,6 @@ function Station({
     }
     if (textToLoad) {
       setStationTranscript(textToLoad)
-      patientCase.transcript = textToLoad
       setSync(false)
       setStep(1)
       if (onToast) onToast(`Loaded bedside draft from Bed ${patient.bed} into Station`, "success")
@@ -3460,7 +3585,6 @@ function Station({
     }
     if (textToLoad) {
       setStationTranscript(textToLoad)
-      patientCase.transcript = textToLoad
       if (onToast) onToast(`Synchronized with Bedside Companion for Bed ${patient.bed}`, "success")
     } else {
       const payload = {
@@ -3498,24 +3622,23 @@ function Station({
     setAttested(true)
     setStep(3)
 
-    // Parse acute round values from patientCase.metrics
-    const ancMetric = patientCase.metrics.find((m) => m[0].toLowerCase().includes("anc"))
-    const wbcMetric = patientCase.metrics.find((m) => m[0].toLowerCase().includes("wbc"))
-    const pltMetric = patientCase.metrics.find((m) => m[0].toLowerCase().includes("platelet"))
-
-    const acuteAnc = ancMetric ? parseInt(ancMetric[1].replace(/,/g, ""), 10) : (patient.baselineAnc || 1400)
-    const acuteWbc = wbcMetric ? Math.round(parseFloat(wbcMetric[1].replace(/,/g, "")) * (parseFloat(wbcMetric[1]) < 50 ? 1000 : 1)) : 4800
-    const acutePlt = pltMetric ? parseInt(pltMetric[1].replace(/,/g, ""), 10) : 180000
-    const acuteGrade = patientCase.alert?.grade ?? patient.grade ?? (acuteAnc < 500 ? 4 : acuteAnc < 1000 ? 3 : acuteAnc < 1500 ? 2 : 0)
+    // Values not dictated in this round are NaN; handleAttestRound carries the
+    // previous recorded value forward instead of inventing one.
+    const labs = analysis?.result.labs
+    const acuteAnc = labs?.anc ?? NaN
+    const acuteWbc = labs?.wbc ?? NaN
+    const acutePlt = labs?.platelets ?? NaN
+    const acuteHgb = labs?.hemoglobin ?? NaN
+    const acuteGrade = reviewCase?.alert.grade ?? 0
 
     const newRecord: RoundRecord = {
       id: `attested-${Date.now()}`,
       date: new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }),
       doctor: clinicianProfile?.name || "Dr. Amrut S Kadam, MD",
-      anc: isNaN(acuteAnc) ? patient.baselineAnc : acuteAnc,
-      wbc: isNaN(acuteWbc) ? 4800 : acuteWbc,
-      platelets: isNaN(acutePlt) ? 180000 : acutePlt,
-      hemoglobin: 12.0,
+      anc: acuteAnc,
+      wbc: acuteWbc,
+      platelets: acutePlt,
+      hemoglobin: acuteHgb,
       ctcae_grade: acuteGrade,
       status: "Approved",
       source: "Ward Station Note Attestation",
@@ -3648,14 +3771,14 @@ function Station({
               {patient.grade === 0 ? "Stable" : `Grade ${patient.grade}`}
             </SeverityBadge>
           </div>
-          <Stepper step={step} setStep={setStep} />
+          <Stepper step={step} setStep={setStep} maxStep={maxStep} />
           {step === 1 && (
             <CaptureStep
               patient={patient}
               patientCase={patientCase}
               onSelectPatient={onSelectPatient}
               complete={false}
-              onContinue={() => setStep(2)}
+              onContinue={analyzeRound}
               onToast={onToast}
               onOcrExtracted={onOcrExtracted}
               transcript={stationTranscript}
@@ -3665,7 +3788,8 @@ function Station({
           {step === 2 && (
             <ReviewStep
               patient={patient}
-              patientCase={patientCase}
+              patientCase={reviewedCase}
+              engine={analysis?.result.engine || LOCAL_ANALYSIS_ENGINE}
               confirmed={confirmed}
               setConfirmed={setConfirmed}
               onContinue={() => setStep(3)}
@@ -3675,8 +3799,10 @@ function Station({
           {step === 3 && (
             <SignStep
               patient={patient}
-              patientCase={patientCase}
-              allConfirmed={confirmed.every(Boolean)}
+              patientCase={reviewedCase}
+              engine={analysis?.result.engine || LOCAL_ANALYSIS_ENGINE}
+              checklistCount={confirmed.length}
+              allConfirmed={confirmed.length > 0 && confirmed.every(Boolean)}
               locked={attested}
               soapSections={soapSections}
               onSoapChange={handleSoapChange}
@@ -3689,6 +3815,8 @@ function Station({
         <RoundSummary
           step={step}
           confirmed={confirmed.filter(Boolean).length}
+          total={confirmed.length}
+          activeAlerts={reviewCase ? reviewCase.activeAlerts : null}
           attested={attested}
           onCopy={copyNote}
           onAttest={attestNote}
@@ -4376,7 +4504,7 @@ function MobileCompanion({
   const handleConfirmOcr = (confirmed: ParsedClinicalOcr) => {
     if (!pendingOcr) return
     const fileName = pendingOcr.fileName
-    const prov = getModelProvenance(confirmed.engine || (confirmed.extractedFromText ? "gemini (gemini-2.5-flash)" : "local-vision-fallback"))
+    const prov = getModelProvenance(confirmed.engine || (confirmed.extractedFromText ? "local-text-parser (deterministic regex)" : "local-vision-fallback"))
     const ocrSnippet = `\n[BEDSIDE OCR SCAN: ${fileName} · ${prov.displayLabel}]\n• ANC: ${formatNumber(confirmed.anc)} /µL (Grade ${confirmed.grade}) · Plt: ${formatNumber(confirmed.platelets)} /µL\n• Model: ${prov.modelName || prov.displayLabel} · Synced to Analytics JSON`
     setTranscript((prev) => prev + ocrSnippet)
     setCaptured(true)
@@ -4385,11 +4513,12 @@ function MobileCompanion({
     setPendingOcr(null)
   }
 
-const handleMobileScan = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleMobileScan = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
+    e.target.value = ""
     if (!file) return
-
-    const parsed = parseClinicalLabOcr(file.name, "", patient)
+    const { parsed, note } = await readLabDocument(file, patient)
+    if (note && onToast) onToast(note)
     setPendingOcr({ fileName: file.name, parsed })
     setOcrModalOpen(true)
   }
@@ -4614,7 +4743,7 @@ const handleMobileScan = (e: React.ChangeEvent<HTMLInputElement>) => {
 }
 
 function NadirChart({ rounds = [], baseline = 1400 }: { rounds?: RoundRecord[]; baseline?: number }) {
-  const chronRounds = [...rounds].reverse()
+  const chronRounds = [...rounds].reverse().filter((r) => Number.isFinite(r.anc))
   const count = chronRounds.length
   const points = chronRounds.map((r, i) => {
     const x = count > 1 ? Math.round(96 + (i * (608 / (count - 1)))) : 380
@@ -4796,41 +4925,44 @@ function RecoveryChart({ rounds = [] }: { rounds?: RoundRecord[] }) {
   const chronRounds = [...rounds].reverse()
   const count = chronRounds.length
 
-  const pltPoints = chronRounds.map((r, i) => {
-    const x = count > 1 ? Math.round(96 + (i * (608 / (count - 1)))) : 380
+  const xAt = (i: number) => (count > 1 ? Math.round(96 + (i * (608 / (count - 1)))) : 380)
+  // Only rounds where the value was measured are plotted; x keeps each round's position.
+  const pltPoints = chronRounds.flatMap((r, i) => {
+    if (!Number.isFinite(r.platelets) || r.platelets <= 0) return []
+    const x = xAt(i)
     // Platelets scale 0 to 300,000 -> y between 40 and 208
     const clampedPlt = Math.max(0, Math.min(300000, r.platelets))
     const y = Math.round(208 - ((clampedPlt / 300000) * (208 - 40)))
-    return {
+    return [{
       x,
       y,
       label: `Platelets: ${formatNumber(r.platelets)} /µL`,
       value: r.platelets,
       source: r.source,
       date: r.date,
-    }
+    }]
   })
   const pltPolyline = pltPoints.map((p) => `${p.x},${p.y}`).join(" ")
 
-  const hgbPoints = chronRounds.map((r, i) => {
-    const x = count > 1 ? Math.round(96 + (i * (608 / (count - 1)))) : 380
+  const hgbPoints = chronRounds.flatMap((r, i) => {
+    if (!Number.isFinite(r.hemoglobin) || r.hemoglobin <= 0) return []
+    const x = xAt(i)
     // Hemoglobin scale 8 to 16 g/dL -> y between 40 and 208
-    const clampedHgb = Math.max(8, Math.min(16, r.hemoglobin || 12))
+    const clampedHgb = Math.max(8, Math.min(16, r.hemoglobin))
     const y = Math.round(208 - (((clampedHgb - 8) / 8) * (208 - 40)))
-    return {
+    return [{
       x,
       y,
-      label: `Hemoglobin: ${r.hemoglobin || 12} g/dL`,
-      value: r.hemoglobin || 12,
+      label: `Hemoglobin: ${r.hemoglobin} g/dL`,
+      value: r.hemoglobin,
       source: r.source,
       date: r.date,
-    }
+    }]
   })
   const hgbPolyline = hgbPoints.map((p) => `${p.x},${p.y}`).join(" ")
 
-  const latestRound = chronRounds[chronRounds.length - 1]
-  const latestPlt = latestRound?.platelets ?? 180000
-  const latestHgb = latestRound?.hemoglobin ?? 12.0
+  const latestPlt = pltPoints[pltPoints.length - 1]?.value
+  const latestHgb = hgbPoints[hgbPoints.length - 1]?.value
 
   return (
     <svg
@@ -4856,10 +4988,10 @@ function RecoveryChart({ rounds = [] }: { rounds?: RoundRecord[] }) {
         <g key={y}>
           <line x1="56" x2="726" y1={y} y2={y} stroke="var(--divider)" strokeWidth="1" />
           <text x="44" y={y + 4} textAnchor="end" fontSize="11" fill="var(--secondary)">
-            {formatNumber(300000 - idx * 80000)}
+            {formatNumber(Math.round((300000 * (208 - y)) / 168))}
           </text>
           <text x="734" y={y + 4} textAnchor="start" fontSize="11" fill="#7c3aed">
-            {(16 - idx * 2.5).toFixed(1)}g
+            {(8 + (8 * (208 - y)) / 168).toFixed(1)}g
           </text>
         </g>
       ))}
@@ -4913,7 +5045,7 @@ function RecoveryChart({ rounds = [] }: { rounds?: RoundRecord[] }) {
       <g className="latest-badge" transform="translate(68, 12)">
         <rect x="0" y="0" width="220" height="24" rx="12" fill="var(--brand-tint)" stroke="var(--brand-border)" />
         <text x="110" y="16" textAnchor="middle" fontSize="11" fontWeight="600" fill="var(--brand)">
-          Latest: Plt {formatNumber(latestPlt)} · Hgb {latestHgb} g/dL
+          Latest: Plt {latestPlt !== undefined ? formatNumber(latestPlt) : "—"} · Hgb {latestHgb !== undefined ? `${latestHgb} g/dL` : "—"}
         </text>
       </g>
 
@@ -6229,7 +6361,7 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
     showToast(`Updated clinician profile for ${updated.name}`, "success")
   }
 
-  const handleAttestRound = (patientId: string, record: RoundRecord) => {
+  const handleAttestRound = (patientId: string, incoming: RoundRecord) => {
     setAnalyticsData((prev) => {
       const current = prev[patientId] || {
         patient_id: patientId,
@@ -6239,23 +6371,27 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
         trajectory: [],
       }
 
+      const record = carryForwardMissing(incoming, current.rounds[0])
       const updatedRounds = [record, ...current.rounds.filter((r) => r.id !== record.id)]
-      const updatedTrajectory = [
-        ...current.trajectory,
-        {
-          label: record.source.includes("OCR") ? "Round (OCR)" : "Attested Note",
-          date: new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short" }),
-          value: record.anc,
-          grade: record.ctcae_grade,
-        },
-      ]
+      // The ANC trajectory only gets a point when ANC was actually measured this round.
+      const updatedTrajectory = Number.isFinite(incoming.anc)
+        ? [
+            ...current.trajectory,
+            {
+              label: record.source.includes("OCR") ? "Round (OCR)" : "Attested Note",
+              date: new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short" }),
+              value: record.anc,
+              grade: record.ctcae_grade,
+            },
+          ]
+        : current.trajectory
 
       const getPlateletGrade = (plt: number) =>
-        plt < 25000 ? "Grade 4" : plt < 50000 ? "Grade 3" : plt < 75000 ? "Grade 2" : plt < 150000 ? "Grade 1" : "Grade 0"
+        !Number.isFinite(plt) ? "Not recorded" : plt < 25000 ? "Grade 4" : plt < 50000 ? "Grade 3" : plt < 75000 ? "Grade 2" : plt < 150000 ? "Grade 1" : "Grade 0"
 
       const updatedKpis: [string, string, string, string][] = [
-        ["Absolute neutrophils", `${formatNumber(record.anc)}`, "/µL", record.ctcae_grade === 0 ? "Grade 0" : `Grade ${record.ctcae_grade}`],
-        ["Platelet reserve", `${formatNumber(record.platelets)}`, "/µL", getPlateletGrade(record.platelets)],
+        ["Absolute neutrophils", formatLab(record.anc), "/µL", record.ctcae_grade === 0 ? "Grade 0" : `Grade ${record.ctcae_grade}`],
+        ["Platelet reserve", formatLab(record.platelets), "/µL", getPlateletGrade(record.platelets)],
         ["Active graded toxicities", record.ctcae_grade > 0 ? "1" : "0", "", record.ctcae_grade === 0 ? "Stable" : `Grade ${record.ctcae_grade}`],
         ["Clinical risk level", record.ctcae_grade >= 4 ? "High" : record.ctcae_grade >= 3 ? "Moderate" : "Low", "", record.ctcae_grade >= 4 ? "Febrile neutropenia" : record.ctcae_grade === 0 ? "Protocol cleared" : "Thermal vigilance"],
       ]
@@ -6338,7 +6474,7 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
         ...prev,
         [patientId]: {
           ...current,
-          rounds: [newRound, ...current.rounds.filter((r) => r.id !== newRound.id)],
+          rounds: [carryForwardMissing(newRound, current.rounds[0]), ...current.rounds.filter((r) => r.id !== newRound.id)],
           kpis: updatedKpis,
           trajectory: [...current.trajectory, newTrajectoryPoint],
         },
