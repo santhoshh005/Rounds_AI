@@ -150,7 +150,7 @@ sequenceDiagram
 | Trajectory insight | Gemini JSON, cached per patient data | Deterministic generator from recorded values |
 | CTCAE grading, sentinels, dose advice | **Always deterministic rules** | — |
 
-**Model cascade (`backend/services/ai_fallback.py`):** the configured models (`.env`: `gemini-3.5-flash`, polish `gemini-3.5-flash-lite`) → pinned tiers (`gemini-2.5-flash`, `2.0-flash`, `1.5-flash`, `1.5-pro`, `2.5-pro`) → rolling aliases (`gemini-flash-latest`, `gemini-flash-lite-latest`) → deterministic rules. A model that returns a quota error (429) is skipped for 10 minutes, a timed-out one for 2 minutes and a retired one (404) for an hour; each AI stage also has a 12-second budget, so a slow or exhausted key falls back to rules quickly instead of stalling the round. Every result carries a provenance badge naming the model or rule engine that actually produced it.
+**Model cascade (`backend/services/ai_fallback.py`):** the configured models (`.env`: `gemini-3.5-flash`, polish `gemini-3.1-flash-lite`) → pinned tiers (`gemini-3.5-flash`, `gemini-3.1-flash-lite`, `gemini-3.5-flash-lite`) → rolling aliases (`gemini-flash-latest`, `gemini-flash-lite-latest`) → deterministic rules. The tiers were checked against the API in November 2026: Gemini 2.x and 1.5 models now return 404, and on a free-tier key `gemini-3.5-flash` allows only 20 requests per day, so the fast `gemini-3.1-flash-lite` (about 2–6 s) answers most requests. A model out of quota is skipped until Google's `retryDelay` says it resets (at most 6 h; 10 minutes for per-minute limits), a timed-out one for 60 s and a retired one (404) for an hour. Each AI stage has a 12-second budget and starts another model only if a full 10-second call still fits, so a slow or exhausted key falls back to rules instead of stalling the round. Model thinking is kept short (Gemini 3: low level; 2.5: no thinking budget) so answers fit the timeout. Every result carries a provenance badge naming the model or rule engine that actually produced it; answers from a backup model are badged **AI Fallback**.
 
 **When the server is unreachable:** after a network failure, timeout or 5xx, the web app stops calling the backend for 30 seconds and answers from the on-device CTCAE rules at once (no 15-second wait). A background health check, which also wakes a sleeping Render instance, brings the server back into use as soon as it answers. A pill at the bottom of the screen says the app is on device rules and offers **Retry**. Bedside rounds sent while the server is down are kept in that browser and relayed automatically when it returns. A Whisper recording that could not be uploaded stays in memory with **Retry** / **Discard**; it is never sent to another speech service. Offline extraction reads spoken numbers ("platelets eighty eight thousand" → 88,000) on both the device and the backend rules.
 
@@ -183,12 +183,12 @@ sequenceDiagram
 
 | Suite | Command | Tests |
 | :--- | :--- | :--- |
-| Backend unit + API | `pytest --ignore=tests/test_full_system.py` | 119 |
+| Backend unit + API | `pytest --ignore=tests/test_full_system.py` | 126 |
 | Backend live integration (needs the API on :8000) | `pytest tests/test_full_system.py` | 8 |
 | Web unit (Node test runner) | `cd apps/web && npm test` | 95 |
 | Browser E2E (Playwright; app on :3000) | `node regression_test.mjs` · `node e2e_button_test.mjs` | 20 · 32 checks |
 
-Backend files: `test_clinical_accuracy.py` (63), `test_api_pytest.py` (20), `test_audit_regressions.py` (13), `test_ai_fallback.py` (7), `test_spoken_numbers.py` (13), `test_gemini_analytics.py` (3), `test_full_system.py` (8). Web files: `clinical-utils.test.ts`, `oncology-autocorrect.test.ts`, `round-analysis.test.ts`, `spoken-numbers.test.ts`.
+Backend files: `test_clinical_accuracy.py` (63), `test_api_pytest.py` (20), `test_audit_regressions.py` (17), `test_ai_fallback.py` (10), `test_spoken_numbers.py` (13), `test_gemini_analytics.py` (3), `test_full_system.py` (8). Web files: `clinical-utils.test.ts`, `oncology-autocorrect.test.ts`, `round-analysis.test.ts`, `spoken-numbers.test.ts`.
 
 Covered cases include CTCAE boundaries (e.g. ANC 499 vs 500), IDSA/ASCO fever criteria (single vs sustained), ANC 500–999 with and without expected decline, "88k" platelets, spoken numbers ("ANC four twenty", "one oh one point three"), °F→°C, clause-scoped negation, the "a febrile" inversion guard, vision-unit normalization, model-provenance labels, quota cooldowns, SSE queue bounds/cleanup, and offline analytics never inventing values.
 
@@ -276,7 +276,7 @@ Open http://localhost:3000. For accounts, set the `NEXT_PUBLIC_FIREBASE_*` varia
 | :--- | :--- |
 | `GEMINI_API_KEY` | Enables Gemini polish, extraction, vision OCR and insights. Without it everything runs on deterministic rules. |
 | `LLM_PROVIDER` | `local` (default) or `gemini` for transcript extraction. |
-| `GEMINI_MODEL_VISION` / `GEMINI_MODEL_DRAFT` / `GEMINI_MODEL_POLISH` | Primary models per task (first in the cascade). |
+| `GEMINI_MODEL_VISION` / `GEMINI_MODEL_DRAFT` / `GEMINI_MODEL_POLISH` | Primary models per task (first in the cascade). Recommended: `gemini-3.5-flash` / `gemini-3.5-flash` / `gemini-3.1-flash-lite` (`gemini-3.5-flash-lite` took 20–36 s per call on a free-tier key). |
 | `GEMINI_POLISH` | `true` to also use Gemini for transcript polish (default: rule-based polish, one Gemini call per round). |
 | `AI_STAGE_BUDGET_S` / `GEMINI_CALL_TIMEOUT_MS` | Time budget per AI stage (default 12 s) and per Gemini request (default and minimum 10 s — the API rejects shorter deadlines) before falling back to rules. |
 | `TRANSCRIPTION_MODE` | `local` (default, faster-whisper) · `cloud` (Gemini audio) · `hybrid`. |

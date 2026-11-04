@@ -12,7 +12,9 @@ import logging
 import os
 import re
 
+from backend.services.spoken_numbers import spoken_numbers_to_digits
 from backend.services.ai_fallback import (
+    fast_thinking_config,
     get_candidate_models,
     is_transient_error,
     GEMINI_CALL_TIMEOUT_MS,
@@ -257,8 +259,10 @@ def _validate_gemini_polish(
         # sort so order shifts don't reject valid rephrasing
         return sorted(cleaned)
 
-    in_nums = extract_nums(input_text)
-    out_nums = extract_nums(polished_text)
+    # Spoken numbers count as the same value ("four twenty" may be written as "420"),
+    # but any digit Gemini adds, drops or changes is still rejected.
+    in_nums = extract_nums(spoken_numbers_to_digits(input_text))
+    out_nums = extract_nums(spoken_numbers_to_digits(polished_text))
     if in_nums != out_nums:
         return False, f"Numbers altered by polish (input numbers: {in_nums}, output numbers: {out_nums})"
 
@@ -350,6 +354,7 @@ def correct_clinical_transcript(raw_text: str, use_gemini: bool = True) -> dict:
                         model=candidate,
                         contents=prompt,
                         config=types.GenerateContentConfig(
+                            thinking_config=fast_thinking_config(candidate),
                             temperature=0.0,
                             max_output_tokens=800,
                         ),

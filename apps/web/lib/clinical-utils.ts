@@ -215,29 +215,23 @@ export function getModelProvenance(engineOrSource?: string | null): ModelProvena
   if (lower.includes("gemini")) {
     // Report the model that actually answered (e.g. "gemini (gemini-3.5-flash)").
     const modelName = lower.match(/gemini-[a-z0-9.]+(?:-[a-z0-9.]+)*/)?.[0] ?? "gemini";
-    const LEGACY_FALLBACK_TIERS: Record<string, string> = {
-      "gemini-2.0-flash": "Tier 2",
-      "gemini-1.5-flash": "Tier 3",
-      "gemini-1.5-pro": "Tier 4",
-      "gemini-2.5-pro": "Tier 4",
-    };
-    // Rolling "-latest" aliases are only tried after the configured models fail.
-    const isFallback = lower.includes("fallback") || modelName.endsWith("-latest") || modelName in LEGACY_FALLBACK_TIERS;
+    // The backend appends ", fallback" when a backup model answered; rolling "-latest"
+    // aliases are only ever tried after the configured models fail.
+    const isFallback = lower.includes("fallback") || modelName.endsWith("-latest");
 
     const pretty = ["Gemini", ...modelName.replace(/^gemini-?/, "").split("-").filter(Boolean)]
       .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
       .join(" ");
 
     if (isFallback) {
-      const tier = LEGACY_FALLBACK_TIERS[modelName] ?? "Tier 4";
       return {
         isAi: true,
         isFallback: true,
         engineRaw: raw,
         modelName,
-        displayLabel: `AI Fallback: ${pretty} (${tier})`,
+        displayLabel: `AI Fallback: ${pretty}`,
         badgeType: "ai-fallback",
-        detailedDescription: `Primary model unavailable; responded via cascading fallback model ${pretty} (${modelName}) [${tier}].`,
+        detailedDescription: `Primary model unavailable; answered by backup model ${pretty} (${modelName}).`,
         badgeBg: "rgba(245, 158, 11, 0.12)",
         badgeText: "#b45309",
         badgeBorder: "rgba(245, 158, 11, 0.35)",

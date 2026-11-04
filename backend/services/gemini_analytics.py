@@ -20,6 +20,8 @@ from typing import Any, Optional
 
 from backend.models.analytics import AiAnalyticsInsight
 from backend.services.ai_fallback import (
+    gemini_engine_label,
+    fast_thinking_config,
     get_candidate_models,
     is_transient_error,
     GEMINI_CALL_TIMEOUT_MS,
@@ -382,6 +384,7 @@ def _generate_ai_analytics_insight_uncached(
                     model=candidate,
                     contents=user_prompt,
                     config=types.GenerateContentConfig(
+                        thinking_config=fast_thinking_config(candidate),
                         system_instruction=system_prompt,
                         temperature=0.1,  # Low temperature for clinical determinism
                         max_output_tokens=1200,
@@ -396,7 +399,7 @@ def _generate_ai_analytics_insight_uncached(
                     parsed = json.loads(clean_json)
                     logger.info("Successfully generated AI analytics insights using Gemini (%s).", candidate)
                     return AiAnalyticsInsight(
-                        engine=f"gemini ({candidate})",
+                        engine=gemini_engine_label("analytics", candidate),
                         patient_id=str(patient_id),
                         patient_name=patient_name,
                         risk_level=parsed.get("risk_level", "Moderate"),

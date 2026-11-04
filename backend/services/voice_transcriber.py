@@ -16,6 +16,7 @@ from typing import Optional
 
 from backend.services.clinical_autocorrect import correct_clinical_transcript
 from backend.services.ai_fallback import (
+    fast_thinking_config,
     get_candidate_models,
     is_transient_error,
     GEMINI_CALL_TIMEOUT_MS,
@@ -85,6 +86,7 @@ def _transcribe_with_gemini(audio_bytes: bytes, mime_type: str) -> Optional[str]
                     model=candidate,
                     contents=[audio_part, prompt],
                     config=types.GenerateContentConfig(
+                        thinking_config=fast_thinking_config(candidate),
                         temperature=0.0,
                         max_output_tokens=800,
                     ),
@@ -183,7 +185,7 @@ def transcribe_audio_with_details(audio_bytes: bytes, filename: str = "recording
     elif mode == "cloud":
         raw_transcript = _transcribe_with_gemini(audio_bytes, mime_type)
         if raw_transcript:
-            engine_name = f"gemini-audio ({os.getenv('GEMINI_MODEL_DRAFT', 'gemini-2.5-flash')})"
+            engine_name = f"gemini-audio ({os.getenv('GEMINI_MODEL_DRAFT', 'gemini-3.5-flash')})"
         else:
             logger.warning("Gemini cloud transcription unavailable or timed out; falling back to local faster-whisper.")
             raw_transcript = _transcribe_with_faster_whisper(audio_bytes, filename)
@@ -191,7 +193,7 @@ def transcribe_audio_with_details(audio_bytes: bytes, filename: str = "recording
     else:  # hybrid
         raw_transcript = _transcribe_with_gemini(audio_bytes, mime_type)
         if raw_transcript:
-            engine_name = f"gemini-audio ({os.getenv('GEMINI_MODEL_DRAFT', 'gemini-2.5-flash')})"
+            engine_name = f"gemini-audio ({os.getenv('GEMINI_MODEL_DRAFT', 'gemini-3.5-flash')})"
         else:
             raw_transcript = _transcribe_with_faster_whisper(audio_bytes, filename)
             engine_name = "faster-whisper-on-device (hybrid fallback)"

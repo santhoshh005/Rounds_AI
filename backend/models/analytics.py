@@ -66,7 +66,7 @@ class GuidelineConcordance(BaseModel):
 
 
 class AiAnalyticsInsight(BaseModel):
-    engine: str = Field(description="Engine or model that generated this insight (e.g. gemini-2.5-flash or deterministic fallback)")
+    engine: str = Field(description="Engine or model that generated this insight (e.g. gemini-3.5-flash or deterministic fallback)")
     patient_id: str
     patient_name: str
     risk_level: str = Field("Moderate", description="Low | Moderate | High | Critical")

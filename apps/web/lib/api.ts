@@ -18,7 +18,9 @@ export const API_URL =
 
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY || ""
 
-const REQUEST_TIMEOUT_MS = 15000
+// Longer than the backend's 12 s AI stage budget plus network time, so a slow model
+// falls back on the server instead of the browser marking the server unreachable.
+const REQUEST_TIMEOUT_MS = 20000
 
 // ── Backend reachability ────────────────────────────────────────────────
 // After a network failure, timeout or 5xx, calls fail fast for a short while so the
@@ -275,7 +277,9 @@ export const roundsApi = {
         method: "POST",
         body: JSON.stringify(body),
       })
-      extractCache.set(key, { expires: Date.now() + EXTRACT_TTL_MS, value: res })
+      // A rules-only answer (AI busy or out of quota) is kept briefly so Gemini is tried again soon.
+      const ttl = res.fallback_used ? OFFLINE_TTL_MS : EXTRACT_TTL_MS
+      extractCache.set(key, { expires: Date.now() + ttl, value: res })
       return res
     })
   },

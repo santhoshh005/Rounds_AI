@@ -14,6 +14,8 @@ from pydantic import BaseModel, Field
 
 from backend.models.round import ImageAttachment
 from backend.services.ai_fallback import (
+    gemini_engine_label,
+    fast_thinking_config,
     get_candidate_models,
     is_transient_error,
     GEMINI_CALL_TIMEOUT_MS,
@@ -110,6 +112,7 @@ def analyze_clinical_images(images: list[ImageAttachment]) -> list[VisionObserva
                             model=candidate,
                             contents=[image_part, prompt],
                             config=types.GenerateContentConfig(
+                                thinking_config=fast_thinking_config(candidate),
                                 response_mime_type="application/json",
                                 response_schema=VisionObservation,
                                 temperature=0.0,
@@ -133,7 +136,7 @@ def analyze_clinical_images(images: list[ImageAttachment]) -> list[VisionObserva
                 raise last_exc or RuntimeError("Gemini Vision returned empty observation")
 
             obs.source_file = img.name
-            obs.engine = f"gemini ({used_model})"
+            obs.engine = gemini_engine_label("vision", used_model)
             observations.append(obs)
 
         return observations

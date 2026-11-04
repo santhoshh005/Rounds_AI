@@ -218,6 +218,7 @@ def extraction_node(state: RoundState) -> RoundState:
 
     # 0. Polish / Terminology Normalization Stage
     working_transcript = transcript
+    use_gemini_polish = False
     if transcript.strip():
         from backend.services.clinical_autocorrect import correct_clinical_transcript
         # Rule-based polish (with the diff guard) is reliable on its own; Gemini polish is
@@ -355,7 +356,9 @@ def extraction_node(state: RoundState) -> RoundState:
         local_stages.append(f"vision ({stage_engines['vision']})")
     if transcript.strip() and "local" in stage_engines["extraction"].lower():
         local_stages.append(f"extraction ({stage_engines['extraction']})")
-    if transcript.strip() and "rule_based" in stage_engines["polish"].lower():
+    # Rule-based polish is the default, not a fallback; it only counts when Gemini polish
+    # was switched on (GEMINI_POLISH) and fell back.
+    if transcript.strip() and use_gemini_polish and "rule_based" in stage_engines["polish"].lower():
         local_stages.append(f"polish ({stage_engines['polish']})")
 
     fallback_used = len(local_stages) > 0

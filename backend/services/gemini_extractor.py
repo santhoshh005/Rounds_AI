@@ -14,6 +14,8 @@ from pydantic import BaseModel, Field
 from backend.models.round import ClinicalExtraction, LabValue, Sex
 from backend.services.local_extractor import extract_clinical_facts as local_extract
 from backend.services.ai_fallback import (
+    gemini_engine_label,
+    fast_thinking_config,
     get_candidate_models,
     is_transient_error,
     GEMINI_CALL_TIMEOUT_MS,
@@ -96,6 +98,7 @@ def extract_clinical_facts_gemini(text: str) -> ClinicalExtraction:
                         model=candidate,
                         contents=text,
                         config=types.GenerateContentConfig(
+                            thinking_config=fast_thinking_config(candidate),
                             response_mime_type="application/json",
                             response_schema=GeminiClinicalExtraction,
                             temperature=0.0,
@@ -131,7 +134,7 @@ def extract_clinical_facts_gemini(text: str) -> ClinicalExtraction:
                 LabValue(name=lab.name, value=lab.value, unit=lab.unit, source="Transcript", confidence="High")
                 for lab in gemini_result.labs
             ],
-            source=f"gemini ({used_model})",
+            source=gemini_engine_label("extraction", used_model),
         )
 
     except Exception as exc:  # noqa: BLE001

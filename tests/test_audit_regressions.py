@@ -94,6 +94,18 @@ def test_stage_budget_stops_the_cascade(monkeypatch):
     assert ai_fallback.stage_budget_exhausted(started - 6.0)
 
 
+def test_stage_budget_skips_a_call_that_cannot_finish(monkeypatch):
+    # After a 10 s timeout, a 12 s budget has no room for another 10 s call.
+    import time as _time
+
+    monkeypatch.setattr(ai_fallback, "AI_STAGE_BUDGET_S", 12.0)
+    monkeypatch.setattr(ai_fallback, "GEMINI_CALL_TIMEOUT_MS", 10000)
+    now = _time.monotonic()
+    assert not ai_fallback.stage_budget_exhausted(now)          # first call always runs
+    assert not ai_fallback.stage_budget_exhausted(now - 0.5)    # after a fast 429
+    assert ai_fallback.stage_budget_exhausted(now - 10.0)       # after a timeout
+
+
 def test_round_graph_polish_does_not_call_gemini_by_default(monkeypatch):
     import backend.services.clinical_autocorrect as ca
 
@@ -143,3 +155,24 @@ def test_gemini_call_timeout_meets_api_minimum():
     assert ai_fallback.gemini_call_timeout_ms(None) == 10000
     assert ai_fallback.gemini_call_timeout_ms("abc") == 10000
     assert ai_fallback.gemini_call_timeout_ms("20000") == 20000
+
+
+def test_fast_thinking_config_per_model_family():
+    # Default thinking pushed Flash calls past the 10 s timeout and, on 2.5 models,
+    # used up max_output_tokens before the JSON answer.
+    from backend.services.ai_fallback import fast_thinking_config
+
+    assert fast_thinking_config("gemini-3.5-flash").thinking_level.name == "LOW"
+    assert fast_thinking_config("gemini-2.5-flash").thinking_budget == 0
+    assert fast_thinking_config("gemini-2.5-pro").thinking_budget == 128
+    assert fast_thinking_config("gemini-2.0-flash") is None
+    assert fast_thinking_config("gemini-flash-latest") is None
+
+
+def test_polish_guard_accepts_spoken_numbers_written_as_digits():
+    from backend.services.clinical_autocorrect import _validate_gemini_polish
+
+    ok, _ = _validate_gemini_polish("anc four twenty on folfox", "ANC 420 on FOLFOX")
+    assert ok
+    ok, reason = _validate_gemini_polish("anc four twenty on folfox", "ANC 520 on FOLFOX")
+    assert not ok and "Numbers altered" in reason

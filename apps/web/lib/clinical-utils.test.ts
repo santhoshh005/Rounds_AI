@@ -130,27 +130,24 @@ describe("Clinical Utilities — TDD Suite", () => {
 
   describe("getModelProvenance — AI Model & Fallback Transparency", () => {
     it("identifies primary Google Gemini AI models and specifies exact model", () => {
-      const p = getModelProvenance("gemini (gemini-2.5-flash)");
+      const p = getModelProvenance("gemini (gemini-3.5-flash)");
       assert.equal(p.isAi, true);
       assert.equal(p.isFallback, false);
-      assert.equal(p.modelName, "gemini-2.5-flash");
-      assert.ok(p.displayLabel.includes("Gemini 2.5 Flash"));
+      assert.equal(p.modelName, "gemini-3.5-flash");
+      assert.ok(p.displayLabel.includes("Gemini 3.5 Flash"));
       assert.equal(p.badgeType, "ai-primary");
     });
 
-    it("identifies cascading fallback AI models and identifies tier and model name", () => {
-      const p2 = getModelProvenance("gemini (gemini-2.0-flash)");
+    it("labels a backup model as AI Fallback when the backend marks it", () => {
+      const p2 = getModelProvenance("gemini (gemini-3.1-flash-lite, fallback)");
       assert.equal(p2.isAi, true);
       assert.equal(p2.isFallback, true);
-      assert.equal(p2.modelName, "gemini-2.0-flash");
-      assert.ok(p2.displayLabel.includes("AI Fallback: Gemini 2.0 Flash"));
+      assert.equal(p2.modelName, "gemini-3.1-flash-lite");
+      assert.equal(p2.displayLabel, "AI Fallback: Gemini 3.1 Flash Lite");
       assert.equal(p2.badgeType, "ai-fallback");
 
-      const p3 = getModelProvenance("gemini (gemini-1.5-flash)");
-      assert.equal(p3.isAi, true);
-      assert.equal(p3.isFallback, true);
-      assert.equal(p3.modelName, "gemini-1.5-flash");
-      assert.ok(p3.displayLabel.includes("Tier 3"));
+      // Without the marker the same model is the configured primary.
+      assert.equal(getModelProvenance("gemini (gemini-3.1-flash-lite)").isFallback, false);
     });
 
     it("identifies deterministic clinical rule engine fallback with zero hallucination", () => {
