@@ -278,7 +278,7 @@ Open http://localhost:3000. For accounts, set the `NEXT_PUBLIC_FIREBASE_*` varia
 | `LLM_PROVIDER` | `local` (default) or `gemini` for transcript extraction. |
 | `GEMINI_MODEL_VISION` / `GEMINI_MODEL_DRAFT` / `GEMINI_MODEL_POLISH` | Primary models per task (first in the cascade). |
 | `GEMINI_POLISH` | `true` to also use Gemini for transcript polish (default: rule-based polish, one Gemini call per round). |
-| `AI_STAGE_BUDGET_S` / `GEMINI_CALL_TIMEOUT_MS` | Time budget per AI stage (default 12 s) and per Gemini request (default 9 s) before falling back to rules. |
+| `AI_STAGE_BUDGET_S` / `GEMINI_CALL_TIMEOUT_MS` | Time budget per AI stage (default 12 s) and per Gemini request (default and minimum 10 s — the API rejects shorter deadlines) before falling back to rules. |
 | `TRANSCRIPTION_MODE` | `local` (default, faster-whisper) · `cloud` (Gemini audio) · `hybrid`. |
 | `WHISPER_MODEL_SIZE` | faster-whisper size: `tiny` (default, fits a 512 MB host) or `base` (more accurate, needs ~1 GB RAM). |
 | `ALLOWED_ORIGINS` | Comma-separated CORS origins. |

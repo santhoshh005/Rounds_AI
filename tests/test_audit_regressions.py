@@ -131,3 +131,15 @@ def test_analytics_insight_is_cached_until_data_changes(monkeypatch):
     assert len(calls) == 2  # Re-analyze bypasses the cache
     ga.generate_ai_analytics_insight(patient_id="104", patient_name="Demo", rounds=rounds + [{"anc": 900}])
     assert len(calls) == 3  # new round data: regenerated
+
+
+def test_gemini_call_timeout_meets_api_minimum():
+    # The Gemini API returns 400 INVALID_ARGUMENT for deadlines under 10 s, which made
+    # every call fail and fall back to rules.
+    from backend.services import ai_fallback
+
+    assert ai_fallback.GEMINI_CALL_TIMEOUT_MS >= 10000
+    assert ai_fallback.gemini_call_timeout_ms("9000") == 10000
+    assert ai_fallback.gemini_call_timeout_ms(None) == 10000
+    assert ai_fallback.gemini_call_timeout_ms("abc") == 10000
+    assert ai_fallback.gemini_call_timeout_ms("20000") == 20000

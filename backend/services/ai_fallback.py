@@ -73,8 +73,20 @@ TIMEOUT_COOLDOWN_S = 120
 # Wall-clock budget for one AI stage (all models tried for it). When it runs out the
 # caller falls back to deterministic rules instead of trying more models.
 AI_STAGE_BUDGET_S = float(os.getenv("AI_STAGE_BUDGET_S", "12"))
-# Per-request HTTP timeout for a single Gemini call, in milliseconds.
-GEMINI_CALL_TIMEOUT_MS = int(os.getenv("GEMINI_CALL_TIMEOUT_MS", "9000"))
+# Per-request HTTP timeout for a single Gemini call, in milliseconds. The Gemini API
+# rejects deadlines under 10 s with 400 INVALID_ARGUMENT, so lower values are raised.
+GEMINI_MIN_TIMEOUT_MS = 10000
+
+
+def gemini_call_timeout_ms(raw: str | None) -> int:
+    try:
+        value = int(raw) if raw else GEMINI_MIN_TIMEOUT_MS
+    except ValueError:
+        value = GEMINI_MIN_TIMEOUT_MS
+    return max(GEMINI_MIN_TIMEOUT_MS, value)
+
+
+GEMINI_CALL_TIMEOUT_MS = gemini_call_timeout_ms(os.getenv("GEMINI_CALL_TIMEOUT_MS"))
 _UNAVAILABLE_UNTIL: dict[str, float] = {}
 _UNAVAILABLE_LOCK = threading.Lock()
 
