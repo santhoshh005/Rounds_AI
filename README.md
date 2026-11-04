@@ -127,7 +127,7 @@ sequenceDiagram
     participant B as FastAPI
     participant S as Station (/station)
 
-    Doc->>M: Dictate at the bedside, tap "Send"
+    Doc->>M: Dictate at the bedside, tap Send to station
     M->>B: POST /rounds/bedside-sync
     B-->>S: SSE round_update (same-device tabs also get a storage event)
     Doc->>S: "Load into station" → Analyze round
@@ -135,7 +135,7 @@ sequenceDiagram
     B-->>S: labs, symptoms, sentinel flags, confirm items, engine used
     Note over S: If the backend is down, on-device rules produce the same structure
     Doc->>S: Tick every checklist item → edit SOAP → Attest
-    S->>S: Save to Round history + analytics; "Start next round"
+    S->>S: Save to Round history and analytics, then Start next round
 ```
 
 ---
