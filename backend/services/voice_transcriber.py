@@ -9,6 +9,7 @@ Multi-engine architecture supporting strict privacy modes:
 from __future__ import annotations
 
 import logging
+import time
 import os
 import tempfile
 from typing import Optional
@@ -17,8 +18,10 @@ from backend.services.clinical_autocorrect import correct_clinical_transcript
 from backend.services.ai_fallback import (
     get_candidate_models,
     is_transient_error,
+    GEMINI_CALL_TIMEOUT_MS,
     note_model_failure,
     should_retry_same_model,
+    stage_budget_exhausted,
 )
 
 logger = logging.getLogger(__name__)
@@ -73,7 +76,10 @@ def _transcribe_with_gemini(audio_bytes: bytes, mime_type: str) -> Optional[str]
             "Return ONLY the clean, verbatim clinical transcript without conversational commentary."
         )
 
+        _stage_started = time.monotonic()
         for candidate in candidate_models:
+            if stage_budget_exhausted(_stage_started):
+                break
             try:
                 response = client.models.generate_content(
                     model=candidate,

@@ -16,8 +16,10 @@ from backend.models.round import ImageAttachment
 from backend.services.ai_fallback import (
     get_candidate_models,
     is_transient_error,
+    GEMINI_CALL_TIMEOUT_MS,
     note_model_failure,
     should_retry_same_model,
+    stage_budget_exhausted,
 )
 
 logger = logging.getLogger(__name__)
@@ -81,7 +83,7 @@ def analyze_clinical_images(images: list[ImageAttachment]) -> list[VisionObserva
         from google import genai
         from google.genai import types
 
-        client = genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=15000))
+        client = genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=GEMINI_CALL_TIMEOUT_MS))
         observations: list[VisionObservation] = []
 
         for img in images:
@@ -98,7 +100,10 @@ def analyze_clinical_images(images: list[ImageAttachment]) -> list[VisionObserva
             obs: VisionObservation | None = None
             used_model = model_name
 
+            _stage_started = time.monotonic()
             for candidate in candidate_models:
+                if stage_budget_exhausted(_stage_started):
+                    break
                 for attempt in range(2):
                     try:
                         response = client.models.generate_content(

@@ -11,6 +11,7 @@ from __future__ import annotations
 import datetime
 import json
 import logging
+import time
 import os
 import re
 from typing import Any, Optional
@@ -19,8 +20,10 @@ from backend.models.analytics import AiAnalyticsInsight
 from backend.services.ai_fallback import (
     get_candidate_models,
     is_transient_error,
+    GEMINI_CALL_TIMEOUT_MS,
     note_model_failure,
     should_retry_same_model,
+    stage_budget_exhausted,
 )
 
 logger = logging.getLogger(__name__)
@@ -313,9 +316,12 @@ def generate_ai_analytics_insight(
         from google import genai
         from google.genai import types
 
-        client = genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=18000))
+        client = genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=GEMINI_CALL_TIMEOUT_MS))
 
+        _stage_started = time.monotonic()
         for candidate in candidate_models:
+            if stage_budget_exhausted(_stage_started):
+                break
             try:
                 response = client.models.generate_content(
                     model=candidate,

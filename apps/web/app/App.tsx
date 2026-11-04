@@ -2442,7 +2442,7 @@ function OcrReviewModal({
       setWbc(initialParsed.wbc)
       setPlatelets(initialParsed.platelets)
       setHemoglobin(initialParsed.hemoglobin)
-      setTemp(initialParsed.temp > 0 ? initialParsed.temp : 37.0)
+      setTemp(initialParsed.temp)
       setValidationError("")
     }
   }, [initialParsed])
@@ -2473,7 +2473,8 @@ function OcrReviewModal({
       setValidationError("Enter at least one verified laboratory value before committing this report.")
       return
     }
-    const finalTemp = temp > 0 ? temp : 37.0
+    // 0 means "not recorded" — never substitute a normal temperature.
+    const finalTemp = temp > 0 ? temp : 0
     const finalIsFebrile = finalTemp >= 38.0
     setValidationError("")
     onCommit({
@@ -2715,7 +2716,17 @@ function CaptureStep({
     if (!pendingOcr) return
     const fileName = pendingOcr.fileName
     const prov = getModelProvenance(confirmed.engine || (confirmed.extractedFromText ? "local-text-parser (deterministic regex)" : "local-vision-fallback"))
-    const ocrReportText = `\n\n[OCR LAB REPORT: ${fileName} · ${prov.displayLabel}]\n• Collection: Today 07:15 AM · Ward 4B Stat Hematology\n• Absolute Neutrophil Count (ANC): ${formatNumber(confirmed.anc)} /µL (CTCAE Grade ${confirmed.grade})\n• Platelets: ${formatNumber(confirmed.platelets)} /µL\n• WBC: ${confirmed.wbc} x10³/µL\n• Hemoglobin: ${confirmed.hemoglobin} g/dL\n• Vitals: Temp ${confirmed.temp}°C\n[Model: ${prov.modelName || prov.displayLabel} · Synced to Analytics JSON]`
+    // Only values read from (or confirmed for) the report are written; 0 means not recorded.
+    const line = (label: string, value: number, unit: string, fmt: (v: number) => string = String) =>
+      `\n• ${label}: ${value > 0 ? `${fmt(value)} ${unit}` : "not recorded"}`
+    const ocrReportText =
+      `\n\n[OCR LAB REPORT: ${fileName} · ${prov.displayLabel} · clinician-confirmed]` +
+      `\n• Absolute Neutrophil Count (ANC): ${formatNumber(confirmed.anc)} /µL (CTCAE Grade ${confirmed.grade})` +
+      line("Platelets", confirmed.platelets, "/µL", formatNumber) +
+      line("WBC", confirmed.wbc, "x10³/µL") +
+      line("Hemoglobin", confirmed.hemoglobin, "g/dL") +
+      line("Temperature", confirmed.temp, "°C") +
+      `\n[Source: ${prov.modelName || prov.displayLabel}]`
 
     setTranscript((prev) => prev + ocrReportText)
     setOcrStatus(`OCR Verified: ANC ${formatNumber(confirmed.anc)} /µL (Grade ${confirmed.grade}) · [${prov.displayLabel}]`)
@@ -5030,7 +5041,7 @@ function MobileCompanion({
     if (!pendingOcr) return
     const fileName = pendingOcr.fileName
     const prov = getModelProvenance(confirmed.engine || (confirmed.extractedFromText ? "local-text-parser (deterministic regex)" : "local-vision-fallback"))
-    const ocrSnippet = `\n[BEDSIDE OCR SCAN: ${fileName} · ${prov.displayLabel}]\n• ANC: ${formatNumber(confirmed.anc)} /µL (Grade ${confirmed.grade}) · Plt: ${formatNumber(confirmed.platelets)} /µL\n• Model: ${prov.modelName || prov.displayLabel} · Synced to Analytics JSON`
+    const ocrSnippet = `\n[BEDSIDE OCR SCAN: ${fileName} · ${prov.displayLabel}]\n• ANC: ${formatNumber(confirmed.anc)} /µL (Grade ${confirmed.grade}) · Plt: ${confirmed.platelets > 0 ? `${formatNumber(confirmed.platelets)} /µL` : "not recorded"}\n• Source: ${prov.modelName || prov.displayLabel} · clinician-confirmed`
     setTranscript((prev) => prev + ocrSnippet)
     setCaptured(true)
     if (onOcrExtracted) onOcrExtracted(patient.id, fileName, confirmed)
@@ -5658,6 +5669,8 @@ function Analytics({
 
   useEffect(() => {
     let cancelled = false
+    // Never show another patient's insight while this patient's one is loading.
+    setAiInsight((prev) => (prev && prev.patient_id === patient.id ? prev : null))
     const loadAiInsight = async () => {
       setAiLoading(true)
       try {
@@ -6258,7 +6271,7 @@ function ProductMockup() {
         </span>
         <p>
           <b>Listen</b>
-          <small>Speech stays on device</small>
+          <small>Self-hosted Whisper speech</small>
         </p>
       </div>
 

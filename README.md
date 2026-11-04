@@ -151,7 +151,7 @@ sequenceDiagram
 | Trajectory insight | Gemini JSON | Deterministic generator from recorded values |
 | CTCAE grading, sentinels, dose advice | **Always deterministic rules** | — |
 
-**Model cascade (`backend/services/ai_fallback.py`):** the configured models (`.env`: `gemini-3.5-flash`, polish `gemini-3.5-flash-lite`) → pinned tiers (`gemini-2.5-flash`, `2.0-flash`, `1.5-flash`, `1.5-pro`, `2.5-pro`) → rolling aliases (`gemini-flash-latest`, `gemini-flash-lite-latest`) → deterministic rules. A model that returns a quota error (429) is skipped for 10 minutes and a retired one (404) for an hour, so an exhausted key fails fast instead of retrying. Every result carries a provenance badge naming the model or rule engine that actually produced it.
+**Model cascade (`backend/services/ai_fallback.py`):** the configured models (`.env`: `gemini-3.5-flash`, polish `gemini-3.5-flash-lite`) → pinned tiers (`gemini-2.5-flash`, `2.0-flash`, `1.5-flash`, `1.5-pro`, `2.5-pro`) → rolling aliases (`gemini-flash-latest`, `gemini-flash-lite-latest`) → deterministic rules. A model that returns a quota error (429) is skipped for 10 minutes, a timed-out one for 2 minutes and a retired one (404) for an hour; each AI stage also has a 12-second budget, so a slow or exhausted key falls back to rules quickly instead of stalling the round. Every result carries a provenance badge naming the model or rule engine that actually produced it.
 
 **Prompting:** extraction and vision prompts instruct the model to copy numbers exactly with their printed units, ignore reference ranges and differential percentages, scope negation to the clause, and leave unknown fields empty. The analytics prompt lists missing values as "not recorded", states that rounds are newest-first, forbids demographics and unstated clinical facts, and asks for a confidence that reflects data completeness.
 
@@ -275,6 +275,8 @@ Open http://localhost:3000. For accounts, set the `NEXT_PUBLIC_FIREBASE_*` varia
 | `GEMINI_API_KEY` | Enables Gemini polish, extraction, vision OCR and insights. Without it everything runs on deterministic rules. |
 | `LLM_PROVIDER` | `local` (default) or `gemini` for transcript extraction. |
 | `GEMINI_MODEL_VISION` / `GEMINI_MODEL_DRAFT` / `GEMINI_MODEL_POLISH` | Primary models per task (first in the cascade). |
+| `GEMINI_POLISH` | `true` to also use Gemini for transcript polish (default: rule-based polish, one Gemini call per round). |
+| `AI_STAGE_BUDGET_S` / `GEMINI_CALL_TIMEOUT_MS` | Time budget per AI stage (default 12 s) and per Gemini request (default 9 s) before falling back to rules. |
 | `TRANSCRIPTION_MODE` | `local` (default, faster-whisper) · `cloud` (Gemini audio) · `hybrid`. |
 | `WHISPER_MODEL_SIZE` | faster-whisper size (default `base`). |
 | `ALLOWED_ORIGINS` | Comma-separated CORS origins. |

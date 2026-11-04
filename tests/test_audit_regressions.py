@@ -74,3 +74,39 @@ def test_bedside_sync_relays_without_ai_or_persistence():
     assert res.status_code == 202
     assert res.json()["status"] == "relayed"
     assert client.post("/api/v1/rounds/bedside-sync", json={"patient_id": ""}).status_code == 422
+
+
+def test_timeouts_are_not_retried_and_cool_down():
+    timeout = Exception("504 DEADLINE_EXCEEDED: request timed out")
+    assert ai_fallback.is_timeout_error(timeout)
+    assert not ai_fallback.should_retry_same_model(timeout)
+    ai_fallback.note_model_failure("gemini-test-slow", timeout)
+    assert ai_fallback._is_cooling("gemini-test-slow")
+    ai_fallback.reset_model_cooldowns()
+
+
+def test_stage_budget_stops_the_cascade(monkeypatch):
+    import time as _time
+
+    monkeypatch.setattr(ai_fallback, "AI_STAGE_BUDGET_S", 5.0)
+    started = _time.monotonic()
+    assert not ai_fallback.stage_budget_exhausted(started)
+    assert ai_fallback.stage_budget_exhausted(started - 6.0)
+
+
+def test_round_graph_polish_does_not_call_gemini_by_default(monkeypatch):
+    import backend.services.clinical_autocorrect as ca
+
+    calls = []
+    real = ca.correct_clinical_transcript
+
+    def spy(text, use_gemini=True):
+        calls.append(use_gemini)
+        return real(text, use_gemini=False)
+
+    monkeypatch.setenv("LLM_PROVIDER", "gemini")
+    monkeypatch.delenv("GEMINI_POLISH", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setattr(ca, "correct_clinical_transcript", spy)
+    round_graph.invoke({"transcript": "ANC 420. Temp 38.4 C.", "images": [], "patient_id": "104"})
+    assert calls == [False]

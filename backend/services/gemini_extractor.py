@@ -16,8 +16,10 @@ from backend.services.local_extractor import extract_clinical_facts as local_ext
 from backend.services.ai_fallback import (
     get_candidate_models,
     is_transient_error,
+    GEMINI_CALL_TIMEOUT_MS,
     note_model_failure,
     should_retry_same_model,
+    stage_budget_exhausted,
 )
 
 logger = logging.getLogger(__name__)
@@ -79,12 +81,15 @@ def extract_clinical_facts_gemini(text: str) -> ClinicalExtraction:
         from google import genai
         from google.genai import types
 
-        client = genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=15000))
+        client = genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=GEMINI_CALL_TIMEOUT_MS))
         gemini_result: GeminiClinicalExtraction | None = None
         used_model = model_name
         last_exc: Exception | None = None
 
+        _stage_started = time.monotonic()
         for candidate in candidate_models:
+            if stage_budget_exhausted(_stage_started):
+                break
             for attempt in range(2):
                 try:
                     response = client.models.generate_content(

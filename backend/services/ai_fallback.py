@@ -68,6 +68,13 @@ DEFAULT_MODELS = {
 # the API key's quota and seconds of latency on every request.
 QUOTA_COOLDOWN_S = 600
 NOT_FOUND_COOLDOWN_S = 3600
+TIMEOUT_COOLDOWN_S = 120
+
+# Wall-clock budget for one AI stage (all models tried for it). When it runs out the
+# caller falls back to deterministic rules instead of trying more models.
+AI_STAGE_BUDGET_S = float(os.getenv("AI_STAGE_BUDGET_S", "12"))
+# Per-request HTTP timeout for a single Gemini call, in milliseconds.
+GEMINI_CALL_TIMEOUT_MS = int(os.getenv("GEMINI_CALL_TIMEOUT_MS", "9000"))
 _UNAVAILABLE_UNTIL: dict[str, float] = {}
 _UNAVAILABLE_LOCK = threading.Lock()
 
@@ -82,13 +89,29 @@ def is_not_found_error(exc: Exception) -> bool:
     return "404" in msg or "not_found" in msg or "no longer available" in msg
 
 
+def is_timeout_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return any(tok in msg for tok in ("timed out", "timeout", "deadline_exceeded", "deadline exceeded"))
+
+
 def should_retry_same_model(exc: Exception) -> bool:
-    """Only short-lived overloads are worth an immediate retry on the same model."""
-    return is_transient_error(exc) and not is_quota_error(exc)
+    """Only short-lived overloads are worth an immediate retry; quota errors and
+    timeouts are not (a timed-out call already consumed the stage budget)."""
+    return is_transient_error(exc) and not is_quota_error(exc) and not is_timeout_error(exc)
+
+
+def stage_budget_exhausted(started_at: float) -> bool:
+    """True once an AI stage has used its wall-clock budget (time.monotonic() start)."""
+    return time.monotonic() - started_at >= AI_STAGE_BUDGET_S
 
 
 def note_model_failure(model: str, exc: Exception) -> None:
-    cooldown = QUOTA_COOLDOWN_S if is_quota_error(exc) else NOT_FOUND_COOLDOWN_S if is_not_found_error(exc) else 0
+    cooldown = (
+        QUOTA_COOLDOWN_S if is_quota_error(exc)
+        else NOT_FOUND_COOLDOWN_S if is_not_found_error(exc)
+        else TIMEOUT_COOLDOWN_S if is_timeout_error(exc)
+        else 0
+    )
     if cooldown:
         with _UNAVAILABLE_LOCK:
             _UNAVAILABLE_UNTIL[model] = time.monotonic() + cooldown

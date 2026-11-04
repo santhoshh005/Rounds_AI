@@ -776,7 +776,8 @@ export const ONCOLOGY_RULES: OncologyRule[] = [
   },
   {
     id: "RULE_VITAL_FEVER",
-    pattern: /\b(patient\s+is\s+having\s+fever|having\s+fever)\b/gi,
+    // "Patient is having fever" -> "Patient is febrile": keep the subject and verb.
+    pattern: /\bhaving\s+fever\b/gi,
     replacement: "febrile",
     category: "Clinical Score / Unit",
     baseConfidence: 96,

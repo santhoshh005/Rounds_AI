@@ -219,7 +219,10 @@ def extraction_node(state: RoundState) -> RoundState:
     working_transcript = transcript
     if transcript.strip():
         from backend.services.clinical_autocorrect import correct_clinical_transcript
-        polish_res = correct_clinical_transcript(transcript, use_gemini=(provider == "gemini"))
+        # Rule-based polish (with the diff guard) is reliable on its own; Gemini polish is
+        # opt-in so each round spends at most one Gemini call on extraction.
+        use_gemini_polish = provider == "gemini" and os.getenv("GEMINI_POLISH", "false").strip().lower() in ("true", "1", "yes")
+        polish_res = correct_clinical_transcript(transcript, use_gemini=use_gemini_polish)
         working_transcript = polish_res.get("corrected_text") or transcript
         stage_engines["polish"] = polish_res.get("engine", "rule_based_oncology")
         provenance["polish_engine"] = stage_engines["polish"]
