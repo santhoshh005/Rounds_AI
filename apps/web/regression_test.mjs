@@ -2,7 +2,8 @@ import { chromium } from "playwright";
 import fs from "fs";
 import path from "path";
 
-const ARTIFACT_DIR = "C:\\Users\\saisa\\.gemini\\antigravity\\brain\\c68413c6-d89d-4149-9a5c-5c229ff3649c";
+const ARTIFACT_DIR = process.env.E2E_ARTIFACT_DIR || path.join(process.cwd(), "e2e-artifacts");
+fs.mkdirSync(path.join(ARTIFACT_DIR, "scratch"), { recursive: true });
 const BASE_URL = "http://localhost:3000";
 
 async function main() {

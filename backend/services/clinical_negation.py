@@ -26,6 +26,13 @@ PRE_NEGATION_PATTERNS = [
     r"\bno\s+evidence\s+of\b",
 ]
 
+# Negation scope ends at sentence punctuation, a contrasting conjunction, or an
+# affirmative verb ("no fever and reports severe pain" keeps pain active)
+CLAUSE_BOUNDARY_PATTERN = (
+    r"[.;!?]|\bbut\b|\bhowever\b|\balthough\b|\bthough\b|"
+    r"\b(?:reports?|reported|complains?|complained|endorses?|endorsed|has|having|had|with|developed)\b"
+)
+
 # Historical and resolved triggers
 HISTORICAL_OR_RESOLVED_PATTERNS = [
     r"\bresolved\b",
@@ -292,12 +299,13 @@ def partition_symptoms(transcript: str) -> tuple[list[str], list[str]]:
                 negated_symptoms.append(f"fever ({f_eval['status']})")
             continue
 
-        # Check for pre-negation within preceding 5 words
+        # Check for pre-negation within the same clause, up to 5 words before the
+        # symptom ("denies chest pain", "no nausea, vomiting or diarrhea").
         is_negated = False
         for m in matches:
-            start_pos = max(0, m.start() - 35)
-            prefix = lower[start_pos:m.start()]
-            if any(re.search(rf"{pre}\s+(?:any\s+)?$", prefix) for pre in PRE_NEGATION_PATTERNS):
+            start_pos = max(0, m.start() - 60)
+            prefix = re.split(CLAUSE_BOUNDARY_PATTERN, lower[start_pos:m.start()])[-1]
+            if any(re.search(rf"{pre}\s+(?:[\w-]+[\s,/]+){{0,5}}$", prefix) for pre in PRE_NEGATION_PATTERNS):
                 is_negated = True
                 break
 

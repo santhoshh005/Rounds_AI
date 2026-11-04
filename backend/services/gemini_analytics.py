@@ -16,7 +16,12 @@ import re
 from typing import Any, Optional
 
 from backend.models.analytics import AiAnalyticsInsight
-from backend.services.ai_fallback import get_candidate_models, is_transient_error
+from backend.services.ai_fallback import (
+    get_candidate_models,
+    is_transient_error,
+    note_model_failure,
+    should_retry_same_model,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -301,6 +306,7 @@ def generate_ai_analytics_insight(
                         generated_at=now_iso,
                     )
             except Exception as candidate_err:
+                note_model_failure(candidate, candidate_err)
                 logger.warning("Gemini analytics candidate %s failed: %s; trying next fallback...", candidate, candidate_err)
                 continue
 

@@ -2,15 +2,20 @@ import { chromium } from "playwright";
 import fs from "fs";
 import path from "path";
 
-const ARTIFACT_DIR = "C:\\Users\\saisa\\.gemini\\antigravity\\brain\\c68413c6-d89d-4149-9a5c-5c229ff3649c";
+const ARTIFACT_DIR = process.env.E2E_ARTIFACT_DIR || path.join(process.cwd(), "e2e-artifacts");
+fs.mkdirSync(path.join(ARTIFACT_DIR, "scratch"), { recursive: true });
 const BASE_URL = "http://localhost:3000";
 
 async function main() {
   console.log("=== STARTING ROUNDSAI FULL BROWSER E2E TEST ===");
-  const browser = await chromium.launch({ channel: "chrome", headless: true });
+  const browser = await chromium.launch({
+    channel: "chrome",
+    headless: true,
+    args: ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream"],
+  });
   const context = await browser.newContext({
     viewport: { width: 1440, height: 900 },
-    permissions: ["clipboard-read", "clipboard-write"],
+    permissions: ["clipboard-read", "clipboard-write", "microphone"],
   });
   const page = await context.newPage();
 
@@ -149,8 +154,8 @@ async function main() {
   const analyzeBtn = page.locator(".step-action button.primary, button.primary").filter({ hasText: /Analyze/i }).first();
   if (await analyzeBtn.isVisible()) {
     await analyzeBtn.click();
-    console.log("    Waiting for pipeline analysis animation (2.2s)...");
-    await page.waitForTimeout(2500);
+    console.log("    Waiting for round analysis (backend or on-device fallback)...");
+    await page.locator(".critical-alert").waitFor({ timeout: 30000 }).catch(() => {});
   }
 
   // Verify Step 2 Review Screen
@@ -232,19 +237,25 @@ async function main() {
   const chipCount = await presetChips.count();
   record("Mobile", "Preset Oncology Chips Count", chipCount >= 3, `Found ${chipCount} chips`);
   if (chipCount > 0) {
-    const transcriptBefore = await page.locator(".live-text p").textContent();
+    const transcriptBefore = await page.locator(".live-mobile-textarea").inputValue();
     await presetChips.nth(0).click();
     await page.waitForTimeout(200);
-    const transcriptAfter = await page.locator(".live-text p").textContent();
+    const transcriptAfter = await page.locator(".live-mobile-textarea").inputValue();
     record("Mobile", "Preset Chip Click (Appends Text)", transcriptAfter.length > transcriptBefore.length, `Appended text: ${transcriptAfter.slice(-25)}`);
   }
 
   // Test Lab scan button
   const scanMobileBtn = page.locator(".scan-mobile");
   if (await scanMobileBtn.isVisible()) {
-    await scanMobileBtn.click();
-    await page.waitForTimeout(200);
-    record("Mobile", "Lab Scan Button Click", await scanMobileBtn.evaluate(el => el.classList.contains("captured")), "CBC scan attached");
+    const labFile = path.join(ARTIFACT_DIR, "scratch", "mobile_cbc.txt");
+    fs.writeFileSync(labFile, "ANC: 420 cells/uL\nPlatelets: 88,000 /uL\nWBC: 1.8 x10^3/uL\nHemoglobin: 10.2 g/dL\n");
+    await page.locator('input[type="file"]').last().setInputFiles(labFile);
+    const ocrModal = page.locator(".autocorrect-modal-card");
+    await ocrModal.waitFor({ timeout: 10000 }).catch(() => {});
+    record("Mobile", "Lab Scan Upload Opens OCR Review", await ocrModal.isVisible(), "OCR review modal shown");
+    await page.keyboard.press("Escape");
+    const closeBtn = page.locator('.autocorrect-modal-card button[aria-label^="Close"]');
+    if (await closeBtn.count()) await closeBtn.first().click();
   }
 
   // Test "Sync round to doctor dashboard" button
@@ -282,8 +293,8 @@ async function main() {
   record("Analytics", "Recovery Curve SVG Chart", await recoverySvg.isVisible(), "Rendered recovery curve");
 
   // Test Chemo Dose Modification Advisor Card
-  const doseCard = page.locator(".advisor");
-  record("Analytics", "Chemo Dose Modification Advisor", (await doseCard.textContent()).includes("dose reduction"), "NCCN guideline recommendation active");
+  const doseCard = page.locator(".dose-recommendation-card").first();
+  record("Analytics", "Chemo Dose Modification Advisor", /dose reduction/i.test(await doseCard.textContent()), "NCCN guideline recommendation active");
 
   // Test Historical Rounds Audit Log Table
   const auditRows = page.locator(".audit-table table tbody tr");

@@ -15,9 +15,15 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
+import time
 from typing import Sequence
 
 logger = logging.getLogger(__name__)
+
+# Rolling aliases that Google keeps pointed at current models; tried after the
+# pinned tiers (retired ones are skipped by the cooldown after their first 404).
+CURRENT_MODEL_ALIASES = ["gemini-flash-latest", "gemini-flash-lite-latest"]
 
 # Canonical 4-Tier Clinical AI Model Cascades
 DEFAULT_MODELS = {
@@ -57,6 +63,54 @@ DEFAULT_MODELS = {
 }
 
 
+# ── Model cooldown circuit-breaker ──────────────────────────────────────
+# A model that is out of quota or retired keeps failing; skipping it for a while saves
+# the API key's quota and seconds of latency on every request.
+QUOTA_COOLDOWN_S = 600
+NOT_FOUND_COOLDOWN_S = 3600
+_UNAVAILABLE_UNTIL: dict[str, float] = {}
+_UNAVAILABLE_LOCK = threading.Lock()
+
+
+def is_quota_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return any(tok in msg for tok in ("429", "resource_exhausted", "quota", "rate limit"))
+
+
+def is_not_found_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return "404" in msg or "not_found" in msg or "no longer available" in msg
+
+
+def should_retry_same_model(exc: Exception) -> bool:
+    """Only short-lived overloads are worth an immediate retry on the same model."""
+    return is_transient_error(exc) and not is_quota_error(exc)
+
+
+def note_model_failure(model: str, exc: Exception) -> None:
+    cooldown = QUOTA_COOLDOWN_S if is_quota_error(exc) else NOT_FOUND_COOLDOWN_S if is_not_found_error(exc) else 0
+    if cooldown:
+        with _UNAVAILABLE_LOCK:
+            _UNAVAILABLE_UNTIL[model] = time.monotonic() + cooldown
+        logger.info("Skipping model %s for %ss after: %s", model, cooldown, str(exc)[:120])
+
+
+def reset_model_cooldowns() -> None:
+    with _UNAVAILABLE_LOCK:
+        _UNAVAILABLE_UNTIL.clear()
+
+
+def _is_cooling(model: str) -> bool:
+    with _UNAVAILABLE_LOCK:
+        until = _UNAVAILABLE_UNTIL.get(model)
+        if until is None:
+            return False
+        if until <= time.monotonic():
+            del _UNAVAILABLE_UNTIL[model]
+            return False
+        return True
+
+
 def get_candidate_models(task: str = "extraction") -> list[str]:
     """Retrieve an ordered list of 4+ fallback models for an AI task.
 
@@ -77,11 +131,14 @@ def get_candidate_models(task: str = "extraction") -> list[str]:
     base_list = DEFAULT_MODELS.get(task, DEFAULT_MODELS["extraction"])
 
     candidates: list[str] = []
-    for candidate in [user_primary, user_secondary, *base_list]:
+    for candidate in [user_primary, user_secondary, *base_list, *CURRENT_MODEL_ALIASES]:
         if candidate and candidate not in candidates:
             candidates.append(candidate)
 
-    return candidates
+    available = [c for c in candidates if not _is_cooling(c)]
+    # When every model is cooling down, still offer the primary so callers fail fast
+    # into their deterministic fallback instead of erroring on an empty list.
+    return available or candidates[:1]
 
 
 def is_transient_error(exc: Exception) -> bool:
