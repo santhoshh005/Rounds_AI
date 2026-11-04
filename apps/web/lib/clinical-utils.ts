@@ -820,16 +820,16 @@ export function getDoseModificationRecommendation(
   // Grade 4 Febrile Neutropenia / ANC < 500
   if (highestGrade >= 4 || lowestAnc < 500) {
     let doseAdjustment = `Reduce cytotoxic myelosuppressive agents in ${patient.regimen} by 20% for upcoming cycle.`;
-    let protocolSource = "NCCN / ASCO Febrile Neutropenia Guidelines v2.2025";
+    let protocolSource = "NCCN Hematopoietic Growth Factors · ASCO/IDSA Fever and Neutropenia (2018)";
     if (regLower.includes("folfox") || regLower.includes("oxaliplatin")) {
       doseAdjustment = `Reduce oxaliplatin dose by 20% (to 68 mg/m²) and omit bolus fluorouracil (5-FU) for ${nextCycle}.`;
-      protocolSource = "NCCN Colorectal Cancer / ASCO Febrile Neutropenia Guidelines v2.2025";
+      protocolSource = "NCCN Colon Cancer · NCCN Hematopoietic Growth Factors · ASCO/IDSA (2018)";
     } else if (regLower.includes("ac-t") || regLower.includes("doxorubicin") || regLower.includes("taxane")) {
       doseAdjustment = "Reduce cytotoxic dose by 20% and hold continuation until ANC ≥ 1,500 /µL.";
-      protocolSource = "NCCN Breast Cancer / ASCO Febrile Neutropenia Guidelines";
+      protocolSource = "NCCN Breast Cancer · NCCN Hematopoietic Growth Factors · ASCO/IDSA (2018)";
     } else if (regLower.includes("chop") || regLower.includes("lymphoma")) {
       doseAdjustment = "Hold cytotoxic components until ANC ≥ 1,500 /µL, then reduce cyclophosphamide and doxorubicin by 20%.";
-      protocolSource = "NCCN B-Cell Lymphomas / ASCO Febrile Neutropenia Guidelines";
+      protocolSource = "NCCN B-Cell Lymphomas · NCCN Hematopoietic Growth Factors · ASCO/IDSA (2018)";
     }
 
     return {
@@ -903,7 +903,7 @@ export function getDoseModificationRecommendation(
     let protocolSource = "NCCN Guidelines / CTCAE v5.0 Toxicity Management";
     let doseAdjustment = `Maintain 100% full dose intensity for ${patient.cycle} ${patient.regimen}. Provide supportive care and monitor for cumulative toxicity.`;
     if (regLower.includes("cisplatin") || regLower.includes("pemetrexed") || regLower.includes("nsclc") || regLower.includes("lung")) {
-      protocolSource = "NCCN Non-Small Cell Lung Cancer Guidelines v2.2025";
+      protocolSource = "NCCN Non-Small Cell Lung Cancer";
       doseAdjustment = `Proceed with planned ${nextCycle} Cisplatin + Pemetrexed at 100% relative dose intensity. Counsel patient on Grade 1 peripheral sensory symptoms.`;
     }
 

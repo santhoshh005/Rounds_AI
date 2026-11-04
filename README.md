@@ -4,14 +4,13 @@
 
 [![Live App](https://img.shields.io/badge/Live%20App-rounds--ai--umber.vercel.app-success?style=flat&logo=vercel)](https://rounds-ai-umber.vercel.app/)
 [![Backend API](https://img.shields.io/badge/Render%20API-rounds--ai--backend.onrender.com-46E3B7?style=flat&logo=render)](https://rounds-ai-backend.onrender.com/health)
-[![Demo Video](https://img.shields.io/badge/YouTube-Walkthrough%20Video-FF0000?style=flat&logo=youtube)](https://youtu.be/Kia1C-a0QLk)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?style=flat&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![Next.js](https://img.shields.io/badge/Next.js-15.5-000000?style=flat&logo=next.js&logoColor=white)](https://nextjs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org)
-[![Whisper](https://img.shields.io/badge/faster--whisper-base%20int8%20on%20CPU-orange?style=flat)](https://github.com/SYSTRAN/faster-whisper)
+[![Whisper](https://img.shields.io/badge/faster--whisper-int8%20on%20CPU-orange?style=flat)](https://github.com/SYSTRAN/faster-whisper)
 [![Google Gemini](https://img.shields.io/badge/Gemini-Flash%20with%20rule--engine%20fallback-4285F4?style=flat&logo=google&logoColor=white)](https://ai.google.dev)
 
 **Health-a-thon 2026 · Team Binary Minds (1RKUPH)** · Track: Cancer — Doctor / Care Team — Doctor Productivity & Knowledge Assistant
@@ -38,7 +37,7 @@ RoundsAI is a web application with three connected surfaces:
 ## ⚡ Features
 
 ### Capture
-- **Two speech engines:** *Whisper STT* — `faster-whisper` base int8 on the RoundsAI backend CPU; audio goes only to your own server (default `TRANSCRIPTION_MODE=local`). *Live ASR* — the browser's Web Speech API for real-time text; in Chrome this audio is processed by Google's speech service. The UI states which applies for the selected engine.
+- **Two speech engines:** *Whisper STT* — `faster-whisper` (int8, CPU; `tiny` model by default, `base` optional) on the RoundsAI backend; audio goes only to your own server (default `TRANSCRIPTION_MODE=local`). If Whisper is unavailable the app says so and never substitutes another speech service. *Live ASR* — the browser's Web Speech API for real-time text; in Chrome this audio is processed by Google's speech service. The UI states which applies for the selected engine.
 - **Oncology auto-correct with review:** 92 in-browser rules and 102 server rules (each matching several spoken variants) fix misheard terms — e.g. *"our chop"* → **R-CHOP**, *"ox ally platin"* → **oxaliplatin**, *"Anarcho AMC"* → **ANC**. Every correction is shown with a confidence score and can be accepted or rejected individually; *"a febrile episode"* is protected from being rewritten to *"afebrile"*.
 - **Lab-report upload (`+`):** text reports (`.txt/.csv/.json`) are parsed on-device; PNG/JPEG/WebP images are read by **Gemini Vision** through `POST /api/v1/vision/lab-ocr` (nothing is stored). Extracted values open in a review modal for confirmation before they are committed. If the vision model is unavailable the modal says so and asks for manual entry.
 
@@ -144,14 +143,18 @@ sequenceDiagram
 
 | Task | Primary | Fallback |
 | :--- | :--- | :--- |
-| Speech-to-text | `faster-whisper` base int8 on the backend CPU (Whisper STT), or the browser Web Speech API (Live ASR; Google's service in Chrome) | — |
-| Transcript polish | Gemini (`GEMINI_MODEL_POLISH`) with a diff guard that rejects any change to numbers, units, drugs or negations | Rule-based oncology normalizer |
+| Speech-to-text | `faster-whisper` int8 on the backend CPU (Whisper STT, `tiny`/`base`), or the browser Web Speech API (Live ASR; Google's service in Chrome) | — |
+| Transcript polish | Rule-based oncology normalizer (default); Gemini only when `GEMINI_POLISH=true`, with a diff guard that rejects any change to numbers, units, drugs or negations | — |
 | Clinical extraction | Gemini structured output (`LLM_PROVIDER=gemini`) | Deterministic regex extractor |
 | Lab-report images | Gemini Vision (`GEMINI_MODEL_VISION`) | "Image not analyzed — enter values manually" |
-| Trajectory insight | Gemini JSON | Deterministic generator from recorded values |
+| Trajectory insight | Gemini JSON, cached per patient data | Deterministic generator from recorded values |
 | CTCAE grading, sentinels, dose advice | **Always deterministic rules** | — |
 
 **Model cascade (`backend/services/ai_fallback.py`):** the configured models (`.env`: `gemini-3.5-flash`, polish `gemini-3.5-flash-lite`) → pinned tiers (`gemini-2.5-flash`, `2.0-flash`, `1.5-flash`, `1.5-pro`, `2.5-pro`) → rolling aliases (`gemini-flash-latest`, `gemini-flash-lite-latest`) → deterministic rules. A model that returns a quota error (429) is skipped for 10 minutes, a timed-out one for 2 minutes and a retired one (404) for an hour; each AI stage also has a 12-second budget, so a slow or exhausted key falls back to rules quickly instead of stalling the round. Every result carries a provenance badge naming the model or rule engine that actually produced it.
+
+**When the server is unreachable:** after a network failure, timeout or 5xx, the web app stops calling the backend for 30 seconds and answers from the on-device CTCAE rules at once (no 15-second wait). A background health check, which also wakes a sleeping Render instance, brings the server back into use as soon as it answers. A pill at the bottom of the screen says the app is on device rules and offers **Retry**. Bedside rounds sent while the server is down are kept in that browser and relayed automatically when it returns. A Whisper recording that could not be uploaded stays in memory with **Retry** / **Discard**; it is never sent to another speech service. Offline extraction reads spoken numbers ("platelets eighty eight thousand" → 88,000) on both the device and the backend rules.
+
+**API-key efficiency:** each round makes at most one Gemini call (extraction); polish uses rules by default. Insights are cached by the patient's exact round data in the browser (per session) and on the backend (6 h for Gemini results, 10 min for rule-engine fallbacks), so moving between pages or re-analyzing an unchanged dictation costs nothing — only new data or **Re-analyze** triggers a call.
 
 **Prompting:** extraction and vision prompts instruct the model to copy numbers exactly with their printed units, ignore reference ranges and differential percentages, scope negation to the clause, and leave unknown fields empty. The analytics prompt lists missing values as "not recorded", states that rounds are newest-first, forbids demographics and unstated clinical facts, and asks for a confidence that reflects data completeness.
 
@@ -171,7 +174,7 @@ sequenceDiagram
 - Formal clinical user testing has **not** been done yet; evaluation so far is automated tests plus hands-on testing by the developers.
 - Ward census, round history and analytics are stored in the **browser** (per workspace). They do not yet sync across devices or users; only bedside drafts travel between devices (via SSE).
 - Gemini features depend on API quota; on a free-tier key the app frequently runs on the deterministic fallbacks.
-- Whisper accuracy for multi-accent speech in noisy wards has not been measured.
+- Whisper accuracy for multi-accent speech in noisy wards has not been measured; the hosted demo uses the smaller `tiny` model to fit its memory limit.
 - No EHR write-back yet: the note is exported via clipboard.
 
 ---
@@ -180,14 +183,14 @@ sequenceDiagram
 
 | Suite | Command | Tests |
 | :--- | :--- | :--- |
-| Backend unit + API | `pytest --ignore=tests/test_full_system.py` | 102 |
+| Backend unit + API | `pytest --ignore=tests/test_full_system.py` | 119 |
 | Backend live integration (needs the API on :8000) | `pytest tests/test_full_system.py` | 8 |
-| Web unit (Node test runner) | `cd apps/web && npm test` | 83 |
+| Web unit (Node test runner) | `cd apps/web && npm test` | 95 |
 | Browser E2E (Playwright; app on :3000) | `node regression_test.mjs` · `node e2e_button_test.mjs` | 20 · 32 checks |
 
-Backend files: `test_clinical_accuracy.py` (63), `test_api_pytest.py` (20), `test_audit_regressions.py` (9), `test_ai_fallback.py` (7), `test_gemini_analytics.py` (3), `test_full_system.py` (8). Web files: `clinical-utils.test.ts`, `oncology-autocorrect.test.ts`, `round-analysis.test.ts`.
+Backend files: `test_clinical_accuracy.py` (63), `test_api_pytest.py` (20), `test_audit_regressions.py` (13), `test_ai_fallback.py` (7), `test_spoken_numbers.py` (13), `test_gemini_analytics.py` (3), `test_full_system.py` (8). Web files: `clinical-utils.test.ts`, `oncology-autocorrect.test.ts`, `round-analysis.test.ts`, `spoken-numbers.test.ts`.
 
-Covered cases include CTCAE boundaries (e.g. ANC 499 vs 500), IDSA/ASCO fever criteria (single vs sustained), ANC 500–999 with and without expected decline, "88k" platelets, °F→°C, clause-scoped negation, the "a febrile" inversion guard, vision-unit normalization, model-provenance labels, quota cooldowns, SSE queue bounds/cleanup, and offline analytics never inventing values.
+Covered cases include CTCAE boundaries (e.g. ANC 499 vs 500), IDSA/ASCO fever criteria (single vs sustained), ANC 500–999 with and without expected decline, "88k" platelets, spoken numbers ("ANC four twenty", "one oh one point three"), °F→°C, clause-scoped negation, the "a febrile" inversion guard, vision-unit normalization, model-provenance labels, quota cooldowns, SSE queue bounds/cleanup, and offline analytics never inventing values.
 
 ---
 
@@ -224,7 +227,6 @@ backend/
   services/                   # ai_fallback, gemini_*, clinical_negation, clinical_autocorrect,
                               # lab_validation, local_extractor, voice_transcriber, persistence, ...
 tests/                        # pytest suites
-docs/submissions/             # Health-a-thon deliverables
 ```
 
 ---
@@ -278,7 +280,7 @@ Open http://localhost:3000. For accounts, set the `NEXT_PUBLIC_FIREBASE_*` varia
 | `GEMINI_POLISH` | `true` to also use Gemini for transcript polish (default: rule-based polish, one Gemini call per round). |
 | `AI_STAGE_BUDGET_S` / `GEMINI_CALL_TIMEOUT_MS` | Time budget per AI stage (default 12 s) and per Gemini request (default 9 s) before falling back to rules. |
 | `TRANSCRIPTION_MODE` | `local` (default, faster-whisper) · `cloud` (Gemini audio) · `hybrid`. |
-| `WHISPER_MODEL_SIZE` | faster-whisper size (default `base`). |
+| `WHISPER_MODEL_SIZE` | faster-whisper size: `tiny` (default, fits a 512 MB host) or `base` (more accurate, needs ~1 GB RAM). |
 | `ALLOWED_ORIGINS` | Comma-separated CORS origins. |
 | `REQUIRE_AUTH` / `API_KEY` | Require an API key on backend requests. |
 | `NEXT_PUBLIC_API_URL` | Backend URL used by the web app. |

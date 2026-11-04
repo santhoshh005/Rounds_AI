@@ -565,6 +565,76 @@ input:disabled,select:disabled,textarea:disabled { background:var(--subtle);colo
   font-weight: 600;
 }
 
+.whisper-status-card.pending {
+  background: var(--g3-bg);
+  border: 1px solid color-mix(in srgb, var(--g3) 30%, transparent);
+  color: var(--g3);
+  flex-wrap: wrap;
+}
+
+.whisper-status-card.pending strong,
+.whisper-status-card.pending small {
+  display: block;
+  font-size: 13px;
+}
+
+.whisper-status-card.pending small {
+  color: var(--secondary);
+  font-size: 12px;
+}
+
+.whisper-pending-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+
+.whisper-pending-actions button {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.backend-status {
+  position: fixed;
+  right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  z-index: 90;
+  max-width: calc(100vw - 32px);
+  min-height: 36px;
+  padding: 6px 12px;
+  border: 1px solid color-mix(in srgb, var(--g3) 30%, transparent);
+  border-radius: 999px;
+  background: var(--g3-bg);
+  color: var(--g3);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
+}
+
+.backend-status button {
+  min-height: 26px;
+  padding: 0 10px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+@media (max-width: 767px) {
+  .backend-status { bottom: calc(88px + env(safe-area-inset-bottom)); right: 16px; left: 16px; justify-content: center; }
+}
+
 /* Clinical Auto-Correct Modal & Lexicon Review */
 .modal-backdrop {
   position: fixed;

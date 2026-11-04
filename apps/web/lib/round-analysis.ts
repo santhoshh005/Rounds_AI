@@ -7,6 +7,7 @@
  * profiles: a value that was not dictated is reported as "Not recorded".
  */
 import { getDoseModificationRecommendation } from "./clinical-utils.ts"
+import { spokenNumbersToDigits } from "./spoken-numbers.ts"
 
 /** ANC, WBC and platelets in cells/µL; hemoglobin in g/dL. */
 export interface RoundLabs {
@@ -237,12 +238,14 @@ export function isFeverActive(text: string, temperatureC: number | null): boolea
 }
 
 export function analyzeTranscriptLocally(transcript: string): RoundAnalysis {
-  const labs = extractLabs(transcript)
-  const temperatureC = extractTemperatureC(transcript)
-  const { active, negated } = extractSymptoms(transcript)
-  const feverActive = isFeverActive(transcript, temperatureC)
+  // Speech recognition writes numbers as words ("ANC four twenty"); read them as digits.
+  const text = spokenNumbersToDigits(transcript)
+  const labs = extractLabs(text)
+  const temperatureC = extractTemperatureC(text)
+  const { active, negated } = extractSymptoms(text)
+  const feverActive = isFeverActive(text, temperatureC)
   if (feverActive) active.unshift("fever")
-  else if (/\b(?:afebrile|fever|fevers|febrile)\b/i.test(transcript)) negated.unshift("fever")
+  else if (/\b(?:afebrile|fever|fevers|febrile)\b/i.test(text)) negated.unshift("fever")
   return {
     source: "local",
     engine: LOCAL_ANALYSIS_ENGINE,
@@ -250,7 +253,7 @@ export function analyzeTranscriptLocally(transcript: string): RoundAnalysis {
     temperatureC,
     activeSymptoms: active,
     negatedSymptoms: negated,
-    expectedDecline: hasExpectedDecline(transcript),
+    expectedDecline: hasExpectedDecline(text),
     flags: [],
     confirmItems: [],
   }
@@ -419,7 +422,7 @@ export function buildReviewCase(patient: ReviewPatient, analysis: RoundAnalysis)
         name === "Thrombocytopenia"
           ? "Bleeding precautions; platelet transfusion per institutional threshold (ASCO platelet transfusion guideline)."
           : name === "Anemia"
-            ? "ASCO/ASH: assess symptoms and transfusion need; evaluate for iron deficiency and bleeding."
+            ? "Assess symptoms and transfusion need; evaluate for iron deficiency and bleeding (ASCO/ASH 2019 cancer-associated anemia guideline)."
             : "Monitor CBC with differential per regimen protocol (CTCAE v5.0).",
     }
   } else if (!hasAnyValue) {

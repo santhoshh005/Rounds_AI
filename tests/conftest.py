@@ -12,6 +12,8 @@ def enforce_test_mode_isolation(monkeypatch):
     monkeypatch.setenv("TEST_MODE", "true")
     from backend.services.ai_fallback import reset_model_cooldowns
     reset_model_cooldowns()
+    from backend.services.gemini_analytics import reset_insight_cache
+    reset_insight_cache()
 
     def _forbidden_supabase_client(*args, **kwargs):
         raise RuntimeError("Direct Supabase client access is blocked during pytest runs (TEST_MODE=true).")

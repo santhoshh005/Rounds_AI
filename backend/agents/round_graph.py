@@ -41,6 +41,7 @@ from backend.services.lab_validation import validate_labs_collection
 from backend.services.local_extractor import extract_clinical_facts
 from backend.services.patient_context import build_patient_context
 from backend.services.rag_service import retrieve_clinical_evidence
+from backend.services.spoken_numbers import spoken_numbers_to_digits
 
 
 def get_ctcae_thresholds() -> dict[str, float]:
@@ -73,8 +74,8 @@ CTCAE_V5_CONFIG = {
         "neutrophil_count_decreased": "CTCAE v5.0: Grade 1 (<LLN-1500/mm3), Grade 2 (<1500-1000/mm3), Grade 3 (<1000-500/mm3), Grade 4 (<500/mm3)",
         "platelet_count_decreased": "CTCAE v5.0: Grade 1 (<LLN-75,000/mm3), Grade 2 (<75,000-50,000/mm3), Grade 3 (<50,000-25,000/mm3), Grade 4 (<25,000/mm3)",
         "febrile_neutropenia": "IDSA/ASCO Clinical Practice Guideline for Antimicrobial Prophylaxis and Outpatient Management of Fever and Neutropenia in Adults Treated for Malignancy (Taplitz et al., 2018)",
-        "thrombocytopenia": "NCCN Clinical Practice Guidelines in Oncology: Hematopoietic Growth Factors",
-        "anemia": "ASCO/ASH Clinical Practice Guideline: Management of Cancer-Related Anemia (2020)",
+        "thrombocytopenia": "ASCO Clinical Practice Guideline: Platelet Transfusion for Patients With Cancer (Schiffer et al., 2018)",
+        "anemia": "ASCO/ASH Clinical Practice Guideline: Management of Cancer-Associated Anemia With Erythropoiesis-Stimulating Agents (Bohlius et al., 2019)",
         "trajectory": "Longitudinal Patient Trajectory Analysis Protocol",
     },
     "thresholds": get_ctcae_thresholds(),
@@ -425,7 +426,7 @@ def verification_node(state: RoundState) -> RoundState:
         has_explicit_expected_decline = False
 
         if not is_critical_anc and anc_lab.value < decline_thresh:
-            transcript_lower = transcript.lower()
+            transcript_lower = spoken_numbers_to_digits(transcript).lower()
             # Explicit expected decline detected solely from transcript statements (never inferred from trends)
             explicit_decline_patterns = [
                 r"\bexpected(?:\s+to)?\s+(?:decline|drop|fall)\b",

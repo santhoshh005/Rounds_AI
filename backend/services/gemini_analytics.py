@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import datetime
 import json
+import threading
+import hashlib
 import logging
 import time
 import os
@@ -223,6 +225,26 @@ def generate_deterministic_analytics_insight(
     )
 
 
+# ── Insight cache ───────────────────────────────────────────────────────
+# The same patient data always yields the same insight, so repeat requests (e.g. a
+# clinician re-opening Analytics) must not spend another Gemini call on the free tier.
+AI_INSIGHT_CACHE_S = float(os.getenv("AI_INSIGHT_CACHE_S", str(6 * 3600)))
+FALLBACK_INSIGHT_CACHE_S = 600  # retry Gemini sooner when only the rule engine answered
+_INSIGHT_CACHE_MAX = 256
+_INSIGHT_CACHE: dict[str, tuple[float, AiAnalyticsInsight]] = {}
+_INSIGHT_CACHE_LOCK = threading.Lock()
+
+
+def _insight_cache_key(**inputs: Any) -> str:
+    raw = json.dumps(inputs, sort_keys=True, default=str)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def reset_insight_cache() -> None:
+    with _INSIGHT_CACHE_LOCK:
+        _INSIGHT_CACHE.clear()
+
+
 def generate_ai_analytics_insight(
     patient_id: str,
     patient_name: str,
@@ -232,6 +254,39 @@ def generate_ai_analytics_insight(
     baseline_anc: float = 2000.0,
     rounds: Optional[list[dict[str, Any]]] = None,
     force_refresh: bool = False,
+) -> AiAnalyticsInsight:
+    """Cached front for the analytics generator; force_refresh bypasses the cache."""
+    key = _insight_cache_key(
+        patient_id=str(patient_id), patient_name=patient_name, regimen=regimen, cycle=cycle,
+        diagnosis=diagnosis, baseline_anc=baseline_anc, rounds=rounds or [],
+    )
+    now = time.monotonic()
+    if not force_refresh:
+        with _INSIGHT_CACHE_LOCK:
+            hit = _INSIGHT_CACHE.get(key)
+        if hit and hit[0] > now:
+            return hit[1]
+
+    insight = _generate_ai_analytics_insight_uncached(
+        patient_id=patient_id, patient_name=patient_name, regimen=regimen, cycle=cycle,
+        diagnosis=diagnosis, baseline_anc=baseline_anc, rounds=rounds,
+    )
+    ttl = FALLBACK_INSIGHT_CACHE_S if "deterministic" in insight.engine else AI_INSIGHT_CACHE_S
+    with _INSIGHT_CACHE_LOCK:
+        if len(_INSIGHT_CACHE) >= _INSIGHT_CACHE_MAX:
+            _INSIGHT_CACHE.pop(min(_INSIGHT_CACHE, key=lambda k: _INSIGHT_CACHE[k][0]))
+        _INSIGHT_CACHE[key] = (now + ttl, insight)
+    return insight
+
+
+def _generate_ai_analytics_insight_uncached(
+    patient_id: str,
+    patient_name: str,
+    regimen: str = "Standard Chemotherapy",
+    cycle: str = "Cycle 1",
+    diagnosis: str = "Oncology Inpatient",
+    baseline_anc: float = 2000.0,
+    rounds: Optional[list[dict[str, Any]]] = None,
 ) -> AiAnalyticsInsight:
     """Generate high-accuracy clinical oncology analytics using Gemini with robust fallback.
 

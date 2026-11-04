@@ -5,9 +5,10 @@ Integrates deterministic symptom negation and laboratory value extraction.
 import re
 from backend.models.round import ClinicalExtraction, LabValue, Sex
 from backend.services.clinical_negation import partition_symptoms
+from backend.services.spoken_numbers import spoken_numbers_to_digits
 
 def extract_clinical_facts(text: str) -> ClinicalExtraction:
-    normalized = " ".join(text.split())
+    normalized = " ".join(spoken_numbers_to_digits(text).split())
     lower = normalized.lower()
 
     age = re.search(r"\b(\d{1,3})[\s-]*(?:year|yr)s?[- ]old\b", lower)

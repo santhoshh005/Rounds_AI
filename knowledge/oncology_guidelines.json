@@ -5,38 +5,38 @@
       "RULE_SENTINEL_FEBRILE_NEUTROPENIA",
       "RULE_SENTINEL_FEVER_ANC_SUB1000_NO_DECLINE"
     ],
-    "title": "ASCO / IDSA Outpatient Management of Fever and Neutropenia in Adults Treated for Malignancy",
-    "source": "Journal of Clinical Oncology 2018; 36(14):1443-1453",
+    "title": "Outpatient Management of Fever and Neutropenia in Adults Treated for Malignancy: ASCO and IDSA Clinical Practice Guideline Update",
+    "source": "Taplitz RA et al. Journal of Clinical Oncology 2018; 36(14):1443-1453",
     "year": 2018,
-    "description": "Defines fever and neutropenia criteria and outpatient management pathways."
+    "description": "Defines fever and neutropenia criteria, risk assessment and outpatient management pathways for adults treated for malignancy."
   },
   {
-    "id": "NCCN-PANC-THROMBO-2023",
+    "id": "ASCO-PLATELET-2018",
     "rule_ids": [
       "RULE_SENTINEL_CRITICAL_THROMBOCYTOPENIA",
       "RULE_SENTINEL_SEVERE_THROMBOCYTOPENIA"
     ],
-    "title": "NCCN Clinical Practice Guidelines in Oncology: Hematopoietic Growth Factors",
-    "source": "Journal of the National Comprehensive Cancer Network",
-    "year": 2023,
-    "description": "Covers classification and supportive care pathways for chemotherapy-induced cytopenias and thrombocytopenia."
+    "title": "Platelet Transfusion for Patients With Cancer: ASCO Clinical Practice Guideline Update",
+    "source": "Schiffer CA et al. Journal of Clinical Oncology 2018; 36(3):283-299",
+    "year": 2018,
+    "description": "Covers platelet transfusion thresholds and prophylactic versus therapeutic transfusion in patients with cancer."
   },
   {
-    "id": "ASCO-ANEMIA-2020",
+    "id": "ASCO-ASH-ANEMIA-2019",
     "rule_ids": [
       "RULE_SENTINEL_SEVERE_ANEMIA"
     ],
-    "title": "ASCO / ASH Clinical Practice Guideline: Management of Cancer-Related Anemia",
-    "source": "Blood Advances 2020; 4(11):2301-2310",
-    "year": 2020,
-    "description": "Outlines diagnostic evaluation and management pathways for cancer-related and chemotherapy-induced anemia."
+    "title": "Management of Cancer-Associated Anemia With Erythropoiesis-Stimulating Agents: ASCO/ASH Clinical Practice Guideline Update",
+    "source": "Bohlius J et al. Journal of Clinical Oncology 2019; 37(15):1336-1351 (co-published in Blood Advances 2019; 3(8):1197-1210)",
+    "year": 2019,
+    "description": "Covers evaluation of cancer-associated anemia and the use of erythropoiesis-stimulating agents, transfusion and iron."
   },
   {
-    "id": "NCCN-FATIGUE-2023",
+    "id": "NCCN-FATIGUE",
     "rule_ids": [],
     "title": "NCCN Clinical Practice Guidelines in Oncology: Cancer-Related Fatigue",
-    "source": "Journal of the National Comprehensive Cancer Network",
-    "year": 2023,
+    "source": "National Comprehensive Cancer Network (nccn.org), current version",
+    "year": 2024,
     "description": "Covers screening criteria and supportive care pathways for cancer-related fatigue."
   }
 ]

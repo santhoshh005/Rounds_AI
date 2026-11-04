@@ -59,3 +59,6 @@ desktop.ini
 *.swp
 *.zip
 ~$*
+
+# ── Submission material (kept locally, not published) ───────────────
+docs/

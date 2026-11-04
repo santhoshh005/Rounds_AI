@@ -110,3 +110,24 @@ def test_round_graph_polish_does_not_call_gemini_by_default(monkeypatch):
     monkeypatch.setattr(ca, "correct_clinical_transcript", spy)
     round_graph.invoke({"transcript": "ANC 420. Temp 38.4 C.", "images": [], "patient_id": "104"})
     assert calls == [False]
+
+
+def test_analytics_insight_is_cached_until_data_changes(monkeypatch):
+    from backend.services import gemini_analytics as ga
+
+    calls = []
+    real = ga._generate_ai_analytics_insight_uncached
+
+    def counting(**kwargs):
+        calls.append(kwargs["rounds"])
+        return real(**kwargs)
+
+    monkeypatch.setattr(ga, "_generate_ai_analytics_insight_uncached", counting)
+    rounds = [{"anc": 420, "platelets": 88000, "ctcae_grade": 4}]
+    a = ga.generate_ai_analytics_insight(patient_id="104", patient_name="Demo", rounds=rounds)
+    b = ga.generate_ai_analytics_insight(patient_id="104", patient_name="Demo", rounds=rounds)
+    assert a is b and len(calls) == 1  # same data: no second generation
+    ga.generate_ai_analytics_insight(patient_id="104", patient_name="Demo", rounds=rounds, force_refresh=True)
+    assert len(calls) == 2  # Re-analyze bypasses the cache
+    ga.generate_ai_analytics_insight(patient_id="104", patient_name="Demo", rounds=rounds + [{"anc": 900}])
+    assert len(calls) == 3  # new round data: regenerated

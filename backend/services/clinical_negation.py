@@ -11,6 +11,8 @@ import os
 import re
 from typing import Optional
 
+from backend.services.spoken_numbers import spoken_numbers_to_digits
+
 
 # Negation triggers preceding or following clinical concepts
 PRE_NEGATION_PATTERNS = [
@@ -128,6 +130,7 @@ def evaluate_fever_status(
     - Negated / Afebrile (e.g. "no fever", "afebrile", "denies fever")
     - Resolved / Historical (e.g. "fever yesterday", "fever resolved")
     """
+    text = spoken_numbers_to_digits(text)
     lower = text.lower()
     temp_c = extract_temperature_celsius(text)
 

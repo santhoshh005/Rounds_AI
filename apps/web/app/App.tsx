@@ -2,7 +2,18 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { Icon } from "./components/Icons"
-import { roundsApi, API_URL } from "../lib/api"
+import {
+  roundsApi,
+  API_URL,
+  clearAiCaches,
+  noteBackendResult,
+  probeBackend,
+  subscribeBackendStatus,
+  getBackendStatus,
+  flushBedsideOutbox,
+  pendingBedsideDrafts,
+  type BackendStatus,
+} from "../lib/api"
 import {
   formatEmrClipboardNote,
   parseClinicalLabReport,
@@ -1812,12 +1823,10 @@ function useVoiceDictation({
   onAppendText,
   onError,
   clinicalAutoCorrect = true,
-  onDeviceAudio = true,
 }: {
   onAppendText: (chunk: string) => void
   onError?: (msg: string) => void
   clinicalAutoCorrect?: boolean
-  onDeviceAudio?: boolean
 }) {
   const [engine, setEngine] = useState<SttEngine>("live-asr")
   const [recording, setRecording] = useState(false)
@@ -1825,13 +1834,14 @@ function useVoiceDictation({
   const [interimTranscript, setInterimTranscript] = useState("")
   const [whisperSeconds, setWhisperSeconds] = useState(0)
   const [whisperProcessing, setWhisperProcessing] = useState(false)
+  const [hasPendingAudio, setHasPendingAudio] = useState(false)
 
+  const pendingAudioRef = useRef<Blob | null>(null)
   const recognitionRef = useRef<any>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
   const whisperTimerRef = useRef<any>(null)
   const streamRef = useRef<MediaStream | null>(null)
-  const whisperSpokenRef = useRef<string>("")
 
   const stopLiveAsr = useCallback(() => {
     setRecording(false)
@@ -1972,131 +1982,110 @@ function useVoiceDictation({
     }
   }, [clinicalAutoCorrect, onAppendText, onError])
 
+  // Sends one recording to the backend Whisper endpoint. On failure the audio is kept
+  // (in memory only) so the clinician can retry once the server is back.
+  const transcribeAudio = useCallback(async (audioBlob: Blob) => {
+    setWhisperProcessing(true)
+    try {
+      let transcriptText = ""
+      let serverMessage = ""
+      let reachable = false
+      try {
+        const formData = new FormData()
+        formData.append("file", audioBlob, "bedside_audio.webm")
+        const res = await fetch(`${API_URL.replace(/\/$/, "")}/api/v1/voice/transcribe`, {
+          method: "POST",
+          body: formData,
+          signal: AbortSignal.timeout(30000),
+        })
+        reachable = res.status < 500
+        noteBackendResult(reachable)
+        if (res.ok) {
+          const data = await res.json()
+          transcriptText = data.transcript || ""
+          serverMessage = data.message || ""
+        }
+      } catch {
+        noteBackendResult(false)
+      }
+
+      if (transcriptText.trim()) {
+        pendingAudioRef.current = null
+        setHasPendingAudio(false)
+        const corrected = clinicalAutoCorrect
+          ? autocorrectOncologyTranscript(formatSpokenClinicalPunctuation(transcriptText.trim())).correctedText
+          : formatSpokenClinicalPunctuation(transcriptText.trim())
+        onAppendText(" " + corrected)
+      } else if (!reachable) {
+        pendingAudioRef.current = audioBlob
+        setHasPendingAudio(true)
+        onError?.("Whisper server unreachable — the recording is kept on this device (not sent anywhere else). Retry when the server is back, or type the round.")
+      } else {
+        pendingAudioRef.current = null
+        setHasPendingAudio(false)
+        onError?.(serverMessage || "Whisper returned no text (silent audio or speech model unavailable). Use Live ASR or type the round.")
+      }
+    } finally {
+      setWhisperProcessing(false)
+      setWhisperSeconds(0)
+      setInterimTranscript("")
+    }
+  }, [clinicalAutoCorrect, onAppendText, onError])
+
+  const retryWhisper = useCallback(() => {
+    if (pendingAudioRef.current && !whisperProcessing) void transcribeAudio(pendingAudioRef.current)
+  }, [transcribeAudio, whisperProcessing])
+
+  const discardPendingAudio = useCallback(() => {
+    pendingAudioRef.current = null
+    setHasPendingAudio(false)
+  }, [])
+
+  // Whisper mode records audio and sends it only to the RoundsAI backend. No browser
+  // speech recognizer runs alongside it, so audio never reaches a third-party speech
+  // service; if Whisper is unavailable the clinician is told instead of being switched.
   const startWhisper = useCallback(async () => {
-    whisperSpokenRef.current = ""
     audioChunksRef.current = []
 
-    const SpeechRecognition =
-      typeof window !== "undefined" &&
-      ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition)
-
-    // 1. Concurrently transcribe live user speech to capture actual words
-    if (SpeechRecognition) {
-      try {
-        const recognition = new SpeechRecognition()
-        recognition.continuous = true
-        recognition.interimResults = true
-        recognition.lang = "en-US"
-
-        recognition.onresult = (event: any) => {
-          let interim = ""
-          for (let i = event.resultIndex; i < event.results.length; i++) {
-            if (event.results[i].isFinal) {
-              const chunk = event.results[i][0].transcript
-              if (chunk && chunk.trim()) {
-                whisperSpokenRef.current = (whisperSpokenRef.current + " " + chunk.trim()).trim()
-              }
-            } else {
-              interim += event.results[i][0].transcript
-            }
-          }
-          setInterimTranscript(interim)
-        }
-
-        recognition.onerror = () => {}
-        recognition.onend = () => {}
-        recognition.start()
-        recognitionRef.current = recognition
-      } catch {}
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      onError?.("This browser cannot record audio for Whisper. Use Live ASR or type the round.")
+      return
     }
 
-    // 2. Concurrently record audio chunks
-    if (navigator.mediaDevices?.getUserMedia) {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-        streamRef.current = stream
+    let stream: MediaStream
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    } catch {
+      onError?.("Microphone permission denied. Allow microphone access, or type the round.")
+      return
+    }
+    streamRef.current = stream
+    setAudioStream(stream)
 
-        let mimeType = "audio/webm"
-        if (!MediaRecorder.isTypeSupported("audio/webm")) {
-          mimeType = ""
-        }
+    const mimeType = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : ""
+    const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
+    mediaRecorderRef.current = recorder
 
-        const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
-        mediaRecorderRef.current = recorder
-
-        recorder.ondataavailable = (event) => {
-          if (event.data && event.data.size > 0) {
-            audioChunksRef.current.push(event.data)
-          }
-        }
-
-        recorder.onstop = async () => {
-          if (streamRef.current) {
-            try { streamRef.current.getTracks().forEach((track) => track.stop()) } catch {}
-            streamRef.current = null
-            setAudioStream(null)
-          }
-
-          setWhisperProcessing(true)
-
-          try {
-            const audioBlob = new Blob(audioChunksRef.current, { type: mimeType || "audio/webm" })
-            let transcriptText = ""
-
-            // Attempt backend faster-whisper on CPU if reachable
-            try {
-              const formData = new FormData()
-              formData.append("file", audioBlob, "bedside_audio.webm")
-              const controller = new AbortController()
-              const timeoutId = setTimeout(() => controller.abort(), 15000)
-
-              const res = await fetch(`${API_URL.replace(/\/$/, "")}/api/v1/voice/transcribe`, {
-                method: "POST",
-                body: formData,
-                signal: controller.signal,
-              })
-              clearTimeout(timeoutId)
-              if (res.ok) {
-                const data = await res.json()
-                transcriptText = data.transcript || ""
-              }
-            } catch {}
-
-            // If backend is offline, use the REAL words the user spoke into the microphone!
-            if (!transcriptText && whisperSpokenRef.current) {
-              transcriptText = whisperSpokenRef.current
-            }
-
-            if (transcriptText && transcriptText.trim()) {
-              const corrected = clinicalAutoCorrect
-                ? autocorrectOncologyTranscript(formatSpokenClinicalPunctuation(transcriptText.trim())).correctedText
-                : formatSpokenClinicalPunctuation(transcriptText.trim())
-              const prefix = onDeviceAudio
-                ? "\n[Whisper On-Device STT · Zero Audio Egress]: "
-                : "\n[Speech Dictation · STT]: "
-              onAppendText(prefix + corrected)
-            } else {
-              onError?.("Whisper STT: No speech detected during recording. Please speak into your microphone or enter notes directly.")
-            }
-          } catch (err: any) {
-            onError?.(`Whisper processing note: ${err?.message || "Audio captured locally"}`)
-          } finally {
-            setWhisperProcessing(false)
-            setWhisperSeconds(0)
-            setInterimTranscript("")
-          }
-        }
-
-        recorder.start(250)
-      } catch {}
+    recorder.ondataavailable = (event) => {
+      if (event.data && event.data.size > 0) audioChunksRef.current.push(event.data)
     }
 
+    recorder.onstop = () => {
+      if (streamRef.current) {
+        try { streamRef.current.getTracks().forEach((track) => track.stop()) } catch {}
+        streamRef.current = null
+        setAudioStream(null)
+      }
+      void transcribeAudio(new Blob(audioChunksRef.current, { type: mimeType || "audio/webm" }))
+    }
+
+    recorder.start(250)
     setRecording(true)
     setWhisperSeconds(0)
     whisperTimerRef.current = setInterval(() => {
       setWhisperSeconds((s) => s + 1)
     }, 1000)
-  }, [clinicalAutoCorrect, onAppendText, onError])
+  }, [onError, transcribeAudio])
 
   const toggle = useCallback(() => {
     if (recording) {
@@ -2135,6 +2124,9 @@ function useVoiceDictation({
     interimTranscript,
     whisperSeconds,
     whisperProcessing,
+    hasPendingAudio,
+    retryWhisper,
+    discardPendingAudio,
     toggle,
     stop,
   }
@@ -2674,7 +2666,6 @@ function CaptureStep({
   const [analyzing, setAnalyzing] = useState(false)
   const [progress, setProgress] = useState(0)
   const isDemoMode = safeLocalStorage.getItem("rounds-auth") === "demo"
-  const [onDeviceAudio, setOnDeviceAudio] = useState(true)
   const [clinicalAutoCorrect, setClinicalAutoCorrect] = useState(true)
   const [autoCorrectModalOpen, setAutoCorrectModalOpen] = useState(false)
   const [ocrStatus, setOcrStatus] = useState<string | null>(null)
@@ -2696,12 +2687,14 @@ function CaptureStep({
     interimTranscript,
     whisperSeconds,
     whisperProcessing,
+    hasPendingAudio,
+    retryWhisper,
+    discardPendingAudio,
     toggle: toggleDictation,
   } = useVoiceDictation({
     onAppendText: (chunk) => setTranscript((prev) => prev + chunk),
     onError: (msg) => onToast?.(msg),
     clinicalAutoCorrect,
-    onDeviceAudio,
   })
 
   const handleApplyAutoCorrect = (newText: string, count: number, avgConfidence: number, engineLabel?: string) => {
@@ -2842,8 +2835,22 @@ function CaptureStep({
           <div className="whisper-status-card recording" role="status" aria-live="polite">
             <span className="whisper-pulse-dot" />
             <div>
-              <strong>🎙️ Recording Audio for {onDeviceAudio ? "Local Whisper" : "Cloud STT"} ({whisperSeconds}s)</strong>
-              <small>{onDeviceAudio ? "Local audio capture · Actual speech transcribed on stop · Zero cloud egress" : "Audio capture for speech-to-text transcription"}</small>
+              <strong>Recording for Whisper ({whisperSeconds}s)</strong>
+              <small>Audio goes only to your RoundsAI server and is transcribed when you stop</small>
+            </div>
+          </div>
+        )}
+
+        {hasPendingAudio && !whisperProcessing && (
+          <div className="whisper-status-card pending" role="status" aria-live="polite">
+            <Icon name="alert-triangle" />
+            <div>
+              <strong>Recording kept on this device</strong>
+              <small>The Whisper server could not be reached. Nothing was transcribed or sent elsewhere.</small>
+            </div>
+            <div className="whisper-pending-actions">
+              <button type="button" className="ghost-button" onClick={retryWhisper}>Retry</button>
+              <button type="button" className="ghost-button" onClick={discardPendingAudio}>Discard</button>
             </div>
           </div>
         )}
@@ -2907,23 +2914,6 @@ function CaptureStep({
           >
             <Icon name="mic" />
             {recording ? "Stop dictation" : sttEngine === "whisper" ? "Dictate (Whisper)" : "Dictate (Live ASR)"}
-          </button>
-          <button
-            className={onDeviceAudio ? "active-toggle" : ""}
-            onClick={() => {
-              const next = !onDeviceAudio
-              setOnDeviceAudio(next)
-              if (onToast)
-                onToast(
-                  next
-                    ? "On-device audio: Active (Local Whisper model · 0 audio egress)"
-                    : "On-device audio disabled",
-                )
-            }}
-            title="Toggle on-device audio model"
-          >
-            <Icon name="cpu" />
-            On-device audio
           </button>
           <button
             className={clinicalAutoCorrect ? "active-toggle" : ""}
@@ -4990,7 +4980,7 @@ function MobileCompanion({
   patientsList?: typeof patients
   selectedPatientId?: string
   onSelectPatient?: (id: string) => void
-  onToast?: (msg: string) => void
+  onToast?: (msg: string, type?: "info" | "success" | "warning" | "alert") => void
   onOcrExtracted?: (patientId: string, fileName: string, extracted: any) => void
   go?: (screen: Screen) => void
   onResetCensus?: () => void
@@ -5022,6 +5012,9 @@ function MobileCompanion({
     interimTranscript,
     whisperSeconds,
     whisperProcessing,
+    hasPendingAudio,
+    retryWhisper,
+    discardPendingAudio,
     toggle: toggleDictation,
   } = useVoiceDictation({
     onAppendText: (chunk) => setTranscript((prev) => prev + chunk),
@@ -5160,6 +5153,20 @@ function MobileCompanion({
           </div>
         )}
 
+        {hasPendingAudio && !whisperProcessing && (
+          <div className="whisper-status-card pending" role="status" aria-live="polite">
+            <Icon name="alert-triangle" />
+            <div>
+              <strong>Recording kept on this device</strong>
+              <small>The Whisper server could not be reached. Nothing was transcribed or sent elsewhere.</small>
+            </div>
+            <div className="whisper-pending-actions">
+              <button type="button" className="ghost-button" onClick={retryWhisper}>Retry</button>
+              <button type="button" className="ghost-button" onClick={discardPendingAudio}>Discard</button>
+            </div>
+          </div>
+        )}
+
         {whisperProcessing && (
           <div style={{ margin: "8px 12px", padding: "8px 12px", background: "rgba(0,102,102,0.08)", border: "1px solid var(--border)", borderRadius: "8px", fontSize: "13px", color: "var(--brand)", textAlign: "center" }}>
             Transcribing with on-device Whisper model...
@@ -5258,8 +5265,9 @@ function MobileCompanion({
               }
               // Other devices receive the draft through the backend's SSE relay; same-browser
               // tabs already have it through storage events.
+              // Unreachable backend: the draft waits in this browser and goes out when it's back.
               roundsApi
-                .bedsideSync({
+                .sendBedsideDraft({
                   patient_id: payload.patientId,
                   transcript: payload.transcript,
                   patient_name: payload.patientName,
@@ -5268,9 +5276,12 @@ function MobileCompanion({
                   word_count: payload.wordCount,
                   timestamp: payload.timestamp,
                 })
-                .catch(() => {})
+                .then((outcome) => {
+                  if (!onToast) return
+                  if (outcome === "sent") onToast(`✓ Bedside round sent to Station for Bed ${patient.bed} (${payload.wordCount} words)`)
+                  else onToast(`Saved on this device — other stations get the Bed ${patient.bed} round when the server is back`, "info")
+                })
               setSent(true)
-              if (onToast) onToast(`✓ Bedside round sent to Station for Bed ${patient.bed} (${payload.wordCount} words)`)
             }}
           >
             {sent ? "Sent to station" : "Send to station"}
@@ -6837,6 +6848,7 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
   const signedIn = session.mode !== null
   const isDemoSession = session.mode === "demo"
   const [online, setOnline] = useState(true)
+  const [backendStatus, setBackendStatus] = useState<BackendStatus>("unknown")
   const [patientsList, setPatientsList] = useState<typeof patients>(initialWorkspace.patients)
   const [selectedPatientId, setSelectedPatientId] = useState<string>(initialWorkspace.patients[0]?.id || "")
   const [screen, setScreen] = useState<Screen>(initialScreen || "landing")
@@ -7198,6 +7210,7 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
   }
 
   const authenticate = (mode: AuthMode = "demo", user?: AuthUser) => {
+    clearAiCaches()
     const next: AuthSession = mode === "account" && user ? { mode, user } : { mode: "demo", user: null }
     safeLocalStorage.setItem("rounds-auth", next.mode as string)
     if (next.user) safeLocalStorage.setItem("rounds-auth-user", JSON.stringify(next.user))
@@ -7212,6 +7225,7 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
   }
 
   const signOut = () => {
+    clearAiCaches()
     if (session.mode === "account") {
       import("../lib/firebase").then(({ auth, signOut: firebaseSignOut }) => firebaseSignOut(auth)).catch(() => {})
     }
@@ -7251,8 +7265,26 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
     return () => removeEventListener("popstate", update)
   }, [signedIn])
 
+  // Track backend reachability: a health check on load also wakes a sleeping server,
+  // and queued bedside drafts go out as soon as it answers again.
   useEffect(() => {
-    const connected = () => setOnline(true)
+    const unsubscribe = subscribeBackendStatus((status) => {
+      setBackendStatus(status)
+      if (status !== "online") return
+      flushBedsideOutbox().then((sent) => {
+        if (sent) showToast(`${sent} saved bedside round${sent > 1 ? "s" : ""} sent to stations`, "info")
+      })
+    })
+    setBackendStatus(getBackendStatus())
+    void probeBackend()
+    return unsubscribe
+  }, [showToast])
+
+  useEffect(() => {
+    const connected = () => {
+      setOnline(true)
+      void probeBackend()
+    }
     const disconnected = () => setOnline(false)
     addEventListener("online", connected)
     addEventListener("offline", disconnected)
@@ -7273,6 +7305,16 @@ export default function App({ initialScreen }: { initialScreen?: Screen } = {}) 
           <Icon name="wifi" />
           You're offline. Work stays on this device; bedside sync resumes when the connection returns.
           <button onClick={() => window.location.reload()}>Retry</button>
+        </div>
+      )}
+      {online && backendStatus === "unreachable" && (
+        <div className="backend-status" role="status" aria-live="polite">
+          <Icon name="alert-triangle" size={14} />
+          <span>
+            Server unreachable — using on-device CTCAE rules
+            {pendingBedsideDrafts() > 0 ? ` · ${pendingBedsideDrafts()} bedside round waiting` : ""}
+          </span>
+          <button type="button" onClick={() => void probeBackend()}>Retry</button>
         </div>
       )}
       {globalToast && (

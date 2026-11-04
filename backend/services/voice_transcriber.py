@@ -122,7 +122,8 @@ def _transcribe_with_faster_whisper(audio_bytes: bytes, filename: str) -> Option
 
         if _FASTER_WHISPER_MODEL is None:
             # Use 'base' for high phonetic accuracy with int8 quantization on CPU
-            model_size = os.getenv("WHISPER_MODEL_SIZE", "base")
+            # "tiny" fits small hosts (e.g. Render free, 512 MB); set "base" for better accuracy.
+            model_size = os.getenv("WHISPER_MODEL_SIZE", "tiny")
             logger.info("Loading faster-whisper model (%s) on CPU with int8 quantization...", model_size)
             try:
                 _FASTER_WHISPER_MODEL = WhisperModel(model_size, device="cpu", compute_type="int8")
