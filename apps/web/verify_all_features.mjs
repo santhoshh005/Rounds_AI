@@ -1,4 +1,8 @@
 import { chromium } from "playwright";
+import fs from "fs";
+import path from "path";
+const ARTIFACT_DIR = process.env.E2E_ARTIFACT_DIR || path.join(process.cwd(), "e2e-artifacts");
+fs.mkdirSync(path.join(ARTIFACT_DIR, "scratch"), { recursive: true });
 
 async function run() {
   console.log("=== STARTING ROUNDSAI REGRESSION & FEATURE VERIFICATION ===");
@@ -58,7 +62,7 @@ async function run() {
   await page.click('.profile-menu button:has-text("Profile")');
   await page.waitForSelector('.clinician-profile-dialog', { state: 'visible' });
   console.log("✓ PASS: Clinician profile modal opened with Dr. Attending details and AI fallback architecture.");
-  await page.screenshot({ path: "C:/Users/saisa/.gemini/antigravity/brain/c68413c6-d89d-4149-9a5c-5c229ff3649c/verified_clinician_profile_modal.png" });
+  await page.screenshot({ path: path.join(ARTIFACT_DIR, "verified_clinician_profile_modal.png") });
 
   // Close profile modal
   await page.click('.clinician-profile-dialog button:has-text("Done")');
@@ -78,13 +82,13 @@ async function run() {
   await page.click('.phone-action button');
   await page.waitForSelector('.phone-action button:has-text("Sent to station")');
   console.log("✓ PASS: Bedside notes sent to station from mobile companion.");
-  await page.screenshot({ path: "C:/Users/saisa/.gemini/antigravity/brain/c68413c6-d89d-4149-9a5c-5c229ff3649c/verified_mobile_sent_to_station.png" });
+  await page.screenshot({ path: path.join(ARTIFACT_DIR, "verified_mobile_sent_to_station.png") });
 
   // Switch to Station
   await page.click('button:has-text("Station")');
   await page.waitForSelector('.sync-notice', { state: 'visible' });
   console.log("✓ PASS: Station detects incoming bedside sync notice banner.");
-  await page.screenshot({ path: "C:/Users/saisa/.gemini/antigravity/brain/c68413c6-d89d-4149-9a5c-5c229ff3649c/verified_station_sync_banner.png" });
+  await page.screenshot({ path: path.join(ARTIFACT_DIR, "verified_station_sync_banner.png") });
 
   // Click "Load into station"
   await page.click('.sync-notice button:has-text("Load into station")');
@@ -96,7 +100,7 @@ async function run() {
     throw new Error(`FAIL: Station textarea does not match mobile notes! Found: ${stationTextareaVal}`);
   }
   console.log("✓ PASS: Bedside notes loaded into Station textarea flawlessly!");
-  await page.screenshot({ path: "C:/Users/saisa/.gemini/antigravity/brain/c68413c6-d89d-4149-9a5c-5c229ff3649c/verified_station_loaded_bedside_notes.png" });
+  await page.screenshot({ path: path.join(ARTIFACT_DIR, "verified_station_loaded_bedside_notes.png") });
 
   console.log("4. Verifying Checklist 'Edit' Button in Confirm Before Signing...");
   // Click "Analyze round"
@@ -130,7 +134,7 @@ async function run() {
     throw new Error(`FAIL: Edited point text was not saved! Found: ${point2Text}`);
   }
   console.log("✓ PASS: Checklist verification point edited and saved successfully!");
-  await page.screenshot({ path: "C:/Users/saisa/.gemini/antigravity/brain/c68413c6-d89d-4149-9a5c-5c229ff3649c/verified_checklist_edited.png" });
+  await page.screenshot({ path: path.join(ARTIFACT_DIR, "verified_checklist_edited.png") });
 
   console.log("5. Verifying Note Attestation & Analytics...");
   // Confirm all 3 points
@@ -193,7 +197,7 @@ async function run() {
   const toastText = await page.textContent('.toast');
   console.log(`✓ PASS: Analytics Sync rounds verified. Toast: "${toastText.trim()}"`);
 
-  await page.screenshot({ path: "C:/Users/saisa/.gemini/antigravity/brain/c68413c6-d89d-4149-9a5c-5c229ff3649c/verified_analytics_all_patients_clean.png" });
+  await page.screenshot({ path: path.join(ARTIFACT_DIR, "verified_analytics_all_patients_clean.png") });
 
   console.log("6. Verifying Roster three dots menu outside-click dismissal...");
   await page.click('button:has-text("Roster")');

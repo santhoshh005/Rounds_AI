@@ -14,7 +14,12 @@ import tempfile
 from typing import Optional
 
 from backend.services.clinical_autocorrect import correct_clinical_transcript
-from backend.services.ai_fallback import get_candidate_models, is_transient_error
+from backend.services.ai_fallback import (
+    get_candidate_models,
+    is_transient_error,
+    note_model_failure,
+    should_retry_same_model,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +87,7 @@ def _transcribe_with_gemini(audio_bytes: bytes, mime_type: str) -> Optional[str]
                     logger.info("Transcribed audio using Gemini Multimodal Audio (%s).", candidate)
                     return response.text.strip()
             except Exception as call_exc:
+                note_model_failure(candidate, call_exc)
                 logger.warning("Gemini model %s failed: %s, checking next fallback...", candidate, call_exc)
                 continue
     except Exception as exc:

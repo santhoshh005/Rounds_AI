@@ -587,6 +587,31 @@ input:disabled,select:disabled,textarea:disabled { background:var(--subtle);colo
   max-height: 88vh;
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.autocorrect-modal-card > .modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.autocorrect-modal-card > .modal-header > button {
+  flex-shrink: 0;
+}
+
+.autocorrect-modal-card .modal-footer {
+  position: sticky;
+  bottom: 0;
+  background: var(--surface);
+  box-shadow: 0 24px 0 var(--surface);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 8px;
+  z-index: 1;
 }
 
 .autocorrect-metrics-banner {
@@ -1524,6 +1549,10 @@ input:disabled,select:disabled,textarea:disabled { background:var(--subtle);colo
   left: -28px;
   top: 38%;
   transform: translateY(-50%);
+}
+
+.care-listen:hover {
+  transform: translateY(calc(-50% - 2px));
 }
 
 .care-understand {

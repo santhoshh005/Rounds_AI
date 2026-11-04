@@ -10,6 +10,8 @@ os.environ["TEST_MODE"] = "true"
 def enforce_test_mode_isolation(monkeypatch):
     """Ensure TEST_MODE=true for every test and guard against real Supabase client creation."""
     monkeypatch.setenv("TEST_MODE", "true")
+    from backend.services.ai_fallback import reset_model_cooldowns
+    reset_model_cooldowns()
 
     def _forbidden_supabase_client(*args, **kwargs):
         raise RuntimeError("Direct Supabase client access is blocked during pytest runs (TEST_MODE=true).")
