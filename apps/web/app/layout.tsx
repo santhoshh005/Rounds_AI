@@ -32,10 +32,7 @@ export const metadata: Metadata = {
     description: "Deterministic CTCAE v5.0 myelosuppression grading, bedside rounds capture, and clinician-attested SOAP documentation.",
     images: ["/og-image.png"],
   },
-  icons: {
-    icon: "/favicon.ico",
-    apple: "/apple-touch-icon.png",
-  },
+  // The tab icon comes from app/icon.svg (served by Next.js automatically).
 };
 
 export const viewport: Viewport = {

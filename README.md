@@ -3,6 +3,7 @@
 > Capture the bedside round by voice or text, get CTCAE v5.0–graded findings and a draft SOAP note, verify every item, attest — and keep each round as history for the next one. The clinician decides; RoundsAI does the paperwork around them.
 
 [![Live App](https://img.shields.io/badge/Live%20App-rounds--ai--umber.vercel.app-success?style=flat&logo=vercel)](https://rounds-ai-umber.vercel.app/)
+[![Walkthrough Video](https://img.shields.io/badge/YouTube-Walkthrough%20Video-FF0000?style=flat&logo=youtube)](https://youtu.be/DSOc0GQX6lI)
 [![Backend API](https://img.shields.io/badge/Render%20API-rounds--ai--backend.onrender.com-46E3B7?style=flat&logo=render)](https://rounds-ai-backend.onrender.com/health)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
@@ -14,6 +15,8 @@
 [![Google Gemini](https://img.shields.io/badge/Gemini-Flash%20with%20rule--engine%20fallback-4285F4?style=flat&logo=google&logoColor=white)](https://ai.google.dev)
 
 **Health-a-thon 2026 · Team Binary Minds (1RKUPH)** · Track: Cancer — Doctor / Care Team — Doctor Productivity & Knowledge Assistant
+
+🎬 **Walkthrough video:** [youtu.be/DSOc0GQX6lI](https://youtu.be/DSOc0GQX6lI) — the team, our approach with our clinical partner, and a narrated demo of the working app.
 
 ---
 
@@ -144,7 +147,7 @@ sequenceDiagram
 | Task | Primary | Fallback |
 | :--- | :--- | :--- |
 | Speech-to-text | `faster-whisper` int8 on the backend CPU (Whisper STT, `tiny`/`base`), or the browser Web Speech API (Live ASR; Google's service in Chrome) | — |
-| Transcript polish | Rule-based oncology normalizer (default); Gemini only when `GEMINI_POLISH=true`, with a diff guard that rejects any change to numbers, units, drugs or negations | — |
+| Transcript polish | Rule-based oncology normalizer (default); Gemini only when `GEMINI_POLISH=true`, with a diff guard that rejects any change to numbers, units, drugs or negations (a spoken number written as digits, e.g. "four twenty" → 420, is allowed) | — |
 | Clinical extraction | Gemini structured output (`LLM_PROVIDER=gemini`) | Deterministic regex extractor |
 | Lab-report images | Gemini Vision (`GEMINI_MODEL_VISION`) | "Image not analyzed — enter values manually" |
 | Trajectory insight | Gemini JSON, cached per patient data | Deterministic generator from recorded values |
@@ -152,7 +155,7 @@ sequenceDiagram
 
 **Model cascade (`backend/services/ai_fallback.py`):** the configured models (`.env`: `gemini-3.5-flash`, polish `gemini-3.1-flash-lite`) → pinned tiers (`gemini-3.5-flash`, `gemini-3.1-flash-lite`, `gemini-3.5-flash-lite`) → rolling aliases (`gemini-flash-latest`, `gemini-flash-lite-latest`) → deterministic rules. The tiers were checked against the API in November 2026: Gemini 2.x and 1.5 models now return 404, and on a free-tier key `gemini-3.5-flash` allows only 20 requests per day, so the fast `gemini-3.1-flash-lite` (about 2–6 s) answers most requests. A model out of quota is skipped until Google's `retryDelay` says it resets (at most 6 h; 10 minutes for per-minute limits), a timed-out one for 60 s and a retired one (404) for an hour. Each AI stage has a 12-second budget and starts another model only if a full 10-second call still fits, so a slow or exhausted key falls back to rules instead of stalling the round. Model thinking is kept short (Gemini 3: low level; 2.5: no thinking budget) so answers fit the timeout. Every result carries a provenance badge naming the model or rule engine that actually produced it; answers from a backup model are badged **AI Fallback**.
 
-**When the server is unreachable:** after a network failure, timeout or 5xx, the web app stops calling the backend for 30 seconds and answers from the on-device CTCAE rules at once (no 15-second wait). A background health check, which also wakes a sleeping Render instance, brings the server back into use as soon as it answers. A pill at the bottom of the screen says the app is on device rules and offers **Retry**. Bedside rounds sent while the server is down are kept in that browser and relayed automatically when it returns. A Whisper recording that could not be uploaded stays in memory with **Retry** / **Discard**; it is never sent to another speech service. Offline extraction reads spoken numbers ("platelets eighty eight thousand" → 88,000) on both the device and the backend rules.
+**When the server is unreachable:** after a network failure, timeout or 5xx, the web app stops calling the backend for 30 seconds and answers from the on-device CTCAE rules at once (no 20-second wait). A background health check, which also wakes a sleeping Render instance, brings the server back into use as soon as it answers. A pill at the bottom of the screen says the app is on device rules and offers **Retry**. Bedside rounds sent while the server is down are kept in that browser and relayed automatically when it returns. A Whisper recording that could not be uploaded stays in memory with **Retry** / **Discard**; it is never sent to another speech service. Offline extraction reads spoken numbers ("platelets eighty eight thousand" → 88,000) on both the device and the backend rules.
 
 **API-key efficiency:** each round makes at most one Gemini call (extraction); polish uses rules by default. Insights are cached by the patient's exact round data in the browser (per session) and on the backend (6 h for Gemini results, 10 min for rule-engine fallbacks), so moving between pages or re-analyzing an unchanged dictation costs nothing — only new data or **Re-analyze** triggers a call.
 
@@ -165,7 +168,7 @@ sequenceDiagram
 - **Clinician in the loop:** every alert carries a *Clinician verification required* callout; notes stay drafts until all checklist items are confirmed and the clinician attests.
 - **Assistive wording:** sentinels read "Criterion met, for clinician review" and cite the guideline; RoundsAI does not diagnose or issue orders.
 - **No invented values:** missing labs are "Not recorded"; analytics carry the previous measured value forward only with an explicit note.
-- **Honest provenance:** badges show the real engine (e.g. "AI Fallback: Gemini Flash Lite Latest", "Deterministic Clinical Rule Engine (On-Device)").
+- **Honest provenance:** badges show the real engine (e.g. "AI Model: Gemini 3.5 Flash", "AI Fallback: Gemini 3.1 Flash Lite" when a backup model answered, "Deterministic Clinical Rule Engine (On-Device)").
 - **Privacy boundary:** with *Whisper STT* (`TRANSCRIPTION_MODE=local`) audio is transcribed on the RoundsAI backend, not by a third-party speech service; *Live ASR* uses the browser's speech service (Google, in Chrome). **Lab-report images, and transcripts when `LLM_PROVIDER=gemini`, are sent to the Google Gemini API** — use de-identified data unless institutional privacy, consent and data-processing approvals are in place.
 - **Isolation:** demo data lives in its own workspace; each Firebase account has its own.
 - **Web security headers:** HSTS, `nosniff`, `X-Frame-Options: DENY`, enforced `frame-ancestors/object-src/base-uri/form-action` CSP, with the full CSP in report-only mode.
