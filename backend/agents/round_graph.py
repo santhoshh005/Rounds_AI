@@ -37,7 +37,11 @@ from backend.models.round import (
 )
 from backend.services.clinical_negation import evaluate_fever_status
 from backend.services.gemini_vision import analyze_clinical_images
-from backend.services.lab_validation import validate_labs_collection
+from backend.services.lab_validation import (
+    find_spoken_decimal_counts,
+    spoken_decimal_confirm_items,
+    validate_labs_collection,
+)
 from backend.services.local_extractor import extract_clinical_facts
 from backend.services.patient_context import build_patient_context
 from backend.services.rag_service import retrieve_clinical_evidence
@@ -258,6 +262,8 @@ def extraction_node(state: RoundState) -> RoundState:
     )
     extraction.labs = validated_transcript_labs
     confirm_items.extend(transcript_confirms)
+    # "ANC 4.20" may be a spoken "four twenty" (420 /µL): the clinician must confirm it.
+    confirm_items.extend(spoken_decimal_confirm_items(working_transcript))
     for lab in extraction.labs:
         lab.source = "Transcript"
         provenance[lab.name] = "Transcript"
@@ -576,6 +582,35 @@ def verification_node(state: RoundState) -> RoundState:
                     input_values={"analyte": t.name, "current": t.value, "previous": t.previous_value},
                 )
             )
+
+    # Rule 5: Ambiguous speech-recognised count ("ANC 4.20" may be a spoken 420 /µL).
+    # Raised only when the spoken reading would be Grade 3–4, so a real severe
+    # cytopenia can't hide behind a decimal point.
+    severe_limit = {"ANC": thresholds["anc_grade3"], "WBC": 2000.0}
+    for hit in find_spoken_decimal_counts(transcript):
+        if hit["as_spoken"] >= severe_limit[hit["key"]]:
+            continue
+        if hit["key"] == "ANC":
+            grade = compute_ctcae_grade("ANC", float(hit["as_spoken"])).get("grade")
+        else:  # CTCAE v5.0 white blood cell decreased: G3 <2000, G4 <1000 /mm3
+            grade = 4 if hit["as_spoken"] < 1000 else 3
+        flags.append(
+            ReviewFlag(
+                severity="high",
+                rule_id="RULE_AMBIGUOUS_SPOKEN_COUNT",
+                message=(
+                    f"Criterion met, for clinician review: {hit['key']} written as {hit['written']} "
+                    f"may be a spoken {hit['as_spoken']:,} /µL (CTCAE Grade {grade}); confirm before grading."
+                ),
+                rationale=(
+                    f"Read as {hit['as_written']:,} /µL. Speech recognition writes a dictated "
+                    f"\"{hit['as_spoken']}\" with a decimal point, so the value is ambiguous."
+                ),
+                guideline=guidelines.get("neutrophil_count_decreased") if hit["key"] == "ANC" else None,
+                source="Transcript",
+                input_values={"analyte": hit["key"], "written": hit["written"], "as_written": hit["as_written"], "as_spoken": hit["as_spoken"]},
+            )
+        )
 
     return {"review_flags": flags}
 

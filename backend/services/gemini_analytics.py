@@ -337,7 +337,10 @@ def _generate_ai_analytics_insight_uncached(
         "of an inpatient receiving cancer chemotherapy.\n\n"
         "CRITICAL CLINICAL CONSTRAINTS:\n"
         "1. DO NOT hallucinate, fabricate, or alter any numbers, lab values, or dates.\n"
-        "2. Adhere strictly to NCI CTCAE v5.0 hematologic toxicity grading criteria (ANC <500 = Grade 4, 500-999 = Grade 3, 1000-1499 = Grade 2, 1500-LLN = Grade 1).\n"
+        "2. Adhere strictly to NCI CTCAE v5.0 hematologic toxicity grading criteria: "
+        "ANC <500 = Grade 4, 500-999 = Grade 3, 1000-1499 = Grade 2, 1500-LLN = Grade 1; "
+        "platelets <25,000 = Grade 4, 25,000-49,999 = Grade 3, 50,000-74,999 = Grade 2, 75,000-LLN (150,000) = Grade 1; "
+        "hemoglobin <8.0 g/dL = Grade 3, 8.0-9.9 = Grade 2, 10.0-LLN = Grade 1.\n"
         "3. Provide protocol-specific, guideline-concordant dose modification advice (e.g. NCCN, ASCO).\n"
         "4. Use ONLY the values listed. When a value is 'not recorded', say so; never estimate or assume it. "
         "Rounds are listed newest first: the first line is the latest value and the lowest ANC is the nadir.\n"
@@ -398,15 +401,26 @@ def _generate_ai_analytics_insight_uncached(
                 if clean_json:
                     parsed = json.loads(clean_json)
                     logger.info("Successfully generated AI analytics insights using Gemini (%s).", candidate)
+                    # CTCAE grades and the risk level they drive always come from the
+                    # deterministic rules; Gemini only writes the narrative sections.
+                    rules = generate_deterministic_analytics_insight(
+                        patient_id=patient_id,
+                        patient_name=patient_name,
+                        regimen=regimen,
+                        cycle=cycle,
+                        diagnosis=diagnosis,
+                        baseline_anc=baseline_anc,
+                        rounds=active_rounds,
+                    )
                     return AiAnalyticsInsight(
                         engine=gemini_engine_label("analytics", candidate),
                         patient_id=str(patient_id),
                         patient_name=patient_name,
-                        risk_level=parsed.get("risk_level", "Moderate"),
+                        risk_level=rules.risk_level,
                         confidence_score=int(parsed.get("confidence_score", 95)),
                         executive_summary=parsed.get("executive_summary", ""),
                         nadir_and_kinetics=parsed.get("nadir_and_kinetics", ""),
-                        toxicity_stratification=parsed.get("toxicity_stratification", ""),
+                        toxicity_stratification=rules.toxicity_stratification,
                         dose_and_cycle_guidance=parsed.get("dose_and_cycle_guidance", ""),
                         surveillance_milestones=parsed.get("surveillance_milestones", []),
                         generated_at=now_iso,

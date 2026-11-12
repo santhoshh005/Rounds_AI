@@ -8,10 +8,69 @@ plausibility boundaries, and flagged if ambiguous or indicating possible x10 dic
 from __future__ import annotations
 
 import logging
+import re
 from typing import Optional
 from backend.models.round import LabValue, ConfirmItem
 
 logger = logging.getLogger(__name__)
+
+
+# Speech recognition (Whisper in particular) writes a spoken "ANC four twenty" as
+# "ANC 4.20". Read literally that is 4.20 x10^9/L = 4,200 /µL, which hides a
+# Grade 4 neutropenia. A count written with exactly two decimals and no explicit
+# unit is therefore ambiguous and must be confirmed by the clinician — never
+# silently rescaled either way. Kept in step with apps/web/lib/round-analysis.ts.
+_SPOKEN_DECIMAL_COUNT_RE = re.compile(
+    r"\b(?P<name>anc|absolute\s+neutrophils?(?:\s+count)?|neutrophils?(?:\s+count)?|wbc|"
+    r"white\s+(?:blood\s+)?(?:cell\s+)?count|white\s+cells?)"
+    r"\s*(?:count\s*)?(?:is|of|was|at|now|=|:|-)?\s*"
+    r"(?P<whole>\d{1,2})\.(?P<frac>\d{2})\b"
+    r"(?!\s*(?:k\b|x\s*10|×\s*10|\*\s*10|10\s*\^|thousand|g\s*/\s*l|/\s*nl))",
+    re.IGNORECASE,
+)
+
+
+def find_spoken_decimal_counts(transcript: str) -> list[dict]:
+    """Return ANC/WBC values written like "4.20" that may be a spoken "four twenty".
+
+    Each hit gives both readings in cells/µL: ``as_written`` (4.20 x10^9/L → 4200)
+    and ``as_spoken`` (the digits run together → 420).
+    """
+    hits: list[dict] = []
+    seen: set[str] = set()
+    for m in _SPOKEN_DECIMAL_COUNT_RE.finditer(transcript or ""):
+        name = m.group("name").lower()
+        key = "WBC" if name.startswith(("wbc", "white")) else "ANC"
+        if key in seen:
+            continue
+        seen.add(key)
+        written = f"{m.group('whole')}.{m.group('frac')}"
+        hits.append({
+            "key": key,
+            "written": written,
+            "as_written": round(float(written) * 1000),
+            "as_spoken": int(m.group("whole") + m.group("frac")),
+        })
+    return hits
+
+
+def spoken_decimal_confirm_items(transcript: str) -> list[ConfirmItem]:
+    return [
+        ConfirmItem(
+            id=f"spoken-decimal-{h['key'].lower()}",
+            item_type="lab_validation",
+            label=f"{h['key']} written as {h['written']}",
+            value=h["written"],
+            unit="cells/µL",
+            reason=(
+                f"Confirm {h['key']}: the transcript says \"{h['written']}\", read as "
+                f"{h['as_written']:,} /µL. Speech recognition writes a spoken value of "
+                f"{h['as_spoken']:,} /µL the same way — correct the transcript if that was meant."
+            ),
+            source="Transcript",
+        )
+        for h in find_spoken_decimal_counts(transcript)
+    ]
 
 # Canonical clinical reference limits and standard units
 LAB_SPECIFICATIONS = {

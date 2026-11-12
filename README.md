@@ -186,14 +186,14 @@ sequenceDiagram
 
 | Suite | Command | Tests |
 | :--- | :--- | :--- |
-| Backend unit + API | `pytest --ignore=tests/test_full_system.py` | 126 |
+| Backend unit + API | `pytest --ignore=tests/test_full_system.py` | 136 |
 | Backend live integration (needs the API on :8000) | `pytest tests/test_full_system.py` | 8 |
-| Web unit (Node test runner) | `cd apps/web && npm test` | 95 |
+| Web unit (Node test runner) | `cd apps/web && npm test` | 97 |
 | Browser E2E (Playwright; app on :3000) | `node regression_test.mjs` · `node e2e_button_test.mjs` | 20 · 32 checks |
 
-Backend files: `test_clinical_accuracy.py` (63), `test_api_pytest.py` (20), `test_audit_regressions.py` (17), `test_ai_fallback.py` (10), `test_spoken_numbers.py` (13), `test_gemini_analytics.py` (3), `test_full_system.py` (8). Web files: `clinical-utils.test.ts`, `oncology-autocorrect.test.ts`, `round-analysis.test.ts`, `spoken-numbers.test.ts`.
+Backend files: `test_clinical_accuracy.py` (63), `test_api_pytest.py` (20), `test_audit_regressions.py` (27), `test_ai_fallback.py` (10), `test_spoken_numbers.py` (13), `test_gemini_analytics.py` (3), `test_full_system.py` (8). Web files: `clinical-utils.test.ts`, `oncology-autocorrect.test.ts`, `round-analysis.test.ts`, `spoken-numbers.test.ts`.
 
-Covered cases include CTCAE boundaries (e.g. ANC 499 vs 500), IDSA/ASCO fever criteria (single vs sustained), ANC 500–999 with and without expected decline, "88k" platelets, spoken numbers ("ANC four twenty", "one oh one point three"), °F→°C, clause-scoped negation, the "a febrile" inversion guard, vision-unit normalization, model-provenance labels, quota cooldowns, SSE queue bounds/cleanup, and offline analytics never inventing values.
+Covered cases include CTCAE boundaries (e.g. ANC 499 vs 500), IDSA/ASCO fever criteria (single vs sustained), ANC 500–999 with and without expected decline, "88k" platelets, spoken numbers ("ANC four twenty", "one oh one point three"), speech-recognised decimals ("ANC 4.20" must be confirmed, never silently read as 4,200), °F→°C, clause-scoped negation, the "a febrile" inversion guard, vision-unit normalization, model-provenance labels, quota cooldowns, SSE queue bounds/cleanup, and offline analytics never inventing values.
 
 ---
 

@@ -137,7 +137,10 @@ def _transcribe_with_faster_whisper(audio_bytes: bytes, filename: str) -> Option
             "Oncology inpatient ward rounds. Chemotherapy regimens: mFOLFOX6, R-CHOP, AC-T, FOLFIRINOX, CAPOX. "
             "Antineoplastics: Oxaliplatin, Capecitabine, Pembrolizumab, Filgrastim, Ondansetron, Cefepime. "
             "Blood counts: ANC, WBC, Platelets, Hemoglobin, Absolute Neutrophil Count, creatinine. "
-            "Vitals and toxicities: temperature °C, febrile neutropenia, mucositis, cold dysesthesia, CTCAE."
+            "Vitals and toxicities: temperature °C, febrile neutropenia, mucositis, cold dysesthesia, CTCAE. "
+            # Whisper copies the number style of its prompt; whole-number counts here stop a
+            # spoken "ANC four twenty" from being written as the ambiguous "ANC 4.20".
+            "Example: temperature 38.4 °C, ANC 420 cells/µL, WBC 1,800, platelets 88,000."
         )
 
         segments, info = _FASTER_WHISPER_MODEL.transcribe(

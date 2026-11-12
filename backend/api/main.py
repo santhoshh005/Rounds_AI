@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime, timezone
+import hmac
 import json
 import logging
 import os
@@ -145,13 +146,20 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_origin_regex=r"^https://rounds-?ai(-[a-z0-9\-]+)?\.vercel\.app$",
-    allow_credentials=True,
+    # The web app never sends cookies or uses credentialed fetch/EventSource, so a
+    # look-alike *.vercel.app origin matching the regex can't ride a user's session.
+    allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
 
 # ── Security: Configurable API Key / Bearer Auth Middleware ───────────
+def _key_matches(supplied: str, expected: str) -> bool:
+    """Constant-time comparison so response timing can't reveal the key."""
+    return bool(supplied) and hmac.compare_digest(supplied.encode("utf-8"), expected.encode("utf-8"))
+
+
 class ApiKeyAuthMiddleware:
     def __init__(self, app):
         self.app = app
@@ -183,7 +191,7 @@ class ApiKeyAuthMiddleware:
             auth_header = headers.get(b"authorization", b"").decode("latin-1")
             bearer_token = auth_header[7:].strip() if auth_header.startswith("Bearer ") else ""
 
-            if api_key_header == expected_key or bearer_token == expected_key:
+            if _key_matches(api_key_header, expected_key) or _key_matches(bearer_token, expected_key):
                 return await self.app(scope, receive, send)
 
             response = JSONResponse(status_code=401, content={"detail": "Unauthorized: Invalid or missing API key"})
@@ -256,7 +264,8 @@ def health() -> dict[str, str]:
 
 
 class AutoCorrectRequest(BaseModel):
-    text: str
+    # Same cap as a round transcript; bounds regex work and Gemini token spend.
+    text: str = Field(max_length=10_000)
     use_gemini: bool = True
 
 
@@ -317,24 +326,34 @@ def get_voice_mode() -> dict:
 
 
 
+MAX_AUDIO_BYTES = 25 * 1024 * 1024
+
+
 @app.post("/api/v1/voice/transcribe")
 async def transcribe_voice(file: UploadFile = File(...)) -> dict[str, str]:
     """Transcribe clinical dictation respecting TRANSCRIPTION_MODE (local | cloud | hybrid)."""
     try:
-        content = await file.read()
-        if len(content) > 25 * 1024 * 1024:  # 25MB max audio
+        # Read one byte past the cap instead of the whole upload, so an oversized
+        # file is rejected without being held in memory.
+        content = await file.read(MAX_AUDIO_BYTES + 1)
+        if len(content) > MAX_AUDIO_BYTES:
             raise HTTPException(status_code=413, detail="Audio file exceeds 25MB limit.")
-        details = transcribe_audio_with_details(content, filename=file.filename or "recording.webm")
+        # Whisper is CPU-bound; run it off the event loop so SSE and other requests keep flowing.
+        details = await asyncio.to_thread(
+            transcribe_audio_with_details, content, filename=file.filename or "recording.webm"
+        )
         return details
     except HTTPException:
         raise
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Voice transcription failed: {exc}")
+    except Exception:
+        # Full detail goes to the server log only; clients get a generic message.
+        logger.exception("Voice transcription failed")
+        raise HTTPException(status_code=500, detail="Voice transcription failed. Please retry or type the round.")
 
 
 # ── Server-Sent Events Endpoint ───────────────────────────────────────
 @app.get("/api/v1/rounds/stream")
-async def stream_rounds(request: Request, patient_id: str | None = None):
+async def stream_rounds(request: Request, patient_id: str | None = Query(default=None, max_length=64)):
     """Stream real-time bedside round transmissions via Server-Sent Events (SSE)."""
     queue = await sse_manager.subscribe(patient_id)
 
@@ -578,13 +597,14 @@ def get_patient_analytics_data(patient_id: str) -> PatientAnalyticsResponse:
 
 
 class AiAnalyticsRequest(BaseModel):
-    patient_id: str
-    patient_name: Optional[str] = None
-    diagnosis: Optional[str] = None
-    regimen: Optional[str] = None
-    cycle: Optional[str] = None
-    baseline_anc: Optional[float] = 2000.0
-    rounds: Optional[list[dict[str, Any]]] = None
+    # Bounded so one request can't build an oversized Gemini prompt.
+    patient_id: str = Field(min_length=1, max_length=64)
+    patient_name: Optional[str] = Field(default=None, max_length=200)
+    diagnosis: Optional[str] = Field(default=None, max_length=300)
+    regimen: Optional[str] = Field(default=None, max_length=200)
+    cycle: Optional[str] = Field(default=None, max_length=64)
+    baseline_anc: Optional[float] = Field(default=2000.0, ge=0)
+    rounds: Optional[list[dict[str, Any]]] = Field(default=None, max_length=100)
     force_refresh: bool = False
 
 

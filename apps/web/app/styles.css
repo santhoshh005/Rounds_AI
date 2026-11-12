@@ -2042,3 +2042,5 @@ input:disabled,select:disabled,textarea:disabled { background:var(--subtle);colo
     display: none !important;
   }
 }
+/* Analytics KPI grade chips use the CTCAE colour scale (beats the brand-tint .stat-grid em default). */
+.stat-grid em.grade-4{color:var(--g4);background:var(--g4-bg);border-color:var(--g4-border)}.stat-grid em.grade-3{color:var(--g3);background:var(--g3-bg);border-color:var(--g3-border)}.stat-grid em.grade-2{color:var(--g2);background:var(--g2-bg);border-color:var(--g2-border)}.stat-grid em.grade-1{color:var(--g1);background:var(--g1-bg);border-color:var(--g1-border)}.stat-grid em.grade-0{color:var(--stable);background:var(--stable-bg);border-color:var(--stable-border)}

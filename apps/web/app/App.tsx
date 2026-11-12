@@ -217,6 +217,9 @@ export type RoundRecord = {
   carried?: ("anc" | "wbc" | "platelets" | "hemoglobin")[]
 }
 
+/** sessionStorage flag: an empty-state "Admit patient" button asks the roster to open its admit form. */
+const OPEN_ADMIT_KEY = "rounds-open-admit"
+
 /**
  * Fills values that were not measured this round (NaN, or 0 for counts that cannot
  * physiologically be 0) from the most recent recorded round, and says so in the notes.
@@ -2885,6 +2888,7 @@ function CaptureStep({
           <div className="stt-engine-toggle">
             <button
               className={`engine-chip ${sttEngine === "live-asr" ? "active" : ""}`}
+              aria-pressed={sttEngine === "live-asr"}
               onClick={() => {
                 if (!recording) setSttEngine("live-asr")
               }}
@@ -2896,6 +2900,7 @@ function CaptureStep({
             </button>
             <button
               className={`engine-chip ${sttEngine === "whisper" ? "active" : ""}`}
+              aria-pressed={sttEngine === "whisper"}
               onClick={() => {
                 if (!recording) setSttEngine("whisper")
               }}
@@ -4150,13 +4155,17 @@ function Station({
         </div>
         <h2 style={{ fontSize: "24px", fontWeight: 700, marginBottom: "8px" }}>No Patients on Inpatient Service</h2>
         <p style={{ color: "var(--secondary)", fontSize: "15px", maxWidth: "520px", margin: "0 auto 28px", lineHeight: "1.6" }}>
-          Your ward census is currently empty. Go to the <strong>Ward Roster</strong> to admit an oncology patient to your service, or load sample demo cases to explore the station features.
+          Your ward census is currently empty. Admit an oncology patient from the <strong>Ward Roster</strong> to start a round.
         </p>
         <div style={{ display: "flex", justifyContent: "center", gap: "12px", flexWrap: "wrap" }}>
           {go && (
             <Button
               variant="primary"
-              onClick={() => go("roster")}
+              onClick={() => {
+                // Ask the roster to open its admission form on arrival.
+                try { sessionStorage.setItem(OPEN_ADMIT_KEY, "1") } catch {}
+                go("roster")
+              }}
               style={{ display: "inline-flex", alignItems: "center", gap: "8px", padding: "12px 24px", fontSize: "15px" }}
             >
               <Icon name="plus" size={18} />
@@ -4333,6 +4342,14 @@ function Roster({
   onToast?: (msg: string, type?: "info" | "success" | "warning" | "alert") => void
 }) {
   const [drawer, setDrawer] = useState(false)
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem(OPEN_ADMIT_KEY)) {
+        sessionStorage.removeItem(OPEN_ADMIT_KEY)
+        setDrawer(true)
+      }
+    } catch {}
+  }, [])
   const [editingPatient, setEditingPatient] = useState<typeof patients[number] | null>(null)
   const [discharge, setDischarge] = useState<typeof patients[number] | null>(null)
   const [menu, setMenu] = useState("")
@@ -4529,7 +4546,7 @@ function Roster({
         <div className="panel" style={{ textAlign: "center", padding: "48px 24px", margin: "24px 0" }}>
           <h3>No patients currently admitted in Ward 4B</h3>
           <p style={{ color: "var(--secondary)", margin: "8px 0 24px" }}>
-            All ward beds are currently free. Admit an oncology inpatient or reset the demo ward census.
+            All ward beds are currently free. Admit an oncology inpatient to begin.
           </p>
           <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
             <Button variant="primary" onClick={openAdmitDrawer}>Admit patient</Button>
@@ -5113,6 +5130,7 @@ function MobileCompanion({
         <div className="mobile-engine-chips" style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "8px", margin: "10px 0", flexWrap: "wrap" }}>
           <button
             className={`engine-chip ${sttEngine === "live-asr" ? "active" : ""}`}
+              aria-pressed={sttEngine === "live-asr"}
             onClick={() => { if (!recording) setSttEngine("live-asr") }}
             style={{ padding: "4px 10px", fontSize: "12px", borderRadius: "16px", border: "1px solid var(--border)", background: sttEngine === "live-asr" ? "var(--brand)" : "transparent", color: sttEngine === "live-asr" ? "white" : "inherit" }}
           >
@@ -5120,6 +5138,7 @@ function MobileCompanion({
           </button>
           <button
             className={`engine-chip ${sttEngine === "whisper" ? "active" : ""}`}
+              aria-pressed={sttEngine === "whisper"}
             onClick={() => { if (!recording) setSttEngine("whisper") }}
             style={{ padding: "4px 10px", fontSize: "12px", borderRadius: "16px", border: "1px solid var(--border)", background: sttEngine === "whisper" ? "var(--brand)" : "transparent", color: sttEngine === "whisper" ? "white" : "inherit" }}
           >
@@ -5782,7 +5801,11 @@ function Analytics({
           {go && (
             <Button
               variant="primary"
-              onClick={() => go("roster")}
+              onClick={() => {
+                // Ask the roster to open its admission form on arrival.
+                try { sessionStorage.setItem(OPEN_ADMIT_KEY, "1") } catch {}
+                go("roster")
+              }}
               style={{ display: "inline-flex", alignItems: "center", gap: "8px", padding: "12px 24px", fontSize: "15px" }}
             >
               <Icon name="plus" size={18} />
@@ -5887,7 +5910,8 @@ function Analytics({
             >
               {value} {unit && <small>{unit}</small>}
             </strong>
-            <em>{badge}</em>
+            {/* Same CTCAE colour scale as the station chips, so a Grade 4 never reads as calm green. */}
+            <em className={/^Grade [0-4]$/.test(badge) ? `grade-${badge.slice(-1)}` : undefined}>{badge}</em>
           </article>
         ))}
       </div>
@@ -6560,7 +6584,7 @@ function Login({
     const data = new FormData(event.currentTarget)
     const email = String(data.get("email") || "").trim()
     const password = String(data.get("password") || "")
-    const fullName = String(data.get("fullName") || "").trim()
+    const fullName = tidyClinicianName(String(data.get("fullName") || ""))
     if (!email || !password) return setError("Enter your work email and password to continue.")
     if (mode === "signup" && !fullName) return setError("Enter your full name as it should appear on notes.")
     setError("")
@@ -6782,10 +6806,20 @@ function nameFromEmail(email: string): string {
   return local.replace(/\b\w/g, (c) => c.toUpperCase()) || "Clinician"
 }
 
+/** Display tidy-up for a typed name: "Dr.priya  sharma" → "Dr. Priya Sharma".
+ *  Casing is only changed when the whole name was typed in lowercase. */
+function tidyClinicianName(raw: string): string {
+  let name = raw.replace(/\s+/g, " ").trim().replace(/^dr(?:\.\s*|\s+)/i, "Dr. ")
+  if (name === name.toLowerCase() || /^Dr\. [a-z\s.'-]+$/.test(name)) {
+    name = name.replace(/(^|[\s'-])([a-z])/g, (_m, sep: string, c: string) => sep + c.toUpperCase())
+  }
+  return name
+}
+
 function profileForSession(session: AuthSession): ClinicianProfile {
   const saved = readStored<Partial<ClinicianProfile> | null>(workspaceKey(session, "profile"), null)
   if (session.mode !== "account" || !session.user) return { ...DEFAULT_CLINICIAN_PROFILE, ...(saved || {}) }
-  const name = session.user.name || nameFromEmail(session.user.email)
+  const name = tidyClinicianName(session.user.name || nameFromEmail(session.user.email))
   const fresh: ClinicianProfile = {
     name,
     title: "Clinician",
@@ -6797,7 +6831,8 @@ function profileForSession(session: AuthSession): ClinicianProfile {
     hospitalId: session.user.email,
     initials: deriveDoctorInitials(name),
   }
-  return { ...fresh, ...(saved || {}) }
+  const merged = { ...fresh, ...(saved || {}) }
+  return { ...merged, name: tidyClinicianName(merged.name || name) }
 }
 
 /** Demo sessions start from the scripted ward; accounts start empty and keep only their own data. */

@@ -255,8 +255,40 @@ export function analyzeTranscriptLocally(transcript: string): RoundAnalysis {
     negatedSymptoms: negated,
     expectedDecline: hasExpectedDecline(text),
     flags: [],
-    confirmItems: [],
+    confirmItems: spokenDecimalConfirmItems(text),
   }
+}
+
+// Speech recognition writes a spoken "ANC four twenty" as "ANC 4.20", which reads
+// as 4,200 /µL and hides a Grade 4. Two decimals with no explicit unit is ambiguous,
+// so the clinician must confirm it. Kept in step with backend/services/lab_validation.py.
+const SPOKEN_DECIMAL_COUNT_RE = new RegExp(
+  String.raw`\b(anc|absolute\s+neutrophils?(?:\s+count)?|neutrophils?(?:\s+count)?|wbc|white\s+(?:blood\s+)?(?:cell\s+)?count|white\s+cells?)` +
+    String.raw`\s*(?:count\s*)?(?:is|of|was|at|now|=|:|-)?\s*(\d{1,2})\.(\d{2})\b` +
+    String.raw`(?!\s*(?:k\b|x\s*10|×\s*10|\*\s*10|10\s*\^|thousand|g\s*\/\s*l|\/\s*nl))`,
+  "gi",
+)
+
+export function findSpokenDecimalCounts(
+  text: string,
+): { key: "ANC" | "WBC"; written: string; asWritten: number; asSpoken: number }[] {
+  const hits: { key: "ANC" | "WBC"; written: string; asWritten: number; asSpoken: number }[] = []
+  for (const m of text.matchAll(SPOKEN_DECIMAL_COUNT_RE)) {
+    const key = /^(wbc|white)/i.test(m[1]) ? "WBC" : "ANC"
+    if (hits.some((h) => h.key === key)) continue
+    const written = `${m[2]}.${m[3]}`
+    hits.push({ key, written, asWritten: Math.round(parseFloat(written) * 1000), asSpoken: parseInt(m[2] + m[3], 10) })
+  }
+  return hits
+}
+
+export function spokenDecimalConfirmItems(text: string): string[] {
+  const n = (v: number) => new Intl.NumberFormat("en-US").format(v)
+  return findSpokenDecimalCounts(text).map(
+    (h) =>
+      `Confirm ${h.key}: the transcript says "${h.written}", read as ${n(h.asWritten)} /µL. ` +
+      `Speech recognition writes a spoken value of ${n(h.asSpoken)} /µL the same way — correct the transcript if that was meant.`,
+  )
 }
 
 // ── Backend /api/v1/rounds/extract response mapping ─────────────────────

@@ -223,3 +223,20 @@ describe("Offline analytics insight — recorded data only", async () => {
     assert.ok(res.confidence_score < 100);
   });
 });
+
+describe("spoken counts written with a decimal point (Whisper '4.20')", () => {
+  it("asks the clinician to confirm 'ANC 4.20' instead of silently grading 4,200", async () => {
+    const { findSpokenDecimalCounts } = await import("./round-analysis.ts");
+    const a = analyzeTranscriptLocally("Temperature 38.4. ANC 4.20. Platelets 88,000.");
+    assert.equal(a.labs.anc, 4200);
+    assert.equal(a.confirmItems.length, 1);
+    assert.match(a.confirmItems[0], /ANC.*4\.20.*4,200.*420 \/µL/);
+    assert.deepEqual(findSpokenDecimalCounts("WBC is 1.80"), [{ key: "WBC", written: "1.80", asWritten: 1800, asSpoken: 180 }]);
+  });
+
+  it("does not flag one-decimal or explicitly-unit values", () => {
+    assert.deepEqual(analyzeTranscriptLocally("ANC 0.4, WBC 4.2").confirmItems, []);
+    assert.deepEqual(analyzeTranscriptLocally("ANC 4.20 x10^9/L").confirmItems, []);
+    assert.deepEqual(analyzeTranscriptLocally("ANC four twenty").confirmItems, []);
+  });
+});

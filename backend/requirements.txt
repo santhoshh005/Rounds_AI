@@ -1,10 +1,18 @@
 fastapi>=0.115,<1.0
 uvicorn[standard]>=0.30,<1.0
 pydantic>=2.9,<3.0
-langgraph>=0.2,<1.0
+langgraph>=1.0.10,<2.0
 supabase>=2.0
 google-genai>=1.0
 python-dotenv>=1.0
 python-multipart>=0.0.9
 firebase-admin>=7.0
 faster-whisper>=1.1,<2.0
+
+# Security floors for transitive dependencies (pip-audit advisories, Nov 2026).
+pyjwt>=2.15.0
+urllib3>=2.8.0
+certifi>=2026.10.18
+pyasn1>=0.6.5
+msgpack>=1.2.3
+multidict>=6.9.1

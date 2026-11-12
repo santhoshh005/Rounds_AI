@@ -176,3 +176,126 @@ def test_polish_guard_accepts_spoken_numbers_written_as_digits():
     assert ok
     ok, reason = _validate_gemini_polish("anc four twenty on folfox", "ANC 520 on FOLFOX")
     assert not ok and "Numbers altered" in reason
+
+
+# ── Production-readiness audit: API hardening ─────────────────────────
+@pytest.fixture
+def api_client():
+    from fastapi.testclient import TestClient
+    from backend.api.main import app
+
+    return TestClient(app)
+
+
+def test_autocorrect_rejects_oversized_text(api_client):
+    res = api_client.post("/api/v1/voice/autocorrect", json={"text": "a" * 10_001, "use_gemini": False})
+    assert res.status_code == 422
+
+
+def test_ai_insights_rejects_unbounded_rounds_list(api_client):
+    res = api_client.post(
+        "/api/v1/analytics/ai-insights",
+        json={"patient_id": "104", "rounds": [{"anc": 500}] * 101},
+    )
+    assert res.status_code == 422
+
+
+def test_transcribe_rejects_oversized_audio(api_client):
+    from backend.api import main
+
+    big = b"\0" * (main.MAX_AUDIO_BYTES + 1)
+    res = api_client.post("/api/v1/voice/transcribe", files={"file": ("big.webm", big, "audio/webm")})
+    assert res.status_code == 413
+
+
+def test_transcribe_error_does_not_leak_exception_text(api_client, monkeypatch):
+    from backend.api import main
+
+    def boom(*_a, **_k):
+        raise RuntimeError("internal path C:/secret/model.bin")
+
+    monkeypatch.setattr(main, "transcribe_audio_with_details", boom)
+    res = api_client.post("/api/v1/voice/transcribe", files={"file": ("a.webm", b"abc", "audio/webm")})
+    assert res.status_code == 500
+    assert "secret" not in res.json()["detail"]
+
+
+def test_cors_does_not_allow_credentials(api_client):
+    res = api_client.options(
+        "/api/v1/patients",
+        headers={"Origin": "https://rounds-ai-umber.vercel.app", "Access-Control-Request-Method": "GET"},
+    )
+    assert res.headers.get("access-control-allow-origin") == "https://rounds-ai-umber.vercel.app"
+    assert res.headers.get("access-control-allow-credentials") != "true"
+
+
+def test_api_key_comparison_is_exact():
+    from backend.api.main import _key_matches
+
+    assert _key_matches("k-123", "k-123")
+    assert not _key_matches("k-12", "k-123")
+    assert not _key_matches("", "k-123")
+
+
+# ── Whisper writes a spoken "ANC four twenty" as "ANC 4.20" ───────────
+def test_spoken_decimal_anc_requires_confirmation_and_raises_flag():
+    state = round_graph.invoke({"transcript": "Temperature 38.4. ANC 4.20. Platelets 88,000.", "images": [], "patient_id": "104"})
+    confirms = [c for c in state["confirm_before_signing"] if c.id == "spoken-decimal-anc"]
+    assert confirms and "420" in confirms[0].reason
+    flags = [f for f in state["review_flags"] if f.rule_id == "RULE_AMBIGUOUS_SPOKEN_COUNT"]
+    assert flags and flags[0].severity == "high" and "Grade 4" in flags[0].message
+
+
+def test_spoken_decimal_rule_ignores_unambiguous_values():
+    from backend.services.lab_validation import find_spoken_decimal_counts
+
+    assert find_spoken_decimal_counts("ANC 0.4, WBC 4.2") == []
+    assert find_spoken_decimal_counts("ANC 4.20 x10^9/L") == []
+    assert find_spoken_decimal_counts("ANC 420") == []
+    assert find_spoken_decimal_counts("white cell count 1.80") == [
+        {"key": "WBC", "written": "1.80", "as_written": 1800, "as_spoken": 180}
+    ]
+
+
+def test_spoken_decimal_flag_only_when_spoken_reading_is_severe():
+    # "ANC 15.20" spoken would be 1,520 /µL (Grade 1): confirm item yes, high flag no.
+    state = round_graph.invoke({"transcript": "ANC 15.20. Afebrile.", "images": [], "patient_id": "104"})
+    assert any(c.id == "spoken-decimal-anc" for c in state["confirm_before_signing"])
+    assert not any(f.rule_id == "RULE_AMBIGUOUS_SPOKEN_COUNT" for f in state["review_flags"])
+
+
+def test_ai_analytics_grades_always_come_from_rules(monkeypatch):
+    """Gemini's narrative is kept, but a wrong CTCAE grade in its text must never reach the UI."""
+    import json as _json
+    import types as _types
+    from backend.services import gemini_analytics as ga
+
+    fake_reply = {
+        "risk_level": "Low",
+        "confidence_score": 90,
+        "executive_summary": "summary",
+        "nadir_and_kinetics": "kinetics",
+        "toxicity_stratification": "Thrombocytopenia is Grade 2 (88,000/µL).",
+        "dose_and_cycle_guidance": "guidance",
+        "surveillance_milestones": ["a"],
+    }
+
+    class _Models:
+        def generate_content(self, **_k):
+            return _types.SimpleNamespace(text=_json.dumps(fake_reply))
+
+    class _Client:
+        def __init__(self, **_k):
+            self.models = _Models()
+
+    import google.genai as genai_mod
+    monkeypatch.setattr(genai_mod, "Client", _Client)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    ga.reset_insight_cache()
+    res = ga._generate_ai_analytics_insight_uncached(
+        patient_id="104", patient_name="David Miller", baseline_anc=2100,
+        rounds=[{"date": "12 Nov", "anc": 420, "platelets": 88000, "hemoglobin": 10.8}],
+    )
+    assert res.executive_summary == "summary"
+    assert "Thrombocytopenia: Grade 1" in res.toxicity_stratification
+    assert res.risk_level == "Critical"
