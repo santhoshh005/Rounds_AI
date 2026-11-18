@@ -1068,7 +1068,7 @@ function ClinicianProfileModal({
               <strong>Clinical Processing Architecture</strong>
               <ul style={{ margin: "6px 0 0 18px", padding: 0 }}>
                 <li>
-                  <strong>AI Multimodal Hierarchy:</strong> 4-model fallback cascade (Gemini 2.5 Flash → 1.5 Flash → 1.5 Pro → 2.5 Pro)
+                  <strong>AI Multimodal Hierarchy:</strong> Gemini 3.5 Flash → 3.1 Flash Lite → 3.5 Flash Lite, then deterministic CTCAE v5.0 rules if AI is unavailable
                 </li>
                 <li>
                   <strong>Deterministic Offline Fallback:</strong> Local CPU regex parser & CTCAE v5.0 rules if offline / unauthenticated
@@ -1175,10 +1175,12 @@ function Header({
               (item) => (
                 <button
                   className={screen === item ? "active" : ""}
+                  aria-current={screen === item ? "page" : undefined}
                   onClick={() => go(item)}
                   key={item}
                 >
-                  {item.charAt(0).toUpperCase() + item.slice(1)}
+                  {/* Same names as the phone tab bar: the bedside screen is "Bedside" everywhere. */}
+                  {item === "mobile" ? "Bedside" : item.charAt(0).toUpperCase() + item.slice(1)}
                 </button>
               ),
             )}
@@ -3696,7 +3698,7 @@ function DemoGuide({ go }: { go?: (screen: Screen) => void }) {
         <li>Use <b>Try a scenario</b> for other situations (febrile neutropenia, sustained 38.1°C, low platelets, labs pending…); “Speech errors” + <b>Clinical auto-correct</b> shows term correction.</li>
         <li>Attach a lab report with <b>+</b>: <a href="/demo/sample-cbc-report.txt" download>sample text report</a> (read on-device) or <a href="/demo/sample-cbc-report.png" download>sample image</a> (read by Gemini Vision when the API is available).</li>
         <li>Dictate with <b>Live ASR</b> (browser) or <b>Whisper STT</b> (on-device server model).</li>
-        <li>Open {link("Mobile", "mobile")} → send a bedside round → it appears here as a banner to load in one click.</li>
+        <li>Open {link("Bedside", "mobile")} → send a bedside round → it appears here as a banner to load in one click.</li>
         <li>See {link("Analytics", "analytics")} for the ANC trajectory, recovery curves and dose advice, and {link("Roster", "roster")} to admit a patient with a fixed admission baseline.</li>
       </ol>
     </aside>
@@ -4068,16 +4070,26 @@ function Station({
 
   const copyNote = () => {
     const rawNote = `PATIENT: ${patient.name} (Bed ${patient.bed}, ${patient.mrn})\nDIAGNOSIS: ${patient.diagnosis} · ${patient.regimen} (${patient.cycle})\n\nSUBJECTIVE:\n${soapSections.s}\n\nOBJECTIVE:\n${soapSections.o}\n\nASSESSMENT:\n${soapSections.a}\n\nPLAN:\n${soapSections.p}`
+    // Only an attested note carries "Attested by"; a draft is exported as pending
+    // attestation, so an unverified AI draft can never be pasted into the EMR looking signed.
     const noteText = formatEmrClipboardNote(
       rawNote,
       `round-${patient.id}-active`,
       patient.id,
-      clinicianProfile?.name || "Attending clinician"
+      attested ? clinicianProfile?.name || "Attending clinician" : undefined,
+      analysis ? getModelProvenance(analysis.result.engine).displayLabel : undefined
     )
     if (typeof navigator !== "undefined" && navigator.clipboard) {
       navigator.clipboard.writeText(noteText)
     }
-    if (onToast) onToast(`Verified EMR note for ${patient.name} copied`, "info")
+    if (onToast) {
+      onToast(
+        attested
+          ? `Attested EMR note for ${patient.name} copied`
+          : `Draft note for ${patient.name} copied — marked "Pending Clinician Attestation"`,
+        attested ? "info" : "warning",
+      )
+    }
   }
 
   const attestNote = () => {
@@ -5142,7 +5154,7 @@ function MobileCompanion({
             onClick={() => { if (!recording) setSttEngine("whisper") }}
             style={{ padding: "4px 10px", fontSize: "12px", borderRadius: "16px", border: "1px solid var(--border)", background: sttEngine === "whisper" ? "var(--brand)" : "transparent", color: sttEngine === "whisper" ? "white" : "inherit" }}
           >
-            Whisper AI
+            Whisper STT
           </button>
         </div>
 

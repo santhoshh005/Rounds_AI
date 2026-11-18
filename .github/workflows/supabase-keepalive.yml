@@ -1,0 +1,28 @@
+# Keeps the free-tier Supabase project from being paused for inactivity
+# (Supabase pauses after 7 days without activity).
+#
+# Every 3 days it wakes the Render backend, then reads the latest round, which
+# queries Supabase. Read-only: no rows are written. Run it by hand from the
+# Actions tab with "Run workflow".
+name: Supabase keep-alive
+
+on:
+  schedule:
+    - cron: "17 6 */3 * *" # 06:17 UTC on every 3rd day of the month
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Wake the backend (Render free tier sleeps)
+        run: curl -fsS --retry 6 --retry-delay 20 --retry-all-errors -m 90 https://rounds-ai-backend.onrender.com/health
+
+      - name: Read from Supabase through the API
+        run: |
+          curl -fsS --retry 3 --retry-delay 20 --retry-all-errors -m 90 \
+            "https://rounds-ai-backend.onrender.com/api/v1/rounds?limit=1" -o rounds.json
+          python3 -c "import json; d=json.load(open('rounds.json')); print('Latest round:', d[0].get('created_at') if d else 'none')"

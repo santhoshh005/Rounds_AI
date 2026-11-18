@@ -246,6 +246,16 @@ describe("Clinical Utilities — TDD Suite", () => {
       assert.ok(formatted.includes("Pending Clinician Attestation"));
       assert.ok(formatted.includes("Draft note for review."));
     });
+
+    it("never stamps a draft as attested and names the real engine", () => {
+      const draft = formatEmrClipboardNote("S: ok", "r1", "104", undefined, "AI Model: Gemini 3.5 Flash");
+      assert.ok(draft.includes("Pending Clinician Attestation"));
+      assert.ok(!draft.includes("Attested by"));
+      assert.ok(draft.includes("AI Model: Gemini 3.5 Flash"));
+      assert.ok(!draft.includes("2.5"));
+      const signed = formatEmrClipboardNote("S: ok", "r1", "104", "Dr. Priya Sharma");
+      assert.ok(signed.includes("Attested by: Dr. Priya Sharma"));
+    });
   });
 
   describe("parseClinicalLabReport", () => {

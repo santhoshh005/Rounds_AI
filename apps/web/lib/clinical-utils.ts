@@ -503,16 +503,23 @@ export interface EmrClipboardParams {
   note: string;
   attestedBy?: string;
   attestedAt?: string;
+  /** Which engine produced the findings, e.g. "AI Model: Gemini 3.5 Flash". */
+  provenance?: string;
 }
+
+const DEFAULT_PROVENANCE = "RoundsAI draft (engine not recorded)";
 
 /**
  * Standardizes SOAP note text for seamless 1-click clipboard paste into Epic / Cerner / Meditech EMRs.
+ * "Attested by" is written only when an approver is given; otherwise the note is
+ * marked as pending attestation, so an unverified draft can never look signed.
  */
 export function formatEmrClipboardNote(
   paramsOrNote: EmrClipboardParams | string,
   roundId?: string,
   patientId?: string,
-  approvedBy?: string
+  approvedBy?: string,
+  provenance?: string
 ): string {
   if (typeof paramsOrNote === "string") {
     const timestamp = new Date().toISOString();
@@ -525,7 +532,7 @@ export function formatEmrClipboardNote(
       `[ROUNDS-AI EMR CLINICAL DOCUMENTATION]`,
       `PATIENT: ${patientId || "Unassigned"} | ROUND: ${roundId || "N/A"}`,
       attestationLine,
-      `GENERATION PROVENANCE: AI Model: Gemini 2.5 Flash (gemini-2.5-flash) | CTCAE v5.0`,
+      `GENERATION PROVENANCE: ${provenance || DEFAULT_PROVENANCE} | CTCAE v5.0 rule-graded`,
       `================================================================================`,
     ].join("\n");
 
@@ -544,7 +551,7 @@ export function formatEmrClipboardNote(
     `[ROUNDS-AI EMR CLINICAL DOCUMENTATION]`,
     `PATIENT: ${params.patientName || "Unassigned"} | MRN: ${params.mrn || "N/A"}`,
     attestationLine,
-    `GENERATION PROVENANCE: AI Model: Gemini 2.5 Flash (gemini-2.5-flash) | CTCAE v5.0`,
+    `GENERATION PROVENANCE: ${params.provenance || DEFAULT_PROVENANCE} | CTCAE v5.0 rule-graded`,
     `================================================================================`,
   ].join("\n");
 
